@@ -74,9 +74,9 @@ in round-trip mode.
 
 **Evidence.** Round-tripping pygeoapi's own configs through `ruamel.yaml`
 0.19.1 (`preserve_quotes=True`, `width=4096`, best of 12 indent settings per
-file) is **not** byte-identical. Only 2 of the 17 files tested survived
-unchanged: the repo's example config, the 15 test configs and the Docker
-default config were tested. The changes we saw:
+file) is **not** byte-identical. We tested 17 files: the repo's example config,
+the 15 test configs and the Docker default config. Only 2 survived unchanged.
+The changes we saw:
 - flow sequences get respaced: `bbox: [-180,-90,180,90]` becomes `[-180, -90, 180, 90]`
 - an explicit `null` is dropped: `end: null  # …` becomes `end:       # …`
 - trailing spaces after keys are removed
