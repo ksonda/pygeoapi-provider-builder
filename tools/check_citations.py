@@ -27,7 +27,7 @@ WINDOW = 3
 CODE_SPAN = re.compile(r'`([^`\n]+)`')
 CITATION = re.compile(
     r'^(?:(?P<repo>[A-Za-z0-9_.-]+):)?'
-    r'(?P<path>[A-Za-z0-9_./-]+\.[A-Za-z0-9]+)'
+    r'(?P<path>[A-Za-z0-9_./-]+\.[A-Za-z][A-Za-z0-9]*)'
     r':(?P<start>\d+)(?:-(?P<end>\d+))?$'
 )
 TOKEN_SPLIT = re.compile(r'[\s/|,=(){}\[\]<>"\']+')
@@ -37,7 +37,7 @@ def candidates(span: str) -> set[str]:
     """Strings to look for near a cited line, derived from one code span."""
     out = set()
     for part in TOKEN_SPLIT.split(span):
-        part = part.strip('.:;*`')
+        part = part.strip('.:;*`@')
         if len(part) < 2:
             continue
         out.add(part)
