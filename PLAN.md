@@ -39,7 +39,7 @@ imports user code, and a React frontend. They drive two modes over one pipeline:
      500 or 400 we reproduced.
    - We run `pygeoapi openapi generate` in the sandbox as a smoke test.
 2. **Editing must patch text, not re-serialize.**
-   - Round-tripping through ruamel.yaml changes 16 of 18 pygeoapi sample configs.
+   - Round-tripping through ruamel.yaml changes 15 of 17 pygeoapi sample configs.
    - The Admin API's PyYAML dump loses comments.
    - So edits are surgical text patches located by ruamel (ADR-0003).
 3. **The Admin API is unsafe by default** (notes §10). It silently loses updates
