@@ -8,12 +8,13 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
 from provider_builder.catalog import Catalog, compile_descriptor
 from provider_builder.render import FormState, ResourceState, form_values_from_provider, render
 
 REPO = Path(__file__).resolve().parents[2]
-spec = importlib.util.spec_from_file_location('check_citations', REPO / 'tools' / 'check_citations.py')
+spec = importlib.util.spec_from_file_location(
+    'check_citations', REPO / 'tools' / 'check_citations.py'
+)
 assert spec and spec.loader
 check_citations = importlib.util.module_from_spec(spec)
 sys.modules['check_citations'] = check_citations
@@ -38,7 +39,7 @@ def _citation_ok(source: str, key: str) -> tuple[bool, str]:
     start, end = int(m['start']), int(m['end'] or m['start'])
     if not 1 <= start <= end <= len(lines):
         return False, f'line out of range: {source}'
-    window = '\n'.join(lines[max(0, start - 4):min(len(lines), end + 3)])
+    window = '\n'.join(lines[max(0, start - 4) : min(len(lines), end + 3)])
     last = key.rsplit('.', 1)[-1]
     return (last in window, f'`{last}` not within 3 lines of {source}')
 
@@ -74,12 +75,13 @@ def test_examples_are_cited_and_exist(catalog: Catalog) -> None:
             assert m, ex['source']
             path = check_citations.resolve(m['repo'], m['path'])
             text = path.read_text(encoding='utf-8').splitlines()
-            block = '\n'.join(text[int(m['start']) - 1:int(m['end'] or m['start'])])
+            block = '\n'.join(text[int(m['start']) - 1 : int(m['end'] or m['start'])])
             assert f'name: {ex["provider"]["name"]}' in block, ex['source']
 
 
-def _strip_defaults(provider: dict[str, Any], fields: dict[str, dict[str, Any]],
-                    prefix: str = '') -> dict[str, Any]:
+def _strip_defaults(
+    provider: dict[str, Any], fields: dict[str, dict[str, Any]], prefix: str = ''
+) -> dict[str, Any]:
     out = {}
     for k, v in provider.items():
         key = f'{prefix}{k}'
@@ -104,8 +106,9 @@ def test_docs_examples_round_trip(catalog: Catalog, descriptor_id: str) -> None:
         variant = ex.get('variant')
         state = form_values_from_provider(d, ex['provider'], variant)
         assert state.extra == {}, f'{ex["id"]}: keys the descriptor does not know: {state.extra}'
-        form = FormState(resource_id='example', resource=ResourceState(title='t'),
-                         providers=[state])
+        form = FormState(
+            resource_id='example', resource=ResourceState(title='t'), providers=[state]
+        )
         rendered = render(form, catalog).resource['providers'][0]
         fields = {f['key']: f for f in d.active_fields(variant)}
         expected = _strip_defaults(ex['provider'], fields)
@@ -133,10 +136,13 @@ def test_compiled_schema_shape(catalog: Catalog) -> None:
     schema = compiled['json_schema']
     assert schema['properties']['$variant']['enum'] == ['fields', 'dsn']
     assert schema['required'] == ['table', 'id_field']
-    by_variant = {c['if']['properties']['$variant']['const']: c['then']['required']
-                  for c in schema['allOf']}
-    assert by_variant == {'fields': ['data.host', 'data.dbname', 'data.user', 'data.password'],
-                          'dsn': ['data']}
+    by_variant = {
+        c['if']['properties']['$variant']['const']: c['then']['required'] for c in schema['allOf']
+    }
+    assert by_variant == {
+        'fields': ['data.host', 'data.dbname', 'data.user', 'data.password'],
+        'dsn': ['data'],
+    }
     connect = compiled['ui']['groups'][0]
     assert connect['id'] == 'connect'
     assert 'table' in connect['keys'] and 'options.pool_size' in connect['advanced']

@@ -7,7 +7,6 @@ from typing import Any
 
 import yaml
 from fastapi.testclient import TestClient
-
 from forms import csv_form
 
 
@@ -24,8 +23,12 @@ def test_catalog(client: TestClient) -> None:
     cards = client.get('/api/catalog').json()
     assert {c['id'] for c in cards} == {'CSV', 'GeoJSON', 'SQLiteGPKG', 'PostgreSQL'}
     detail = client.get('/api/catalog/CSV').json()
-    assert detail['json_schema']['required'] == ['data', 'geometry.x_field', 'geometry.y_field',
-                                                  'id_field']
+    assert detail['json_schema']['required'] == [
+        'data',
+        'geometry.x_field',
+        'geometry.y_field',
+        'id_field',
+    ]
     assert client.get('/api/catalog/Nope').status_code == 400
 
 
@@ -41,13 +44,20 @@ def test_introspect_csv(client: TestClient) -> None:
     result = wait(client, job.json()['job_id'])['result']
     assert result['ok'], result
     assert [c['name'] for c in result['result']['columns']] == [
-        'id', 'stn_id', 'datetime', 'value', 'lat', 'long']
+        'id',
+        'stn_id',
+        'datetime',
+        'value',
+        'lat',
+        'long',
+    ]
 
 
 def test_introspect_rejects_paths_outside_roots(client: TestClient) -> None:
     provider = {'descriptor': 'CSV', 'values': {'data': '/etc/passwd'}}
-    result = wait(client, client.post('/api/introspect', json={'provider': provider})
-                  .json()['job_id'])['result']
+    result = wait(
+        client, client.post('/api/introspect', json={'provider': provider}).json()['job_id']
+    )['result']
     assert not result['ok'] and 'outside the data roots' in result['explanation']['message']
 
 
@@ -58,10 +68,13 @@ def test_probe_validate_export(client: TestClient) -> None:
     assert probe['ok'], probe
     assert probe['result']['sample']['numberMatched'] == 5
     assert probe['result']['extent'] == {
-        'from': 'full', 'bbox': [-122.0, 43.0, -75.0, 49.0],
-        'temporal': ['2000-10-30T18:24:39+00:00', '2007-10-30T08:57:29+00:00']}
-    probes = [{'fields': probe['result']['fields'],
-               'sample_stats': probe['result']['sample_stats']}]
+        'from': 'full',
+        'bbox': [-122.0, 43.0, -75.0, 49.0],
+        'temporal': ['2000-10-30T18:24:39+00:00', '2007-10-30T08:57:29+00:00'],
+    }
+    probes = [
+        {'fields': probe['result']['fields'], 'sample_stats': probe['result']['sample_stats']}
+    ]
 
     v = client.post('/api/validate', json={'form': form, 'target': 'test', 'probes': probes})
     assert v.status_code == 200 and v.json()['blocking'] is False, v.json()
@@ -83,7 +96,7 @@ def test_probe_failure_is_explained(client: TestClient) -> None:
 
 
 def test_validate_blocks_on_errors(client: TestClient) -> None:
-    form = csv_form(resource_id='lakes')          # already in the base config
+    form = csv_form(resource_id='lakes')  # already in the base config
     v = client.post('/api/validate', json={'form': form, 'target': 'test'}).json()
     assert v['blocking'] and 'config.splice' in [f['code'] for f in v['findings']]
 

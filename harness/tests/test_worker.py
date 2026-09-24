@@ -16,10 +16,15 @@ PATH_MAP = [{'server': '/data', 'host': str(DATA)}]
 
 
 def run(job: dict[str, Any], env: dict[str, str] | None = None) -> dict[str, Any]:
-    proc = subprocess.run([sys.executable, '-m', 'pygeoapi_provider_harness.worker'],
-                          input=json.dumps({'protocol': 1, 'path_map': PATH_MAP, **job}),
-                          capture_output=True, text=True, timeout=120, check=True,
-                          env={**os.environ, **(env or {})})
+    proc = subprocess.run(
+        [sys.executable, '-m', 'pygeoapi_provider_harness.worker'],
+        input=json.dumps({'protocol': 1, 'path_map': PATH_MAP, **job}),
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=True,
+        env={**os.environ, **(env or {})},
+    )
     return json.loads(proc.stdout)
 
 
@@ -40,15 +45,22 @@ def test_probe_csv() -> None:
     out = run({'kind': 'probe', 'resource_yaml': CSV, 'limit': 2})
     assert out['ok'], out
     r = out['result']
-    assert r['fields'] == {'id': {'type': 'string'}, 'stn_id': {'type': 'integer'},
-                           'datetime': {'type': 'string'}, 'value': {'type': 'number'}}
+    assert r['fields'] == {
+        'id': {'type': 'string'},
+        'stn_id': {'type': 'integer'},
+        'datetime': {'type': 'string'},
+        'value': {'type': 'number'},
+    }
     assert len(r['sample']['features']) == 2 and r['sample']['numberMatched'] == 5
     assert r['id_stats'] == {'count': 5, 'nulls': 0, 'duplicates': 0}
 
 
 def test_probe_geojson() -> None:
-    yaml_text = CSV.replace('name: CSV', 'name: GeoJSON').replace(
-        '/data/obs.csv', '/data/ne_110m_lakes.geojson').split('          geometry:')[0]
+    yaml_text = (
+        CSV.replace('name: CSV', 'name: GeoJSON')
+        .replace('/data/obs.csv', '/data/ne_110m_lakes.geojson')
+        .split('          geometry:')[0]
+    )
     out = run({'kind': 'probe', 'resource_yaml': yaml_text, 'limit': 3})
     assert out['ok'], out
     assert out['result']['extent']['from'] == 'full'
@@ -69,8 +81,10 @@ def test_missing_variable_is_pygeoapis_error() -> None:
 
 def test_secrets_are_redacted() -> None:
     yaml_text = CSV.replace('/data/obs.csv', '/data/${SECRET_NAME}.csv')
-    out = run({'kind': 'probe', 'resource_yaml': yaml_text, 'secret_env': ['SECRET_NAME']},
-              env={'SECRET_NAME': 'hunter2-is-secret'})
+    out = run(
+        {'kind': 'probe', 'resource_yaml': yaml_text, 'secret_env': ['SECRET_NAME']},
+        env={'SECRET_NAME': 'hunter2-is-secret'},
+    )
     assert not out['ok']
     assert 'hunter2-is-secret' not in json.dumps(out) and '***' in out['error']['message']
 
@@ -78,8 +92,13 @@ def test_secrets_are_redacted() -> None:
 def test_introspect_csv_and_geojson() -> None:
     csv = run({'kind': 'introspect', 'what': 'csv', 'values_yaml': 'data: /data/obs.csv\n'})
     assert {c['name']: c['type'] for c in csv['result']['columns']}['value'] == 'number'
-    gj = run({'kind': 'introspect', 'what': 'geojson',
-              'values_yaml': 'data: /data/ne_110m_lakes.geojson\n'})
+    gj = run(
+        {
+            'kind': 'introspect',
+            'what': 'geojson',
+            'values_yaml': 'data: /data/ne_110m_lakes.geojson\n',
+        }
+    )
     assert gj['result']['count'] == 25
     # this file keeps its ids in properties, not at the feature's top level
     assert not gj['result']['features_have_id']
@@ -87,8 +106,9 @@ def test_introspect_csv_and_geojson() -> None:
 
 
 def test_introspect_gpkg_needs_no_spatialite() -> None:
-    out = run({'kind': 'introspect', 'what': 'sqlite',
-               'values_yaml': 'data: /data/poi_portugal.gpkg\n'})
+    out = run(
+        {'kind': 'introspect', 'what': 'sqlite', 'values_yaml': 'data: /data/poi_portugal.gpkg\n'}
+    )
     (table,) = out['result']['tables']
     assert table['name'] == 'poi_portugal' and 'osm_id' in [c['name'] for c in table['columns']]
 

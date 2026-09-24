@@ -26,8 +26,13 @@ def docker_ready() -> bool:
 
 
 def compose_ready() -> bool:
-    return docker_ready() and _ok(['docker', 'network', 'inspect', NETWORK]) and _ok(
-        ['docker', 'exec', 'provider-builder-dev-postgis-1', 'pg_isready', '-U', 'postgres'])
+    return (
+        docker_ready()
+        and _ok(['docker', 'network', 'inspect', NETWORK])
+        and _ok(
+            ['docker', 'exec', 'provider-builder-dev-postgis-1', 'pg_isready', '-U', 'postgres']
+        )
+    )
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:

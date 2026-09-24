@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-
 from provider_builder.app import create_app
 from provider_builder.catalog import Catalog
 from provider_builder.runner import SubprocessRunner
@@ -35,8 +33,14 @@ def settings(tmp_path: Path) -> Settings:
     return Settings(
         root=tmp_path,
         data_roots=[DataRoot(name='test-data', host_path=data, server_path='/data')],
-        targets=[Target(id='test', title='Test target', base_config=config,
-                        server_url='http://localhost:5080')],
+        targets=[
+            Target(
+                id='test',
+                title='Test target',
+                base_config=config,
+                server_url='http://localhost:5080',
+            )
+        ],
         catalogs=[REPO / 'catalog'],
         sandbox=SandboxSettings(runner='subprocess', timeout_s=60),
         allowed_hosts=['localhost', '127.0.0.1'],

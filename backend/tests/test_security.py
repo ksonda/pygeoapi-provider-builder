@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-
 from provider_builder.app import create_app
 from provider_builder.fs import PathError, list_dir, resolve_server_path
 from provider_builder.service import Service
@@ -16,7 +15,9 @@ from provider_builder.settings import Settings
 
 @pytest.fixture
 def raw_client(service: Service) -> TestClient:
-    return TestClient(create_app(service=service, check_sandbox=False), base_url='http://localhost')
+    return TestClient(
+        create_app(service=service, check_sandbox=False), base_url='http://localhost'
+    )
 
 
 def test_get_is_allowed(raw_client: TestClient) -> None:
@@ -35,20 +36,29 @@ def test_state_change_needs_custom_header(raw_client: TestClient) -> None:
 
 
 def test_foreign_origin_is_refused(raw_client: TestClient) -> None:
-    r = raw_client.post('/api/render', json={'form': {'resource_id': 'x'}},
-                        headers={'X-Provider-Builder': '1', 'Origin': 'https://evil.example'})
+    r = raw_client.post(
+        '/api/render',
+        json={'form': {'resource_id': 'x'}},
+        headers={'X-Provider-Builder': '1', 'Origin': 'https://evil.example'},
+    )
     assert r.status_code == 403
 
 
 def test_cross_site_fetch_is_refused(raw_client: TestClient) -> None:
-    r = raw_client.post('/api/render', json={'form': {'resource_id': 'x'}},
-                        headers={'X-Provider-Builder': '1', 'Sec-Fetch-Site': 'cross-site'})
+    r = raw_client.post(
+        '/api/render',
+        json={'form': {'resource_id': 'x'}},
+        headers={'X-Provider-Builder': '1', 'Sec-Fetch-Site': 'cross-site'},
+    )
     assert r.status_code == 403
 
 
 def test_allowed_origin_passes(raw_client: TestClient) -> None:
-    r = raw_client.post('/api/render', json={'form': {'resource_id': 'x'}},
-                        headers={'X-Provider-Builder': '1', 'Origin': 'http://localhost:5173'})
+    r = raw_client.post(
+        '/api/render',
+        json={'form': {'resource_id': 'x'}},
+        headers={'X-Provider-Builder': '1', 'Origin': 'http://localhost:5173'},
+    )
     assert r.status_code == 200
 
 
@@ -60,8 +70,9 @@ def test_resolves_inside_root(settings: Settings) -> None:
     assert r.host_path == settings.data_roots[0].host_path.resolve() / 'obs.csv'
 
 
-@pytest.mark.parametrize('path', ['/data/../etc/passwd', '/etc/passwd', 'data/obs.csv',
-                                  '/database/x', '/data/\x00'])
+@pytest.mark.parametrize(
+    'path', ['/data/../etc/passwd', '/etc/passwd', 'data/obs.csv', '/database/x', '/data/\x00']
+)
 def test_rejects_outside_or_traversal(settings: Settings, path: str) -> None:
     with pytest.raises(PathError):
         resolve_server_path(settings, path)

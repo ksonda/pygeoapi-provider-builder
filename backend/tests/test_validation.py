@@ -5,7 +5,6 @@ from typing import Any
 
 import pytest
 import yaml
-
 from conftest import BASE_CONFIG
 from forms import csv_form, postgres_form
 from provider_builder.catalog import Catalog
@@ -36,7 +35,8 @@ def test_missing_required_fields(catalog: Catalog) -> None:
     del form['providers'][0]['values']['geometry.x_field']
     findings = descriptor_findings(FormState.model_validate(form), catalog)
     assert [(f.pointer, f.message) for f in findings] == [
-        ('/providers/0/values/geometry.x_field', 'X (longitude) column is required.')]
+        ('/providers/0/values/geometry.x_field', 'X (longitude) column is required.')
+    ]
 
 
 def test_variant_required_fields(catalog: Catalog) -> None:
@@ -70,9 +70,14 @@ def merged(resource_id: str, resource: dict[str, Any]) -> dict[str, Any]:
 
 
 CRS84 = 'http://www.opengis.net/def/crs/OGC/1.3/CRS84'
-GOOD = {'type': 'collection', 'title': 't', 'description': 'd', 'keywords': ['k'],
-        'extents': {'spatial': {'bbox': [0, 0, 1, 1], 'crs': CRS84}},
-        'providers': [{'type': 'feature', 'name': 'CSV', 'data': '/x.csv'}]}
+GOOD = {
+    'type': 'collection',
+    'title': 't',
+    'description': 'd',
+    'keywords': ['k'],
+    'extents': {'spatial': {'bbox': [0, 0, 1, 1], 'crs': CRS84}},
+    'providers': [{'type': 'feature', 'name': 'CSV', 'data': '/x.csv'}],
+}
 
 
 def test_base_config_is_schema_valid() -> None:
@@ -112,8 +117,11 @@ def test_unknown_placeholder_downgrades_to_warning() -> None:
 
 
 def rules(resource: dict[str, Any], **kw: Any) -> list[str]:
-    ctx = RuleContext(config=kw.pop('config', None) or merged('obs', resource),
-                      resource_id=kw.pop('resource_id', 'obs'), **kw)
+    ctx = RuleContext(
+        config=kw.pop('config', None) or merged('obs', resource),
+        resource_id=kw.pop('resource_id', 'obs'),
+        **kw,
+    )
     return codes(rule_findings(ctx))
 
 
@@ -121,24 +129,66 @@ def test_good_resource_passes_rules() -> None:
     assert rules(GOOD) == []
 
 
-@pytest.mark.parametrize(('change', 'code'), [
-    ({'type': None}, 'rule.resource-type'),
-    ({'links': [{'type': 'text/html', 'rel': 'about', 'href': 'https://x'}]}, 'rule.link-title'),
-    ({'extents': {'spatial': {'bbox': [0, 0, 1, 1], 'crs': CRS84},
-                  'temporal': {'begin': dt.datetime(2000, 1, 1, tzinfo=dt.UTC)}}},
-     'rule.temporal'),
-    ({'extents': {'spatial': {'bbox': [0, 0, 1, 1], 'crs': CRS84},
-                  'temporal': {'begin': '2000-01-01', 'end': None}}}, 'rule.temporal'),
-    ({'extents': {'spatial': {'bbox': [0, 0, 1, 1]}}}, 'rule.extent-crs'),
-    ({'providers': [GOOD['providers'][0], GOOD['providers'][0]]},
-     'rule.one-provider-per-type'),
-    ({'providers': [{'type': 'tile', 'name': 'MVT-proxy', 'data': 'x',
-                     'format': {'name': 'pbf', 'mimetype': 'application/vnd.mapbox-vector-tile'}},
-                    GOOD['providers'][0]]}, 'rule.default-provider'),
-    ({'providers': [GOOD['providers'][0], {'type': 'tile', 'name': 'MVT-proxy', 'data': 'x'}]},
-     'rule.format'),
-    ({'providers': [{**GOOD['providers'][0], 'crs': [4326]}]}, 'rule.crs-list'),
-])
+@pytest.mark.parametrize(
+    ('change', 'code'),
+    [
+        ({'type': None}, 'rule.resource-type'),
+        (
+            {'links': [{'type': 'text/html', 'rel': 'about', 'href': 'https://x'}]},
+            'rule.link-title',
+        ),
+        (
+            {
+                'extents': {
+                    'spatial': {'bbox': [0, 0, 1, 1], 'crs': CRS84},
+                    'temporal': {'begin': dt.datetime(2000, 1, 1, tzinfo=dt.UTC)},
+                }
+            },
+            'rule.temporal',
+        ),
+        (
+            {
+                'extents': {
+                    'spatial': {'bbox': [0, 0, 1, 1], 'crs': CRS84},
+                    'temporal': {'begin': '2000-01-01', 'end': None},
+                }
+            },
+            'rule.temporal',
+        ),
+        ({'extents': {'spatial': {'bbox': [0, 0, 1, 1]}}}, 'rule.extent-crs'),
+        (
+            {'providers': [GOOD['providers'][0], GOOD['providers'][0]]},
+            'rule.one-provider-per-type',
+        ),
+        (
+            {
+                'providers': [
+                    {
+                        'type': 'tile',
+                        'name': 'MVT-proxy',
+                        'data': 'x',
+                        'format': {
+                            'name': 'pbf',
+                            'mimetype': 'application/vnd.mapbox-vector-tile',
+                        },
+                    },
+                    GOOD['providers'][0],
+                ]
+            },
+            'rule.default-provider',
+        ),
+        (
+            {
+                'providers': [
+                    GOOD['providers'][0],
+                    {'type': 'tile', 'name': 'MVT-proxy', 'data': 'x'},
+                ]
+            },
+            'rule.format',
+        ),
+        ({'providers': [{**GOOD['providers'][0], 'crs': [4326]}]}, 'rule.crs-list'),
+    ],
+)
 def test_rule_violations(change: dict[str, Any], code: str) -> None:
     resource = {**GOOD, **change}
     if change.get('type', 'x') is None:
@@ -160,28 +210,43 @@ def test_server_level_rules() -> None:
     config['server']['admin'] = True
     config['resources']['obs']['providers'][0]['data'] = '${SECRET}'
     found = rules(GOOD, config=config)
-    assert {'rule.server-languages', 'rule.openapi-metadata', 'rule.default-items',
-            'rule.admin-secrets'} <= set(found)
+    assert {
+        'rule.server-languages',
+        'rule.openapi-metadata',
+        'rule.default-items',
+        'rule.admin-secrets',
+    } <= set(found)
 
 
 def test_probe_based_rules() -> None:
-    resource = {**GOOD, 'providers': [{**GOOD['providers'][0], 'title_field': 'stn_id',
-                                      'properties': ['value', 'nope']}]}
-    fields = [{'id': {'type': 'string'}, 'stn_id': {'type': 'integer'},
-               'value': {'type': 'number'}}]
+    resource = {
+        **GOOD,
+        'providers': [
+            {**GOOD['providers'][0], 'title_field': 'stn_id', 'properties': ['value', 'nope']}
+        ],
+    }
+    fields = [
+        {'id': {'type': 'string'}, 'stn_id': {'type': 'integer'}, 'value': {'type': 'number'}}
+    ]
     found = rules(resource, probe_fields=fields, probe_samples=[{}])
     assert found.count('rule.fields-exist') == 1 and 'rule.title-field-string' in found
 
 
-@pytest.mark.parametrize(('values', 'severity'), [
-    (['https://geoconnex.us/ref/gages/1', 'https://geoconnex.us/ref/gages/2'], None),
-    (['https://example.org/1'], 'warning'),
-    (['12345'], 'error'),
-])
+@pytest.mark.parametrize(
+    ('values', 'severity'),
+    [
+        (['https://geoconnex.us/ref/gages/1', 'https://geoconnex.us/ref/gages/2'], None),
+        (['https://example.org/1'], 'warning'),
+        (['12345'], 'error'),
+    ],
+)
 def test_geoconnex_uri_field(values: list[str], severity: str | None) -> None:
     resource = {**GOOD, 'providers': [{**GOOD['providers'][0], 'uri_field': 'uri'}]}
-    ctx = RuleContext(config=merged('obs', resource), resource_id='obs',
-                      probe_fields=[{'uri': {'type': 'string'}}],
-                      probe_samples=[{'uri': {'values': values, 'nulls': 0}}])
+    ctx = RuleContext(
+        config=merged('obs', resource),
+        resource_id='obs',
+        probe_fields=[{'uri': {'type': 'string'}}],
+        probe_samples=[{'uri': {'values': values, 'nulls': 0}}],
+    )
     found = [f for f in rule_findings(ctx) if f.code == 'rule.geoconnex-uri']
     assert [f.severity for f in found] == ([severity] if severity else [])

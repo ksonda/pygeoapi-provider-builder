@@ -4,24 +4,47 @@ import datetime as dt
 
 import pytest
 import yaml
-
 from provider_builder.yamlio import SpliceError, append_resource, detect_mapping_indent, dump
 
-RESOURCE = {'type': 'collection', 'title': 'New', 'description': 'd', 'keywords': ['k'],
-            'extents': {'spatial': {'bbox': [0, 0, 1, 1],
-                                    'crs': 'http://www.opengis.net/def/crs/OGC/1.3/CRS84'}},
-            'providers': [{'type': 'feature', 'name': 'CSV', 'data': '/data/x.csv'}]}
+RESOURCE = {
+    'type': 'collection',
+    'title': 'New',
+    'description': 'd',
+    'keywords': ['k'],
+    'extents': {
+        'spatial': {'bbox': [0, 0, 1, 1], 'crs': 'http://www.opengis.net/def/crs/OGC/1.3/CRS84'}
+    },
+    'providers': [{'type': 'feature', 'name': 'CSV', 'data': '/data/x.csv'}],
+}
 
 
-@pytest.mark.parametrize('value', ['yes', 'No', 'on', 'off', 'y', '123', '1.5', '1_000',
-                                   '2020-01-01', '~', 'null', 'true', '0x1F', '1:20'])
+@pytest.mark.parametrize(
+    'value',
+    [
+        'yes',
+        'No',
+        'on',
+        'off',
+        'y',
+        '123',
+        '1.5',
+        '1_000',
+        '2020-01-01',
+        '~',
+        'null',
+        'true',
+        '0x1F',
+        '1:20',
+    ],
+)
 def test_yaml11_lookalikes_are_quoted(value: str) -> None:
     text = dump({'k': value})
-    assert yaml.safe_load(text) == {'k': value}, text     # PyYAML = pygeoapi's loader
+    assert yaml.safe_load(text) == {'k': value}, text  # PyYAML = pygeoapi's loader
 
 
-@pytest.mark.parametrize('value', ['${DB_PASSWORD}', '${A}:${B}', '${PORT:-5432}',
-                                   'postgresql://${U}:${P}@db/x'])
+@pytest.mark.parametrize(
+    'value', ['${DB_PASSWORD}', '${A}:${B}', '${PORT:-5432}', 'postgresql://${U}:${P}@db/x']
+)
 def test_placeholders_stay_plain(value: str) -> None:
     assert dump({'k': value}) == f'k: {value}\n'
 
