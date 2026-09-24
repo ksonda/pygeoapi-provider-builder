@@ -36,3 +36,5 @@ backups/
 # Sample data copied from vendor/pygeoapi/tests/data by `make fixtures`
 /docker/data/
 /docker/pygeoapi/pygeoapi.env
+frontend/test-results/
+frontend/playwright-report/

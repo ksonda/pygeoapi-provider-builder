@@ -122,6 +122,17 @@ class Catalog:
             if b['key'] in own or b['key'] in hidden or b['key'] in variant_keys:
                 continue
             merged.append(dict(b))
+        # Connection fields keep the provider's order; map-step fields keep the
+        # base order, so every provider's "Map fields" step reads the same way.
+        base_index = {b['key']: i for i, b in enumerate(base.get('fields', []))}
+        position = {f['key']: i for i, f in enumerate(merged)}
+
+        def order(f: dict[str, Any]) -> tuple[int, int]:
+            if f.get('step', 'connect') == 'connect':
+                return (0, position[f['key']])
+            return (1, base_index.get(f['key'], len(base_index) + position[f['key']]))
+
+        merged.sort(key=order)
         return Descriptor(
             id=raw['id'],
             raw=raw,

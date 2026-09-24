@@ -62,6 +62,16 @@ fields:
     step: connect
     source: pygeoapi/provider/csv_.py:168
 
+  - key: properties
+    type: field[]
+    title: Published properties
+    help: >-
+      Publish only these properties. pygeoapi's CSV provider treats the list
+      as a set, so it doesn't keep this order.
+    choices_from: probe.fields
+    step: map
+    source: pygeoapi/provider/csv_.py:180
+
 examples:
   - id: docs
     source: docs/source/publishing/ogcapi-features.rst:63-76

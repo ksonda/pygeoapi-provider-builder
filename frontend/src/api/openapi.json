@@ -1,0 +1,1487 @@
+{
+  "components": {
+    "schemas": {
+      "EnvVar": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "secret": {
+            "title": "Secret",
+            "type": "boolean"
+          },
+          "used_by": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Used By",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "used_by",
+          "secret"
+        ],
+        "title": "EnvVar",
+        "type": "object"
+      },
+      "ExportRequest": {
+        "properties": {
+          "form": {
+            "$ref": "#/components/schemas/FormState"
+          },
+          "probes": {
+            "default": [],
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ProbeSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Probes",
+            "type": "array"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "form",
+          "target"
+        ],
+        "title": "ExportRequest",
+        "type": "object"
+      },
+      "ExportResult": {
+        "properties": {
+          "env": {
+            "items": {
+              "$ref": "#/components/schemas/EnvVar"
+            },
+            "title": "Env",
+            "type": "array"
+          },
+          "fragment_yaml": {
+            "title": "Fragment Yaml",
+            "type": "string"
+          },
+          "instructions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Instructions",
+            "type": "array"
+          },
+          "merged_filename": {
+            "title": "Merged Filename",
+            "type": "string"
+          },
+          "merged_yaml": {
+            "title": "Merged Yaml",
+            "type": "string"
+          },
+          "validation": {
+            "$ref": "#/components/schemas/ValidateResult"
+          }
+        },
+        "required": [
+          "fragment_yaml",
+          "merged_yaml",
+          "merged_filename",
+          "env",
+          "instructions",
+          "validation"
+        ],
+        "title": "ExportResult",
+        "type": "object"
+      },
+      "Extents": {
+        "properties": {
+          "spatial": {
+            "$ref": "#/components/schemas/Spatial",
+            "default": {
+              "bbox": [
+                -180,
+                -90,
+                180,
+                90
+              ],
+              "crs": "http://www.opengis.net/def/crs/OGC/1.3/CRS84"
+            }
+          },
+          "temporal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Temporal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "Extents",
+        "type": "object"
+      },
+      "Finding": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Details"
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hint"
+          },
+          "layer": {
+            "enum": [
+              "descriptor",
+              "pygeoapi-schema",
+              "runtime-rules",
+              "probe",
+              "openapi"
+            ],
+            "title": "Layer",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "pointer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pointer"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          }
+        },
+        "required": [
+          "layer",
+          "severity",
+          "code",
+          "message"
+        ],
+        "title": "Finding",
+        "type": "object"
+      },
+      "FormState": {
+        "properties": {
+          "form_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Form Version",
+            "type": "integer"
+          },
+          "providers": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ProviderState"
+            },
+            "title": "Providers",
+            "type": "array"
+          },
+          "resource": {
+            "$ref": "#/components/schemas/ResourceState",
+            "default": {
+              "description": "",
+              "extents": {
+                "spatial": {
+                  "bbox": [
+                    -180,
+                    -90,
+                    180,
+                    90
+                  ],
+                  "crs": "http://www.opengis.net/def/crs/OGC/1.3/CRS84"
+                }
+              },
+              "keywords": [],
+              "links": [],
+              "title": "",
+              "type": "collection"
+            }
+          },
+          "resource_id": {
+            "title": "Resource Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_id"
+        ],
+        "title": "FormState",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IntrospectRequest": {
+        "properties": {
+          "provider": {
+            "$ref": "#/components/schemas/ProviderState"
+          },
+          "resource_id": {
+            "default": "resource",
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "test_secrets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "description": "ENV_NAME -> value",
+            "title": "Test Secrets",
+            "type": "object"
+          }
+        },
+        "required": [
+          "provider"
+        ],
+        "title": "IntrospectRequest",
+        "type": "object"
+      },
+      "JobCreated": {
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "JobCreated",
+        "type": "object"
+      },
+      "JobInfo": {
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "number"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "finished": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "result": {
+            "title": "Result"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "created",
+          "finished"
+        ],
+        "title": "JobInfo",
+        "type": "object"
+      },
+      "Link": {
+        "properties": {
+          "href": {
+            "title": "Href",
+            "type": "string"
+          },
+          "hreflang": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hreflang"
+          },
+          "length": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Length"
+          },
+          "rel": {
+            "title": "Rel",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "rel",
+          "title",
+          "href"
+        ],
+        "title": "Link",
+        "type": "object"
+      },
+      "OpenAPICheckRequest": {
+        "properties": {
+          "form": {
+            "$ref": "#/components/schemas/FormState"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "test_secrets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "description": "ENV_NAME -> value",
+            "title": "Test Secrets",
+            "type": "object"
+          }
+        },
+        "required": [
+          "form",
+          "target"
+        ],
+        "title": "OpenAPICheckRequest",
+        "type": "object"
+      },
+      "ProbeRequest": {
+        "properties": {
+          "form": {
+            "$ref": "#/components/schemas/FormState"
+          },
+          "provider_index": {
+            "default": 0,
+            "title": "Provider Index",
+            "type": "integer"
+          },
+          "test_secrets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "description": "ENV_NAME -> value",
+            "title": "Test Secrets",
+            "type": "object"
+          }
+        },
+        "required": [
+          "form"
+        ],
+        "title": "ProbeRequest",
+        "type": "object"
+      },
+      "ProbeSummary": {
+        "description": "What validation needs from a probe (per provider).",
+        "properties": {
+          "fields": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fields"
+          },
+          "sample_stats": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Stats"
+          }
+        },
+        "title": "ProbeSummary",
+        "type": "object"
+      },
+      "ProviderState": {
+        "properties": {
+          "descriptor": {
+            "title": "Descriptor",
+            "type": "string"
+          },
+          "extra": {
+            "additionalProperties": true,
+            "default": {},
+            "description": "Keys the descriptor does not know",
+            "title": "Extra",
+            "type": "object"
+          },
+          "secrets": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SecretRef"
+            },
+            "default": {},
+            "title": "Secrets",
+            "type": "object"
+          },
+          "values": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Values",
+            "type": "object"
+          },
+          "variant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Variant"
+          }
+        },
+        "required": [
+          "descriptor"
+        ],
+        "title": "ProviderState",
+        "type": "object"
+      },
+      "RenderRequest": {
+        "properties": {
+          "form": {
+            "$ref": "#/components/schemas/FormState"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          }
+        },
+        "required": [
+          "form"
+        ],
+        "title": "RenderRequest",
+        "type": "object"
+      },
+      "RenderResult": {
+        "properties": {
+          "env": {
+            "items": {
+              "$ref": "#/components/schemas/EnvVar"
+            },
+            "title": "Env",
+            "type": "array"
+          },
+          "resource": {
+            "additionalProperties": true,
+            "title": "Resource",
+            "type": "object"
+          },
+          "resource_id": {
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "yaml": {
+            "title": "Yaml",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_id",
+          "resource",
+          "yaml",
+          "env",
+          "warnings"
+        ],
+        "title": "RenderResult",
+        "type": "object"
+      },
+      "ResourceState": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              }
+            ],
+            "default": "",
+            "title": "Description"
+          },
+          "extents": {
+            "$ref": "#/components/schemas/Extents",
+            "default": {
+              "spatial": {
+                "bbox": [
+                  -180,
+                  -90,
+                  180,
+                  90
+                ],
+                "crs": "http://www.opengis.net/def/crs/OGC/1.3/CRS84"
+              }
+            }
+          },
+          "keywords": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "type": "object"
+              }
+            ],
+            "default": [],
+            "title": "Keywords"
+          },
+          "linked_data_context": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Data Context"
+          },
+          "links": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            },
+            "title": "Links",
+            "type": "array"
+          },
+          "templates_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Templates Path"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              }
+            ],
+            "default": "",
+            "title": "Title"
+          },
+          "type": {
+            "const": "collection",
+            "default": "collection",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "title": "ResourceState",
+        "type": "object"
+      },
+      "SecretRef": {
+        "properties": {
+          "env": {
+            "description": "Environment variable the server must define",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "title": "Env",
+            "type": "string"
+          }
+        },
+        "required": [
+          "env"
+        ],
+        "title": "SecretRef",
+        "type": "object"
+      },
+      "Spatial": {
+        "properties": {
+          "bbox": {
+            "default": [
+              -180,
+              -90,
+              180,
+              90
+            ],
+            "items": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                }
+              ]
+            },
+            "title": "Bbox",
+            "type": "array"
+          },
+          "crs": {
+            "default": "http://www.opengis.net/def/crs/OGC/1.3/CRS84",
+            "title": "Crs",
+            "type": "string"
+          }
+        },
+        "title": "Spatial",
+        "type": "object"
+      },
+      "Temporal": {
+        "properties": {
+          "begin": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Begin"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End"
+          }
+        },
+        "title": "Temporal",
+        "type": "object"
+      },
+      "ValidateRequest": {
+        "properties": {
+          "env": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "description": "Known non-secret variable values",
+            "title": "Env",
+            "type": "object"
+          },
+          "form": {
+            "$ref": "#/components/schemas/FormState"
+          },
+          "probes": {
+            "default": [],
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ProbeSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Probes",
+            "type": "array"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "form",
+          "target"
+        ],
+        "title": "ValidateRequest",
+        "type": "object"
+      },
+      "ValidateResult": {
+        "properties": {
+          "blocking": {
+            "title": "Blocking",
+            "type": "boolean"
+          },
+          "env": {
+            "items": {
+              "$ref": "#/components/schemas/EnvVar"
+            },
+            "title": "Env",
+            "type": "array"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "merged_yaml": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Merged Yaml"
+          },
+          "yaml": {
+            "title": "Yaml",
+            "type": "string"
+          }
+        },
+        "required": [
+          "findings",
+          "blocking",
+          "yaml",
+          "merged_yaml",
+          "env"
+        ],
+        "title": "ValidateResult",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "VerifyRequest": {
+        "properties": {
+          "resource_id": {
+            "title": "Resource Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_id"
+        ],
+        "title": "VerifyRequest",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "pygeoapi Provider Builder",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/catalog": {
+      "get": {
+        "operationId": "catalog_api_catalog_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Catalog Api Catalog Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Catalog",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/api/catalog/{descriptor_id}": {
+      "get": {
+        "operationId": "catalog_detail_api_catalog__descriptor_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "descriptor_id",
+            "required": true,
+            "schema": {
+              "title": "Descriptor Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Catalog Detail Api Catalog  Descriptor Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Catalog Detail",
+        "tags": [
+          "catalog"
+        ]
+      }
+    },
+    "/api/export": {
+      "post": {
+        "operationId": "export_api_export_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export",
+        "tags": [
+          "publish"
+        ]
+      }
+    },
+    "/api/fs": {
+      "get": {
+        "operationId": "fs_api_fs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Fs Api Fs Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fs",
+        "tags": [
+          "mode-a"
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "operationId": "health_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Api Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "meta"
+        ]
+      }
+    },
+    "/api/introspect": {
+      "post": {
+        "operationId": "introspect_api_introspect_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IntrospectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Introspect",
+        "tags": [
+          "mode-a"
+        ]
+      }
+    },
+    "/api/jobs/{job_id}": {
+      "get": {
+        "operationId": "job_api_jobs__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Job",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/jobs/{job_id}/events": {
+      "get": {
+        "operationId": "job_events_api_jobs__job_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Job Events",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
+    "/api/openapi-check": {
+      "post": {
+        "operationId": "openapi_check_api_openapi_check_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenAPICheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Openapi Check",
+        "tags": [
+          "mode-a"
+        ]
+      }
+    },
+    "/api/probe": {
+      "post": {
+        "operationId": "probe_api_probe_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProbeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Probe",
+        "tags": [
+          "mode-a"
+        ]
+      }
+    },
+    "/api/render": {
+      "post": {
+        "operationId": "render_endpoint_api_render_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Render Endpoint",
+        "tags": [
+          "mode-a"
+        ]
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "operationId": "public_settings_api_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Public Settings Api Settings Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Public Settings",
+        "tags": [
+          "meta"
+        ]
+      }
+    },
+    "/api/targets/{target_id}/verify": {
+      "post": {
+        "operationId": "verify_api_targets__target_id__verify_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "title": "Target Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Verify Api Targets  Target Id  Verify Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verify",
+        "tags": [
+          "publish"
+        ]
+      }
+    },
+    "/api/validate": {
+      "post": {
+        "operationId": "validate_api_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidateResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate",
+        "tags": [
+          "mode-a"
+        ]
+      }
+    }
+  }
+}

@@ -77,7 +77,8 @@ def check_file(md: Path) -> tuple[int, list[str], list[str]]:
                 errors.append(f'{where}: missing file `{span}`')
                 continue
             lines = cache.setdefault(
-                target, target.read_text(encoding='utf-8', errors='replace').splitlines())
+                target, target.read_text(encoding='utf-8', errors='replace').splitlines()
+            )
             start = int(m['start'])
             end = int(m['end'] or start)
             if not 1 <= start <= end <= len(lines):
@@ -96,10 +97,10 @@ def check_file(md: Path) -> tuple[int, list[str], list[str]]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('files', nargs='*', type=Path)
-    parser.add_argument('--strict', action='store_true',
-                        help='treat warnings as errors')
-    parser.add_argument('-q', '--quiet', action='store_true',
-                        help='only print the summary and errors')
+    parser.add_argument('--strict', action='store_true', help='treat warnings as errors')
+    parser.add_argument(
+        '-q', '--quiet', action='store_true', help='only print the summary and errors'
+    )
     args = parser.parse_args()
     files = args.files or sorted((ROOT / 'docs').rglob('*.md'))
     if not (VENDOR / DEFAULT_REPO).is_dir():
@@ -117,8 +118,10 @@ def main() -> int:
     if not args.quiet:
         for w in all_warnings:
             print('WARN ', w)
-    print(f'{total} citations checked in {len(files)} files: '
-          f'{len(all_errors)} errors, {len(all_warnings)} warnings')
+    print(
+        f'{total} citations checked in {len(files)} files: '
+        f'{len(all_errors)} errors, {len(all_warnings)} warnings'
+    )
     failed = all_errors or (args.strict and all_warnings)
     return 1 if failed else 0
 
