@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/pygeoapi-provider-builder/catalog/descriptor.schema.json",
+  "title": "Provider descriptor (v1)",
+  "description": "One file per pygeoapi provider. See PLAN.md §5.",
+  "type": "object",
+  "required": ["descriptor_version", "id", "provider_type", "title"],
+  "additionalProperties": false,
+  "properties": {
+    "descriptor_version": {"const": 1},
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9_./-]+$"},
+    "base": {"type": "boolean", "description": "True for catalog/_base/* files"},
+    "plugin": {"type": "string", "description": "Provider `name`: registry short name or dotted class path"},
+    "provider_type": {"enum": ["feature", "coverage", "record", "map", "tile", "edr", "stac"]},
+    "title": {"type": "string"},
+    "summary": {"type": "string"},
+    "ogc_api": {"type": "array", "items": {"enum": ["features", "coverages", "records", "maps", "tiles", "edr", "stac"]}},
+    "origin": {"enum": ["core", "plugin", "created"]},
+    "version": {"type": "string"},
+    "source": {"type": "array", "items": {"type": "string"}},
+    "docs": {"type": "string", "format": "uri"},
+    "requires": {"type": "array", "items": {"type": "string"}},
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bbox": {"type": "boolean"}, "datetime": {"type": "boolean"},
+        "properties": {"type": "boolean"}, "sortby": {"type": "boolean"},
+        "select_properties": {"type": "boolean"}, "skip_geometry": {"type": "boolean"},
+        "q": {"type": "boolean"}, "hits": {"type": "boolean"}, "cql": {"type": "boolean"},
+        "transactions": {"type": "boolean"}, "crs_native": {"type": "boolean"}
+      }
+    },
+    "variants": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "fields"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_-]*$"},
+          "title": {"type": "string"},
+          "help": {"type": "string"},
+          "fields": {"type": "array", "items": {"$ref": "#/$defs/field"}}
+        }
+      }
+    },
+    "fields": {"type": "array", "items": {"$ref": "#/$defs/field"}},
+    "hide": {"type": "array", "items": {"type": "string"}, "description": "Base field keys this provider doesn't use"},
+    "probe": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"enum": ["feature", "record", "coverage", "edr", "tile", "map", "none"]},
+        "copy_data": {"type": "boolean", "description": "Probe a temporary copy of `data` (providers that write to their file)"}
+      }
+    },
+    "introspect": {
+      "type": "object",
+      "required": ["what"],
+      "additionalProperties": false,
+      "properties": {
+        "what": {"enum": ["csv", "geojson", "sqlite", "sql"]},
+        "dialect": {"enum": ["postgresql", "mysql"]},
+        "needs": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "notes": {"type": "array", "items": {"type": "string"}},
+    "verdict": {
+      "type": "object",
+      "required": ["status"],
+      "additionalProperties": false,
+      "properties": {"status": {"enum": ["ok", "known-issue"]}, "note": {"type": "string"}}
+    },
+    "examples": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "source", "provider"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {"type": "string"},
+          "source": {"type": "string"},
+          "variant": {"type": "string"},
+          "provider": {"type": "object", "required": ["type", "name", "data"]}
+        }
+      }
+    }
+  },
+  "allOf": [
+    {"if": {"properties": {"base": {"const": true}}, "required": ["base"]},
+     "else": {"required": ["plugin", "origin", "probe"]}}
+  ],
+  "$defs": {
+    "field": {
+      "type": "object",
+      "required": ["key", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "key": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(\\.[A-Za-z_][A-Za-z0-9_-]*)*$"},
+        "type": {"enum": ["string", "text", "integer", "number", "boolean", "enum", "datetime",
+                          "string[]", "number[]", "secret", "path", "url", "crs", "crs[]",
+                          "bbox", "field", "field[]", "object", "yaml"]},
+        "title": {"type": "string"},
+        "help": {"type": "string"},
+        "required": {"type": "boolean"},
+        "default": {},
+        "suggest": {},
+        "choices": {"type": "array"},
+        "choices_from": {"type": "string", "pattern": "^(probe|introspect)\\.[a-z_]+$"},
+        "field_types": {"type": "array", "items": {"enum": ["string", "integer", "number", "boolean"]}},
+        "extensions": {"type": "array", "items": {"type": "string", "pattern": "^\\.[a-z0-9]+$"}},
+        "advanced": {"type": "boolean"},
+        "step": {"enum": ["connect", "map"]},
+        "unit": {"type": "string"},
+        "min": {"type": "number"},
+        "max": {"type": "number"},
+        "pattern": {"type": "string"},
+        "format": {"type": "string"},
+        "show_if": {"type": "object"},
+        "emit": {"enum": ["if_set", "always"]},
+        "env_name": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+        "drift": {"enum": ["checked", "passthrough", "docs_only"]},
+        "source": {"oneOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}, "minItems": 1}]},
+        "docs": {"type": "string"},
+        "deprecated": {"type": "boolean"},
+        "geoconnex": {"type": "boolean"}
+      }
+    }
+  }
+}

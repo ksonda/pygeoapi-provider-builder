@@ -1,0 +1,259 @@
+"""FastAPI application (PLAN.md §10)."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import threading
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any
+
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from pydantic import BaseModel, Field
+
+from . import __version__
+from .catalog import CatalogError
+from .fs import PathError
+from .render import FormState, ProviderState, RenderResult
+from .security import GuardMiddleware
+from .service import ExportResult, ProbeSummary, Service, ValidateResult
+from .settings import Settings, load_settings
+from .yamlio import SpliceError
+
+FRONTEND_DIST = Path(__file__).resolve().parents[2] / 'frontend' / 'dist'
+
+
+class TestSecrets(BaseModel):
+    """Secret values for one test run. Kept in memory for that request only."""
+
+    test_secrets: dict[str, str] = Field(default={}, description='ENV_NAME -> value')
+
+
+class IntrospectRequest(TestSecrets):
+    resource_id: str = 'resource'
+    provider: ProviderState
+
+
+class ProbeRequest(TestSecrets):
+    form: FormState
+    provider_index: int = 0
+
+
+class RenderRequest(BaseModel):
+    form: FormState
+    target: str | None = None
+
+
+class ValidateRequest(BaseModel):
+    form: FormState
+    target: str
+    probes: list[ProbeSummary | None] = []
+    env: dict[str, str] = Field(default={}, description='Known non-secret variable values')
+
+
+class OpenAPICheckRequest(TestSecrets):
+    form: FormState
+    target: str
+
+
+class ExportRequest(BaseModel):
+    form: FormState
+    target: str
+    probes: list[ProbeSummary | None] = []
+
+
+class VerifyRequest(BaseModel):
+    resource_id: str
+
+
+class JobCreated(BaseModel):
+    job_id: str
+
+
+class JobInfo(BaseModel):
+    id: str
+    kind: str
+    status: str
+    created: float
+    finished: float | None
+    result: Any = None
+    error: str | None = None
+
+
+def create_app(
+    settings: Settings | None = None, service: Service | None = None, check_sandbox: bool = True
+) -> FastAPI:
+    settings = settings or (service.settings if service else load_settings())
+    svc = service or Service(settings)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        if check_sandbox:
+            threading.Thread(target=svc.check_sandbox, daemon=True).start()
+        yield
+        svc.jobs.shutdown()
+
+    app = FastAPI(
+        title='pygeoapi Provider Builder',
+        version=__version__,
+        lifespan=lifespan,
+        openapi_url='/api/openapi.json',
+        docs_url='/api/docs',
+        redoc_url=None,
+    )
+    app.state.service = svc
+    origins = settings.allowed_origins
+    app.add_middleware(
+        GuardMiddleware, allowed_hosts=settings.allowed_hosts, allowed_origins=origins
+    )
+
+    @app.exception_handler(CatalogError)
+    @app.exception_handler(PathError)
+    @app.exception_handler(SpliceError)
+    async def _bad_request(request: Request, exc: Exception) -> JSONResponse:
+        return JSONResponse(
+            {'type': 'about:blank', 'title': 'Bad request', 'status': 400, 'detail': str(exc)},
+            status_code=400,
+            media_type='application/problem+json',
+        )
+
+    def _target(target_id: str) -> None:
+        try:
+            settings.target(target_id)
+        except KeyError:
+            raise HTTPException(404, f'Unknown target {target_id!r}') from None
+
+    # ------------------------------------------------------------------ meta
+
+    @app.get('/api/health', tags=['meta'])
+    def health() -> dict[str, Any]:
+        return svc.health()
+
+    @app.get('/api/settings', tags=['meta'])
+    def public_settings() -> dict[str, Any]:
+        return {
+            'data_roots': [
+                {'name': r.name, 'server_path': r.server_path} for r in settings.data_roots
+            ],
+            'targets': [
+                {
+                    'id': t.id,
+                    'title': t.title,
+                    'kind': t.kind,
+                    'server_url': t.server_url,
+                    'base_config': t.base_config.name,
+                }
+                for t in settings.targets
+            ],
+            'geoconnex': settings.geoconnex,
+            'runner': svc.runner.name,
+        }
+
+    # --------------------------------------------------------------- catalog
+
+    @app.get('/api/catalog', tags=['catalog'])
+    def catalog() -> list[dict[str, Any]]:
+        return svc.cards()
+
+    @app.get('/api/catalog/{descriptor_id}', tags=['catalog'])
+    def catalog_detail(descriptor_id: str) -> dict[str, Any]:
+        return svc.detail(descriptor_id)
+
+    @app.get('/api/fs', tags=['mode-a'])
+    def fs(path: str) -> dict[str, Any]:
+        return svc.list_dir(path)
+
+    # ---------------------------------------------------------------- mode A
+
+    @app.post('/api/render', tags=['mode-a'])
+    def render_endpoint(req: RenderRequest) -> RenderResult:
+        if req.target:
+            _target(req.target)
+        return svc.render(req.form, req.target)
+
+    @app.post('/api/validate', tags=['mode-a'])
+    def validate(req: ValidateRequest) -> ValidateResult:
+        _target(req.target)
+        return svc.validate(req.form, req.target, req.probes, req.env)
+
+    @app.post('/api/introspect', status_code=202, tags=['mode-a'])
+    def introspect(req: IntrospectRequest) -> JobCreated:
+        svc.catalog.get(req.provider.descriptor)
+        job = svc.jobs.submit(
+            'introspect', lambda: svc.introspect(req.provider, req.resource_id, req.test_secrets)
+        )
+        return JobCreated(job_id=job.id)
+
+    @app.post('/api/probe', status_code=202, tags=['mode-a'])
+    def probe(req: ProbeRequest) -> JobCreated:
+        if not 0 <= req.provider_index < len(req.form.providers):
+            raise HTTPException(400, 'provider_index out of range')
+        job = svc.jobs.submit(
+            'probe', lambda: svc.probe(req.form, req.provider_index, req.test_secrets)
+        )
+        return JobCreated(job_id=job.id)
+
+    @app.post('/api/openapi-check', status_code=202, tags=['mode-a'])
+    def openapi_check(req: OpenAPICheckRequest) -> JobCreated:
+        _target(req.target)
+        job = svc.jobs.submit(
+            'openapi', lambda: svc.openapi_check(req.form, req.target, req.test_secrets)
+        )
+        return JobCreated(job_id=job.id)
+
+    @app.post('/api/export', tags=['publish'])
+    def export(req: ExportRequest) -> ExportResult:
+        _target(req.target)
+        return svc.export(req.form, req.target, req.probes)
+
+    @app.post('/api/targets/{target_id}/verify', tags=['publish'])
+    def verify(target_id: str, req: VerifyRequest) -> dict[str, Any]:
+        _target(target_id)
+        return svc.verify(target_id, req.resource_id)
+
+    # ------------------------------------------------------------------- jobs
+
+    @app.get('/api/jobs/{job_id}', tags=['jobs'])
+    def job(job_id: str) -> JobInfo:
+        j = svc.jobs.get(job_id)
+        if j is None:
+            raise HTTPException(404, 'Unknown job')
+        return JobInfo(**j.public())
+
+    @app.get('/api/jobs/{job_id}/events', tags=['jobs'])
+    async def job_events(job_id: str) -> StreamingResponse:
+        if svc.jobs.get(job_id) is None:
+            raise HTTPException(404, 'Unknown job')
+
+        async def stream() -> AsyncIterator[str]:
+            last = None
+            while True:
+                j = svc.jobs.get(job_id)
+                if j is None:
+                    return
+                if j.status != last:
+                    last = j.status
+                    yield f'event: status\ndata: {json.dumps(j.public(), default=str)}\n\n'
+                if j.status in ('done', 'failed'):
+                    return
+                await asyncio.sleep(0.2)
+
+        return StreamingResponse(stream(), media_type='text/event-stream')
+
+    # --------------------------------------------------------------- frontend
+
+    if FRONTEND_DIST.is_dir():
+
+        @app.get('/{path:path}', include_in_schema=False)
+        def spa(path: str) -> FileResponse:
+            if path.startswith('api/'):
+                raise HTTPException(404)
+            candidate = (FRONTEND_DIST / path).resolve()
+            if path and candidate.is_file() and FRONTEND_DIST in candidate.parents:
+                return FileResponse(candidate)
+            return FileResponse(FRONTEND_DIST / 'index.html')
+
+    return app

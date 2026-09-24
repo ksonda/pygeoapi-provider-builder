@@ -1,0 +1,21 @@
+[project]
+name = "provider-builder"
+version = "0.1.0"
+description = "pygeoapi Provider Builder: backend API"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    "pygeoapi==0.24.0",               # pinned target (ADR-0001); schema, yaml_load semantics
+    "pygeoapi-provider-harness",      # worker protocol and probe code (runs in the sandbox)
+    "fastapi>=0.141",                 # HTTP API and its OpenAPI document (ADR-0011)
+    "uvicorn>=0.53",                  # ASGI server for local use
+    "ruamel.yaml>=0.19",              # round-trip YAML: locate nodes, dump fragments (ADR-0003)
+    "httpx>=0.28",                    # live endpoint verification; FastAPI TestClient
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["provider_builder"]

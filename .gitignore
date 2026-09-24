@@ -32,3 +32,7 @@ backups/
 .DS_Store
 .idea/
 .vscode/
+
+# Sample data copied from vendor/pygeoapi/tests/data by `make fixtures`
+/docker/data/
+/docker/pygeoapi/pygeoapi.env

@@ -1,0 +1,47 @@
+# Dev stack for pygeoapi Provider Builder: `make stack-up` / `make stack-down`.
+#
+# - pygeoapi: the pinned official image, serving docker/pygeoapi/pygeoapi.config.yml.
+#   The image's entrypoint regenerates OpenAPI on every start, so after editing
+#   the config run `docker compose -f docker/compose.yaml restart pygeoapi`.
+# - postgis: seeded with pygeoapi's own test data (tests/data/hotosm_bdi_waterways.sql.gz:
+#   schema `osm`, table `hotosm_bdi_waterways`), as pygeoapi's CI does.
+#   imresamu/postgis is the multi-arch build by a docker-postgis maintainer; the
+#   official postgis/postgis images are amd64-only.
+name: provider-builder-dev
+
+services:
+  pygeoapi:
+    image: geopython/pygeoapi:0.24.0
+    ports:
+      - "127.0.0.1:5080:80"   # not 5000: macOS AirPlay Receiver listens there
+    environment:
+      PYGEOAPI_CONFIG: /config/pygeoapi.config.yml
+    env_file:
+      - ./pygeoapi/pygeoapi.env        # secrets for the dev stack (gitignored; created by make)
+    volumes:
+      - ./pygeoapi:/config:ro          # a directory mount, so atomic file replaces are seen
+      - ./data:/data                   # writable: pygeoapi's GeoPackage provider writes to .gpkg
+    depends_on:
+      postgis:
+        condition: service_healthy
+
+  postgis:
+    image: imresamu/postgis:17-3.6
+    environment:
+      POSTGRES_DB: test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - ../vendor/pygeoapi/tests/data/hotosm_bdi_waterways.sql.gz:/fixtures/hotosm_bdi_waterways.sql.gz:ro
+      - ./postgis/20-load-fixtures.sh:/docker-entrypoint-initdb.d/20-load-fixtures.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d test && psql -U postgres -d test -tAc \"select 1 from osm.hotosm_bdi_waterways limit 1\" | grep -q 1"]
+      interval: 3s
+      timeout: 5s
+      retries: 60
+
+networks:
+  default:
+    name: provider-builder-dev

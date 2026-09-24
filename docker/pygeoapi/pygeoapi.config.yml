@@ -1,0 +1,59 @@
+# pygeoapi config for the Provider Builder dev stack (docker/compose.yaml).
+# The builder's export target merges new resources into this file.
+# Comments, key order and formatting outside the new resource are preserved.
+
+server:
+    bind:
+        host: 0.0.0.0
+        port: 80
+    url: http://localhost:5080
+    mimetype: application/json; charset=UTF-8
+    encoding: utf-8
+    languages:
+        - en-US
+    cors: true
+    pretty_print: true
+    limits:
+        default_items: 10
+        max_items: 50
+    map:
+        url: https://tile.openstreetmap.org/{z}/{x}/{y}.png
+        attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap contributors</a>'
+
+logging:
+    level: ERROR
+
+metadata:
+    identification:
+        title: Provider Builder dev stack
+        description: Collections published with pygeoapi Provider Builder
+        keywords: [geospatial, data, api]
+        keywords_type: theme
+        terms_of_service: https://creativecommons.org/licenses/by/4.0/
+        url: https://example.org
+    license:
+        name: CC-BY 4.0 license
+        url: https://creativecommons.org/licenses/by/4.0/
+    provider:
+        name: Provider Builder
+        url: https://example.org
+    contact:
+        name: Dev, Stack
+        email: dev@example.org
+
+resources:
+    lakes:  # a resource that ships with the stack
+        type: collection
+        title: Large Lakes
+        description: lakes of the world, public domain
+        keywords:
+            - lakes
+        extents:
+            spatial:
+                bbox: [-180,-90,180,90]
+                crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+        providers:
+            - type: feature
+              name: GeoJSON
+              data: /data/ne_110m_lakes.geojson
+              id_field: id

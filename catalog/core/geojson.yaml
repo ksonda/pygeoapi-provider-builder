@@ -1,0 +1,58 @@
+descriptor_version: 1
+id: GeoJSON
+plugin: GeoJSON
+provider_type: feature
+origin: core
+title: GeoJSON file
+summary: Publish a GeoJSON FeatureCollection file as OGC API - Features.
+ogc_api: [features]
+source: [pygeoapi/provider/geojson.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-features.html#geojson
+requires: []
+capabilities:
+  bbox: true
+  datetime: false
+  properties: true
+  sortby: false
+  select_properties: true
+  skip_geometry: true
+  q: false
+  hits: true
+  cql: false
+  transactions: false
+probe: {kind: feature}
+introspect: {what: geojson, needs: [data]}
+notes:
+  - pygeoapi reads the whole file on every request. That's fine for small files.
+  - Field types come from the first feature only.
+  - >-
+    Editing is not offered: in 0.24.0 the provider's create() fails on the
+    request body that the API passes it (docs/pygeoapi-notes.md §5.1).
+hide: [editable]
+fields:
+  - key: data
+    type: path
+    title: GeoJSON file
+    required: true
+    extensions: [.geojson, .json]
+    step: connect
+    source: pygeoapi/provider/geojson.py:110
+
+  - key: id_field
+    type: field
+    title: Identifier property
+    help: >-
+      Used when a feature has no top-level id: the id is copied from this
+      property.
+    choices_from: introspect.columns
+    step: connect
+    source: pygeoapi/provider/geojson.py:139
+
+examples:
+  - id: docs
+    source: docs/source/publishing/ogcapi-features.rst:193-199
+    provider:
+      type: feature
+      name: GeoJSON
+      data: tests/data/file.json
+      id_field: id

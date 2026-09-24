@@ -1,0 +1,123 @@
+# Plain-language explanations for probe and sandbox failures (PLAN.md §6.3).
+#
+# Rules are tried in order; the first match wins. A rule matches when:
+#   - `types`: any exception in the cause chain has one of these class names
+#     (the last dotted component is enough), and
+#   - `text`: this regex matches the chain's messages, the traceback or the
+#     worker's log output (case-insensitive), and
+#   - `descriptor`: (optional) the provider's descriptor id.
+# `message` and `hint` may use {named} groups from `text` and these context
+# values: {host}, {port}, {path}, {table}, {descriptor}, {timeout}.
+# Each rule has a fixture test in backend/tests/test_errors.py.
+
+- id: timeout
+  types: [SandboxTimeout]
+  message: The test took longer than {timeout} seconds and was stopped.
+  hint: >-
+    A slow network, a very large file or an unindexed table can cause this.
+    Check the connection details, or try a smaller dataset first.
+
+- id: sandbox-unavailable
+  types: [SandboxUnavailable]
+  message: The test sandbox isn't running.
+  hint: Start Docker Desktop, then try again.
+
+- id: pg-auth
+  text: 'password authentication failed for user "(?P<user>[^"]+)"'
+  message: The database rejected the user name or password for user {user}.
+  hint: Check the user and the password you entered for this test.
+
+- id: pg-unknown-host
+  text: 'could not translate host name "(?P<badhost>[^"]+)"'
+  message: The host name {badhost} couldn't be found.
+  hint: >-
+    Check the spelling. The name must resolve from the pygeoapi server,
+    which may differ from your own computer.
+
+- id: pg-refused
+  text: 'connection refused|could not connect to server|Connection refused'
+  message: Couldn't reach {host}:{port}. Check the host, port and firewall.
+  hint: The database must accept connections from the pygeoapi server.
+
+- id: pg-timeout
+  text: 'timeout expired|timed out'
+  message: Connecting to {host}:{port} timed out.
+  hint: A firewall may be dropping the connection, or the host is wrong.
+
+- id: pg-no-database
+  text: 'database "(?P<db>[^"]+)" does not exist'
+  message: There is no database called {db} on that server.
+
+- id: sql-table
+  text: "Table '(?P<badtable>[^']+)' not found"
+  message: There's no table or view called {badtable} in the schemas searched.
+  hint: Check the table name and the list of schemas to search.
+
+- id: gpkg-readonly
+  descriptor: SQLiteGPKG
+  text: "couldn't load support|AutoGPKGStart"
+  message: pygeoapi couldn't enable GeoPackage support for this file.
+  hint: >-
+    pygeoapi's GeoPackage provider writes to the .gpkg when it opens it, so
+    the file and its folder must be writable by the pygeoapi server.
+
+- id: gpkg-missing
+  descriptor: SQLiteGPKG
+  text: 'Path to sqlite does not exist'
+  message: No file at {path}, as the server sees it.
+
+- id: gpkg-table
+  descriptor: SQLiteGPKG
+  types: [InvalidPluginError]
+  message: >-
+    pygeoapi couldn't open table {table} with that identifier column.
+  hint: Pick the table and identifier column from the lists.
+
+- id: spatialite
+  text: 'Extension loading error|mod_spatialite'
+  message: SpatiaLite isn't available where pygeoapi runs.
+  hint: The official pygeoapi Docker image includes it.
+
+- id: file-missing
+  types: [FileNotFoundError]
+  text: "No such file or directory: '(?P<missing>[^']+)'"
+  message: No file at {missing}, as the server sees it.
+  hint: Choose the file from a data root, so the path is one the server can read.
+
+- id: csv-bad-column
+  descriptor: CSV
+  types: [KeyError]
+  text: "KeyError: '(?P<column>[^']+)'"
+  message: The CSV file has no column called {column}.
+  hint: Pick the columns from the lists, which come from the file's header row.
+
+- id: csv-no-id
+  descriptor: CSV
+  types: [KeyError]
+  text: 'KeyError: None'
+  message: Choose the identifier column. pygeoapi needs it for every row.
+
+- id: invalid-plugin
+  types: [InvalidPluginError]
+  text: 'Plugin (?P<plugin>\S+) not found'
+  message: pygeoapi has no provider called '{plugin}'.
+  hint: Built-in providers use short names such as CSV; others need a dotted Python path.
+
+- id: module-missing
+  types: [ModuleNotFoundError]
+  text: "No module named '(?P<module>[^']+)'"
+  message: The Python package that provides {module} isn't installed where pygeoapi runs.
+
+- id: crs
+  types: [CRSError]
+  message: That coordinate reference system isn't recognised.
+  hint: Use a CRS URI such as http://www.opengis.net/def/crs/EPSG/0/4326.
+
+- id: bad-json
+  types: [JSONDecodeError]
+  message: The file isn't valid JSON.
+
+- id: empty-geojson
+  descriptor: GeoJSON
+  types: [IndexError]
+  message: The GeoJSON file has no features.

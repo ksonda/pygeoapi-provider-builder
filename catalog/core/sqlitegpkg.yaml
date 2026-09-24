@@ -1,0 +1,76 @@
+descriptor_version: 1
+id: SQLiteGPKG
+plugin: SQLiteGPKG
+provider_type: feature
+origin: core
+title: GeoPackage or SpatiaLite file
+summary: Publish a table from a GeoPackage (.gpkg) or SpatiaLite (.sqlite) file.
+ogc_api: [features]
+source: [pygeoapi/provider/sqlite.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-features.html#sqlitegpkg
+requires: []
+capabilities:
+  bbox: true
+  datetime: false
+  properties: true
+  sortby: false
+  select_properties: false
+  skip_geometry: true
+  q: false
+  hits: true
+  cql: false
+  transactions: false
+# SpatiaLite's AutoGPKGStart() writes to the GeoPackage, so the probe works on
+# a temporary copy and never touches the original (docs/pygeoapi-notes.md §5.4).
+probe: {kind: feature, copy_data: true}
+introspect: {what: sqlite, needs: [data]}
+notes:
+  - >-
+    The server needs SpatiaLite (the official pygeoapi image has it) and
+    write access to the file: pygeoapi's GeoPackage support writes to the
+    .gpkg when it loads it, and fails on a read-only file.
+  - Only INTEGER, REAL, TEXT and BLOB columns can be filtered.
+hide: [editable]
+fields:
+  - key: data
+    type: path
+    title: GeoPackage or SpatiaLite file
+    required: true
+    extensions: [.gpkg, .sqlite]
+    step: connect
+    source: pygeoapi/provider/sqlite.py:180
+
+  - key: table
+    type: string
+    title: Table
+    required: true
+    choices_from: introspect.tables
+    step: connect
+    source: pygeoapi/provider/sqlite.py:68
+
+  - key: id_field
+    type: field
+    title: Identifier column
+    help: Must be a column of the table; pygeoapi checks it when it loads.
+    required: true
+    choices_from: introspect.columns
+    step: connect
+    source: pygeoapi/provider/sqlite.py:255
+
+examples:
+  - id: docs-sqlite
+    source: docs/source/publishing/ogcapi-features.rst:759-766
+    provider:
+      type: feature
+      name: SQLiteGPKG
+      data: ./tests/data/ne_110m_admin_0_countries.sqlite
+      id_field: ogc_fid
+      table: ne_110m_admin_0_countries
+  - id: docs-gpkg
+    source: docs/source/publishing/ogcapi-features.rst:771-778
+    provider:
+      type: feature
+      name: SQLiteGPKG
+      data: ./tests/data/poi_portugal.gpkg
+      id_field: osm_id
+      table: poi_portugal

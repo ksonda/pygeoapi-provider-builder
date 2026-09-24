@@ -1,0 +1,44 @@
+# uv workspace root (virtual: not a package itself). See docs/decisions.md ADR-0002.
+[tool.uv.workspace]
+members = ["backend", "harness"]
+
+[tool.uv.sources]
+pygeoapi-provider-harness = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1",
+    "ruff>=0.16",
+    "mypy>=2.3",
+    "types-PyYAML",
+    "psycopg2-binary>=2.9",  # local PostgreSQL probes with the subprocess runner (tests)
+    "geoalchemy2>=0.20",     # imported by pygeoapi's SQL providers
+]
+
+[tool.ruff]
+line-length = 99
+target-version = "py312"
+extend-exclude = ["vendor", "workspace", "frontend"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM"]
+ignore = ["S101"]  # assert is fine in tests
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S", "B"]
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true
+exclude = ["vendor/", "workspace/", "frontend/"]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests", "harness/tests", "tests"]
+markers = [
+    "docker: needs a running Docker daemon and the pinned pygeoapi image",
+    "compose: needs the docker compose dev stack (make stack-up)",
+]

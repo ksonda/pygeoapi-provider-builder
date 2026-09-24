@@ -1,0 +1,32 @@
+# Development settings for pygeoapi Provider Builder.
+# Relative paths are resolved against this file's directory.
+# Settings are read-only in the v1 UI; see backend/provider_builder/settings.py.
+
+data_roots:
+  - name: sample-data
+    host_path: docker/data          # filled by `make fixtures`
+    server_path: /data              # where the dev pygeoapi container sees it
+
+targets:
+  - id: dev-stack
+    title: Local dev stack (docker compose)
+    kind: export
+    base_config: docker/pygeoapi/pygeoapi.config.yml
+    server_url: http://localhost:5080
+
+catalogs: [catalog]
+
+sandbox:
+  runner: auto                      # docker when available, else a local subprocess
+  image: geopython/pygeoapi:0.24.0
+  network: provider-builder-dev     # the dev stack's network, so probes reach `postgis`
+  timeout_s: 60
+
+geoconnex: true
+
+allowed_hosts: [127.0.0.1, localhost]
+allowed_origins:
+  - http://127.0.0.1:8765
+  - http://localhost:8765
+  - http://127.0.0.1:5173
+  - http://localhost:5173

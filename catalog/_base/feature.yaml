@@ -1,0 +1,125 @@
+# Keys every feature provider inherits from pygeoapi's BaseProvider, plus the
+# provider keys the API layer reads itself. Provider descriptors extend this
+# file (override by key, or drop keys with `hide:`).
+# Verified against pygeoapi 0.24.0; see docs/pygeoapi-notes.md §1.7 and §3.2.
+descriptor_version: 1
+id: _base/feature
+base: true
+provider_type: feature
+title: Feature provider (common keys)
+source:
+  - pygeoapi/provider/base.py
+  - pygeoapi/crs.py
+fields:
+  - key: id_field
+    type: field
+    title: Identifier field
+    help: >-
+      The property that uniquely identifies each item. It becomes the item's
+      id in /items/{id}.
+    choices_from: introspect.columns
+    step: connect
+    source: pygeoapi/provider/base.py:72
+
+  - key: storage_crs
+    type: crs
+    title: Storage CRS
+    help: The coordinate reference system the data is stored in.
+    default: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/base.py:86
+
+  - key: always_xy
+    type: boolean
+    title: Always x/y axis order
+    help: >-
+      Force longitude/latitude (x, y) axis order when pygeoapi transforms
+      coordinates between CRSs.
+    default: false
+    advanced: true
+    step: connect
+    source: pygeoapi/crs.py:556
+
+  - key: storage_crs_coordinate_epoch
+    type: number
+    title: Storage CRS coordinate epoch
+    help: Only echoed in the collection metadata (storageCrsCoordinateEpoch).
+    advanced: true
+    step: connect
+    source: pygeoapi/api/collection.py:276
+
+  - key: title_field
+    type: field
+    title: Title field
+    help: A text property to show as each item's title in HTML pages.
+    choices_from: probe.fields
+    field_types: [string]
+    step: map
+    source: pygeoapi/provider/base.py:78
+
+  - key: time_field
+    type: field
+    title: Time field
+    help: The property holding each item's date or time.
+    choices_from: probe.fields
+    step: map
+    source: pygeoapi/provider/base.py:77
+
+  - key: uri_field
+    type: field
+    title: URI field
+    help: >-
+      A property holding each item's persistent URI. pygeoapi uses it as the
+      item's JSON-LD @id and in its item links.
+    choices_from: probe.fields
+    field_types: [string]
+    geoconnex: true
+    step: map
+    source: pygeoapi/provider/base.py:73
+
+  - key: properties
+    type: field[]
+    title: Published properties
+    help: >-
+      Publish only these properties, in this order. Leave empty to publish
+      them all.
+    choices_from: probe.fields
+    step: map
+    source: pygeoapi/provider/base.py:79
+
+  - key: crs
+    type: crs[]
+    title: Supported output CRSs
+    help: >-
+      CRSs clients may request with ?crs=. CRS84 is always added. Each must
+      be a CRS URI.
+    advanced: true
+    step: map
+    source: pygeoapi/crs.py:111
+
+  - key: count
+    type: boolean
+    title: Count matching items
+    help: Report numberMatched. Turning this off can speed up large tables.
+    default: true
+    advanced: true
+    step: map
+    source: pygeoapi/provider/base.py:70
+
+  - key: include_extra_query_parameters
+    type: boolean
+    title: Pass unknown query parameters to the provider
+    default: false
+    advanced: true
+    step: map
+    source: pygeoapi/provider/base.py:81
+
+  - key: editable
+    type: boolean
+    title: Allow edits (transactions)
+    help: Enables create, update and delete through the API.
+    default: false
+    advanced: true
+    step: map
+    source: pygeoapi/provider/base.py:69

@@ -1,0 +1,178 @@
+descriptor_version: 1
+id: PostgreSQL
+plugin: PostgreSQL
+provider_type: feature
+origin: core
+title: PostgreSQL / PostGIS table or view
+summary: Publish a table, view or materialized view as OGC API - Features.
+ogc_api: [features]
+source: [pygeoapi/provider/sql.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-features.html#postgresql
+requires: [sqlalchemy, geoalchemy2, psycopg2]
+capabilities:
+  bbox: true
+  datetime: true
+  properties: true
+  sortby: true
+  select_properties: true
+  skip_geometry: true
+  q: false
+  hits: true
+  cql: true
+  transactions: true
+probe: {kind: feature}
+introspect: {what: sql, dialect: postgresql}
+notes:
+  - >-
+    To publish a custom query, create a view (or materialized view) in the
+    database and pick it as the table.
+  - >-
+    pygeoapi caches the table structure per process: restart the server
+    after adding columns.
+variants:
+  - id: fields
+    title: Connection details
+    fields:
+      - key: data.host
+        type: string
+        title: Host
+        required: true
+        help: The database host as the pygeoapi server sees it.
+        step: connect
+        source: pygeoapi/provider/sql.py:604
+      - key: data.port
+        type: integer
+        title: Port
+        default: 5432
+        min: 1
+        max: 65535
+        step: connect
+        source: pygeoapi/provider/sql.py:605
+      - key: data.dbname
+        type: string
+        title: Database
+        required: true
+        step: connect
+        source: pygeoapi/provider/sql.py:607
+      - key: data.user
+        type: string
+        title: User
+        required: true
+        step: connect
+        source: pygeoapi/provider/sql.py:603
+      - key: data.password
+        type: secret
+        title: Password
+        required: true
+        env_name: DB_PASSWORD
+        step: connect
+        source: pygeoapi/provider/sql.py:610
+      - key: data.search_path
+        type: string[]
+        title: Schemas to search
+        help: Schemas searched in order for the table; the first match wins.
+        default: [public]
+        step: connect
+        source: pygeoapi/provider/sql.py:615
+  - id: dsn
+    title: Connection string
+    help: A SQLAlchemy URL such as postgresql://user:password@host:5432/dbname.
+    fields:
+      - key: data
+        type: secret
+        title: Connection string
+        required: true
+        format: postgresql-dsn
+        env_name: DB_DSN
+        step: connect
+        source: pygeoapi/provider/sql.py:597
+      - key: options.search_path
+        type: string[]
+        title: Schemas to search
+        default: [public]
+        step: connect
+        source: pygeoapi/provider/sql.py:616
+fields:
+  - key: table
+    type: string
+    title: Table or view
+    required: true
+    help: A table, view or materialized view name, without the schema.
+    choices_from: introspect.tables
+    step: connect
+    source: pygeoapi/provider/sql.py:115
+
+  - key: id_field
+    type: field
+    title: Identifier column
+    help: A unique column. pygeoapi treats it as the primary key, so views work too.
+    required: true
+    choices_from: introspect.columns
+    step: connect
+    source: pygeoapi/provider/sql.py:116
+
+  - key: geom_field
+    type: field
+    title: Geometry column
+    help: If the column doesn't exist, items are published without geometry.
+    default: geom
+    choices_from: introspect.geometry_columns
+    step: connect
+    source: pygeoapi/provider/sql.py:117
+
+  - key: options.connect_timeout
+    type: integer
+    title: Connect timeout
+    unit: s
+    min: 1
+    advanced: true
+    step: connect
+    drift: passthrough
+    source: pygeoapi/resources/schemas/config/pygeoapi-config-0.x.yml:725
+
+  - key: options.pool_size
+    type: integer
+    title: Connection pool size
+    default: 5
+    min: 1
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/sql.py:636
+
+  - key: options.pool_timeout
+    type: integer
+    title: Pool timeout
+    unit: s
+    default: 30
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/sql.py:639
+
+examples:
+  - id: docs-dict-form
+    source: docs/source/publishing/ogcapi-features.rst:644-659
+    variant: fields
+    provider:
+      type: feature
+      name: PostgreSQL
+      data:
+        host: 127.0.0.1
+        port: 3010
+        dbname: test
+        user: postgres
+        password: postgres
+        search_path: [osm, public]
+      id_field: osm_id
+      table: hotosm_bdi_waterways
+      geom_field: foo_geom
+      count: true
+  - id: docs-dsn-form
+    source: docs/source/publishing/ogcapi-features.rst:663-671
+    variant: dsn
+    provider:
+      type: feature
+      name: PostgreSQL
+      data: postgresql://postgres:postgres@127.0.0.1:3010/test
+      id_field: osm_id
+      table: hotosm_bdi_waterways
+      geom_field: foo_geom
