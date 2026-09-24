@@ -1,0 +1,27 @@
+lakes2:
+    type: collection
+    title:
+        en: Large lakes
+        fr: Grands lacs
+    description: Natural Earth lakes
+    keywords:
+        - lakes
+        - 'yes'
+        - '2020'
+    links:
+        - type: text/html
+          rel: canonical
+          title: Natural Earth
+          href: https://www.naturalearthdata.com/
+    extents:
+        spatial:
+            bbox: [-180, -90, 180, 90]
+            crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    providers:
+        - type: feature
+          name: GeoJSON
+          data: /data/ne_110m_lakes.geojson
+          id_field: id
+          properties:
+              - name
+              - scalerank

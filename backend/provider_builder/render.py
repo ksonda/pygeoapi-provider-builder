@@ -44,7 +44,7 @@ class Link(BaseModel):
 
 
 class Spatial(BaseModel):
-    bbox: list[float] = [-180, -90, 180, 90]
+    bbox: list[int | float] = [-180, -90, 180, 90]
     crs: str = CRS84
 
 
