@@ -2,7 +2,8 @@
 
 Citations look like `pygeoapi/provider/csv_.py:57` (relative to the pinned
 pygeoapi checkout in vendor/pygeoapi) or `pygeoapi-plugins:pygeoapi_plugins/x.py:12`
-(relative to vendor/<repo>). A range such as `:57-60` is allowed.
+(relative to vendor/<repo>). A range such as `:57-60` is allowed. The repos and
+their commits are listed in tools/vendor.txt (`make vendor` checks them out).
 
 For every citation the checker verifies that the file exists and the line is in
 range (errors), and that at least one of the other code spans on the same
@@ -23,6 +24,12 @@ ROOT = Path(__file__).resolve().parent.parent
 VENDOR = ROOT / 'vendor'
 DEFAULT_REPO = 'pygeoapi'
 WINDOW = 3
+#: Repos listed in tools/vendor.txt: citations into them must resolve.
+REPOS = {
+    line.split()[0]
+    for line in (ROOT / 'tools' / 'vendor.txt').read_text(encoding='utf-8').splitlines()
+    if line.strip() and not line.startswith('#')
+}
 
 CODE_SPAN = re.compile(r'`([^`\n]+)`')
 CITATION = re.compile(
@@ -47,7 +54,7 @@ def candidates(span: str) -> set[str]:
 
 
 def resolve(repo: str | None, path: str) -> Path | None:
-    if repo and (VENDOR / repo).is_dir():
+    if repo and (repo in REPOS or (VENDOR / repo).is_dir()):
         return VENDOR / repo / path
     if repo:  # "repo:" prefix that is not a vendored repo, e.g. a scheme
         return None
@@ -61,8 +68,7 @@ def check_file(md: Path) -> tuple[int, list[str], list[str]]:
     cache: dict[Path, list[str]] = {}
     for lineno, text in enumerate(md.read_text(encoding='utf-8').splitlines(), 1):
         spans = CODE_SPAN.findall(text)
-        cites = [(s, CITATION.match(s)) for s in spans]
-        cites = [(s, m) for s, m in cites if m]
+        cites = [(s, m) for s in spans if (m := CITATION.match(s))]
         if not cites:
             continue
         others = [s for s in spans if not CITATION.match(s)]
@@ -103,9 +109,12 @@ def main() -> int:
     )
     args = parser.parse_args()
     files = args.files or sorted((ROOT / 'docs').rglob('*.md'))
-    if not (VENDOR / DEFAULT_REPO).is_dir():
-        print('vendor/pygeoapi is missing; see README.md (Phase 0 setup)')
+    missing = sorted(r for r in REPOS if not (VENDOR / r).is_dir())
+    if DEFAULT_REPO in missing:
+        print('vendor/pygeoapi is missing: run make vendor')
         return 2
+    if missing:
+        print(f'Not checked out (make vendor): {", ".join(missing)}')
     total, all_errors, all_warnings = 0, [], []
     for md in files:
         md = md.resolve()

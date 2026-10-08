@@ -29,6 +29,7 @@ ignore = ["S101"]  # assert is fine in tests
 
 [tool.ruff.format]
 quote-style = "single"
+exclude = ["*.md"]  # snippets in the docs are illustrative, laid out by hand
 
 [tool.mypy]
 python_version = "3.12"

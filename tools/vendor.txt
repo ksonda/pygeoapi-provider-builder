@@ -1,0 +1,13 @@
+# Source repositories the docs cite as `repo:path:line`, pinned to the commits
+# that were read. `make vendor` checks them out under vendor/ (gitignored), and
+# tools/check_citations.py fails on citations into a listed repo that is missing.
+#
+# name                          url                                                               commit
+pygeoapi                        https://github.com/geopython/pygeoapi.git                         f765a64fa65350dc93d9df0a1b38755bef6c31b0  # tag 0.24.0
+pygeoapi-iow                    https://github.com/internetofwater/pygeoapi.git                   6393ef943ea60565a4fb2b32c50f7cf2b15d9250
+pygeoapi-plugins                https://github.com/cgs-earth/pygeoapi-plugins.git                 8041f004a98d2d557e07362ecb8062772bf1ac0b
+pygeoapi-geoconnex-examples     https://github.com/cgs-earth/pygeoapi-geoconnex-examples.git      76207c459d5cd89900df0050749e86bd5fbec56e
+pygeoapi_config                 https://github.com/byteroad/pygeoapi_config.git                   eb75cea48a22887ddff9cdbeedd82dae431cded0  # tag v.0.24
+pygeoapi-plugin-cookiecutter    https://code.usgs.gov/wma/nhgf/pygeoapi-plugin-cookiecutter.git   e14b872b4e87e07c8c5a6d406ee8807632063f3d
+ets-ogcapi-features10           https://github.com/opengeospatial/ets-ogcapi-features10.git       a314c1e6a9278b14ab9a2ed865cfe36d202f0125
+ets-ogcapi-edr10                https://github.com/opengeospatial/ets-ogcapi-edr10.git            88656db8e3f89a0a9e8da07953644a4831d15012

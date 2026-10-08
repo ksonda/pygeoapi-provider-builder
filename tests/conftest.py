@@ -1,7 +1,12 @@
-"""Shared helpers for the Docker-based suites (markers: docker, compose)."""
+"""Shared helpers for the Docker-based suites (markers: docker, compose).
+
+They skip when Docker, the pinned image or the dev stack is missing, unless
+PB_REQUIRE_DOCKER=1 (set by `make check`), which turns a skip into an error.
+"""
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -39,11 +44,18 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     skip_docker = pytest.mark.skip(reason=f'needs Docker and {IMAGE} (docker pull {IMAGE})')
     skip_compose = pytest.mark.skip(reason='needs the dev stack (make stack-up)')
     has_docker, has_compose = docker_ready(), None
+    missing: set[str] = set()
     for item in items:
         if 'compose' in item.keywords:
             if has_compose is None:
                 has_compose = compose_ready()
             if not has_compose:
+                missing.add('the dev stack (make stack-up)')
                 item.add_marker(skip_compose)
         elif 'docker' in item.keywords and not has_docker:
+            missing.add(f'Docker with {IMAGE}')
             item.add_marker(skip_docker)
+    if missing and os.environ.get('PB_REQUIRE_DOCKER') == '1':
+        raise pytest.UsageError(
+            'PB_REQUIRE_DOCKER=1, but these are unavailable: ' + ', '.join(sorted(missing))
+        )
