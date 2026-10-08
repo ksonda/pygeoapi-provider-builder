@@ -88,6 +88,16 @@
         }
       }
     },
+    "egress": {
+      "description": "Where the sandbox may connect for this provider (PLAN.md §8.2): sql reads data's host and port; spec reads the URLs of the spec data points at",
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"enum": ["sql", "spec"]},
+        "default_port": {"type": "integer", "minimum": 1, "maximum": 65535}
+      }
+    },
     "drift_ignore": {
       "type": "array",
       "description": "Keys the code reads that the descriptor deliberately leaves out, each with a reason (tools/drift_check.py)",

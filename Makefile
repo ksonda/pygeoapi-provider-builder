@@ -3,20 +3,26 @@ BIN := .venv/bin
 NPM := npm --prefix frontend
 COMPOSE := docker compose -f docker/compose.yaml
 IMAGE := geopython/pygeoapi:0.24.0
+SANDBOX_IMAGE = $(shell $(PYTHON) tools/images.py --tag)
 
-.PHONY: help setup vendor check check-fast lint types check-docs drift test-unit test-docker \
+.PHONY: help setup vendor images check check-fast lint types check-docs drift test-unit test-docker \
 	frontend api-types api-types-update e2e fixtures stack-up stack-down dev-backend dev-frontend
 
 ## List the targets.
 help:
 	@awk '/^## /{doc=substr($$0,4); next} /^[a-z-]+:/{if (doc) {split($$0,t,":"); printf "  %-17s %s\n", t[1], doc}; doc=""}' $(MAKEFILE_LIST)
 
-## First-time setup: dependencies, pinned sources, browsers and the image.
+## First-time setup: dependencies, pinned sources, browsers and the images.
 setup:
 	uv sync --frozen
 	$(PYTHON) tools/vendor.py
 	cd frontend && npm ci && npx playwright install chromium
 	docker pull $(IMAGE)
+	$(PYTHON) tools/images.py
+
+## The sandbox image (pinned pygeoapi + the spec engine's dependencies), tagged by content.
+images:
+	$(PYTHON) tools/images.py
 
 ## Check out the source repositories the docs cite, at pinned commits.
 vendor:
@@ -85,14 +91,15 @@ fixtures:
 	mkdir -p docker/data
 	cd vendor/pygeoapi/tests/data && cp $(FIXTURES) ../../../../docker/data/
 
-## The dev stack: pygeoapi on http://localhost:5080, PostGIS on localhost:55432.
-stack-up: fixtures
+## The dev stack: pygeoapi on :5080, PostGIS on :55432, the mock API on :8090.
+stack-up: fixtures images
 	touch docker/pygeoapi/pygeoapi.env
-	$(COMPOSE) up -d --wait
+	mkdir -p workspace/providers
+	SANDBOX_IMAGE=$(SANDBOX_IMAGE) $(COMPOSE) up -d --wait
 
 ## Stop the dev stack.
 stack-down:
-	$(COMPOSE) down
+	SANDBOX_IMAGE=$(SANDBOX_IMAGE) $(COMPOSE) down
 
 ## The backend on http://127.0.0.1:8765; it serves frontend/dist once built.
 dev-backend:

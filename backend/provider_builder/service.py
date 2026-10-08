@@ -10,7 +10,7 @@ import pygeoapi
 import yaml
 from pydantic import BaseModel
 
-from . import yamlio
+from . import egress, yamlio
 from .catalog import Catalog, Descriptor, card, compile_descriptor
 from .errors import explain
 from .fs import PathError, list_dir, resolve_server_path
@@ -55,7 +55,9 @@ class Service:
     def __init__(self, settings: Settings, runner: Runner | None = None):
         self.settings = settings
         self.catalog = Catalog(settings.catalogs)
-        self.runner = runner or make_runner(settings.sandbox, settings.data_roots)
+        self.runner = runner or make_runner(
+            settings.sandbox, settings.data_roots, settings.workspace
+        )
         self.jobs = JobManager()
         self.availability: dict[str, bool] | None = None
         self.sandbox_versions: dict[str, Any] | None = None
@@ -86,14 +88,14 @@ class Service:
             )
         if self.runner.name == 'subprocess':
             warnings.append(
-                'Probes run in a local subprocess, not the Docker sandbox. '
-                'Start Docker for results that match the pygeoapi image.'
+                'Probes run in a local subprocess, not the Docker sandbox, so there is no '
+                'network isolation. Start Docker and run make images.'
             )
         return {
             'status': 'ok',
             'pygeoapi': pygeoapi.__version__,
             'runner': self.runner.name,
-            'image': self.settings.sandbox.image,
+            'image': self.settings.sandbox.resolved_image(),
             'sandbox': self.sandbox_versions,
             'warnings': warnings,
         }
@@ -131,6 +133,42 @@ class Service:
     def _secrets(self, p: ProviderState, test_secrets: dict[str, str]) -> dict[str, str]:
         wanted = {ref.env for ref in p.secrets.values()}
         return {k: v for k, v in test_secrets.items() if k in wanted}
+
+    def _spec_doc(self, pdef: dict[str, Any]) -> dict[str, Any] | None:
+        """The spec a created provider's ``data`` points at, as raw data (placeholders kept)."""
+        data = pdef.get('data')
+        if isinstance(data, dict):
+            return data
+        if not isinstance(data, str):
+            return None
+        ws = self.settings.workspace
+        prefix = ws.server_path.rstrip('/') + '/'
+        if not data.startswith(prefix):
+            return None
+        path = (ws.host_path / data[len(prefix) :]).resolve()
+        if not path.is_relative_to(ws.host_path.resolve()) or not path.is_file():
+            return None
+        doc = yaml.safe_load(path.read_text(encoding='utf-8'))
+        return doc if isinstance(doc, dict) else None
+
+    def egress_for(
+        self, pdef: dict[str, Any], d: Descriptor | None, secrets: dict[str, str]
+    ) -> set[egress.HostPort]:
+        if d is None:
+            return set()
+        rule = d.raw.get('egress')
+        spec = self._spec_doc(pdef) if rule and rule.get('kind') == 'spec' else None
+        return egress.for_provider(pdef, rule, secrets, spec)
+
+    def egress_for_config(self, text: str, secrets: dict[str, str]) -> set[egress.HostPort]:
+        """Every provider in a config: ``openapi generate`` loads them all (notes §6.2)."""
+        config = yaml.safe_load(text) or {}
+        found: set[egress.HostPort] = set()
+        for resource in (config.get('resources') or {}).values():
+            for pdef in (resource or {}).get('providers') or []:
+                if isinstance(pdef, dict) and isinstance(pdef.get('name'), str):
+                    found |= self.egress_for(pdef, self.catalog.by_plugin(pdef['name']), secrets)
+        return found
 
     def _check_paths(self, pdef: dict[str, Any], d: Descriptor) -> None:
         for f in d.all_fields():
@@ -198,7 +236,8 @@ class Service:
             'dialect': spec.get('dialect'),
             'values_yaml': yamlio.dump(pdef),
         }
-        out = self.runner.run(job, self._secrets(provider, test_secrets))
+        secrets = self._secrets(provider, test_secrets)
+        out = self.runner.run(job, secrets, egress=self.egress_for(pdef, d, secrets))
         return self._outcome(out, d, pdef)
 
     def probe(self, form: FormState, index: int, test_secrets: dict[str, str]) -> dict[str, Any]:
@@ -221,7 +260,8 @@ class Service:
             'limit': 10,
             'copy_data': bool(probe_spec.get('copy_data')),
         }
-        out = self.runner.run(job, self._secrets(p, test_secrets))
+        secrets = self._secrets(p, test_secrets)
+        out = self.runner.run(job, secrets, egress=self.egress_for(pdef, d, secrets))
         return self._outcome(out, d, pdef)
 
     def openapi_check(
@@ -231,7 +271,11 @@ class Service:
         secrets: dict[str, str] = {}
         for p in form.providers:
             secrets |= self._secrets(p, test_secrets)
-        out = self.runner.run({'kind': 'openapi', 'config_yaml': merged}, secrets)
+        out = self.runner.run(
+            {'kind': 'openapi', 'config_yaml': merged},
+            secrets,
+            egress=self.egress_for_config(merged, secrets),
+        )
         res: dict[str, Any] = {
             'ok': out.ok,
             'result': out.result,

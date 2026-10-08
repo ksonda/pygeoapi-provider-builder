@@ -22,6 +22,7 @@ capabilities:
   transactions: true
 probe: {kind: feature}
 introspect: {what: sql, dialect: postgresql}
+egress: {kind: sql, default_port: 5432}
 drift_ignore:
   - {key: data.database, reason: Undocumented alias of data.dbname; the form writes dbname, source: 'pygeoapi/provider/sql.py:607'}
   - {key: data.query, reason: Stored but never used by pygeoapi, source: 'pygeoapi/provider/sql.py:609'}

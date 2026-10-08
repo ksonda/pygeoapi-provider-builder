@@ -1,11 +1,18 @@
 """Run harness jobs in the sandbox (PLAN.md §8, ADR-0008).
 
-``DockerRunner`` runs the worker in the pinned pygeoapi image: non-root,
-read-only root filesystem, no capabilities, resource limits, data roots
-mounted read-only at their *server* paths, and a hard timeout. Secrets
-reach the container as environment variables passed by name, so they never
-appear in process arguments. Egress control (the gateway) arrives in Phase 2;
-until then the container uses the configured network, or none.
+``DockerRunner`` runs the worker in the sandbox image (the pinned pygeoapi
+image plus the spec engine's dependencies): non-root, read-only root
+filesystem, no capabilities, resource limits, data roots and the workspace
+mounted read-only at their *server* paths, and a hard timeout. Secrets reach
+the container as environment variables passed by name, so they never appear
+in process arguments.
+
+Network: a job with no egress gets ``--network none``. Otherwise each run gets
+its own ``--internal`` network (no route out) and one egress gateway per
+declared host (``docker/gateway/gateway.py``). The gateway vets the addresses
+it resolves, refusing link-local and metadata addresses, and private ones
+unless the admin allowlist names the host. The sandbox reaches it through
+``--add-host``, so an undeclared name doesn't even resolve.
 
 ``SubprocessRunner`` runs the same worker with the local venv. It isolates
 crashes and hangs, not untrusted code, and is used only when Docker is
@@ -22,13 +29,20 @@ import sys
 import tempfile
 import time
 import uuid
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .settings import DataRoot, SandboxSettings
+from .egress import HostPort
+from .settings import DataRoot, SandboxSettings, Workspace
 
-HARNESS_SRC = Path(__file__).resolve().parents[2] / 'harness' / 'src'
+REPO = Path(__file__).resolve().parents[2]
+HARNESS_SRC = REPO / 'harness' / 'src'
+RUNTIME_SRC = REPO / 'runtime' / 'src'
+GATEWAY = REPO / 'docker' / 'gateway' / 'gateway.py'
+GATEWAY_READY_S = 15
 MAX_OUTPUT = 20 * 1024 * 1024
 MAX_LOG = 20_000
 PROTOCOL = 1
@@ -84,21 +98,40 @@ def _parse(stdout: str, stderr: str, secrets: dict[str, str], runner: str, t0: f
     )
 
 
+class EgressSetupError(RuntimeError):
+    """The per-run network or a gateway couldn't be started."""
+
+
 class Runner:
     name = 'base'
 
-    def __init__(self, sandbox: SandboxSettings, data_roots: list[DataRoot]):
+    def __init__(
+        self,
+        sandbox: SandboxSettings,
+        data_roots: list[DataRoot],
+        workspace: Workspace | None = None,
+    ):
         self.sandbox = sandbox
         self.data_roots = data_roots
+        self.workspace = workspace
 
     def available(self) -> bool:
         return True
+
+    def path_map(self) -> list[dict[str, str]]:
+        mapping = [{'server': r.server_path, 'host': str(r.host_path)} for r in self.data_roots]
+        if self.workspace:
+            mapping.append(
+                {'server': self.workspace.server_path, 'host': str(self.workspace.host_path)}
+            )
+        return mapping
 
     def run(
         self,
         job: dict[str, Any],
         secrets: dict[str, str] | None = None,
         timeout_s: int | None = None,
+        egress: Iterable[HostPort] = (),
     ) -> Outcome:
         raise NotImplementedError
 
@@ -106,9 +139,15 @@ class Runner:
 class DockerRunner(Runner):
     name = 'docker'
 
-    def __init__(self, sandbox: SandboxSettings, data_roots: list[DataRoot]):
-        super().__init__(sandbox, data_roots)
+    def __init__(
+        self,
+        sandbox: SandboxSettings,
+        data_roots: list[DataRoot],
+        workspace: Workspace | None = None,
+    ):
+        super().__init__(sandbox, data_roots, workspace)
         self.docker = shutil.which('docker') or 'docker'
+        self.image = sandbox.resolved_image()
         self._available: tuple[float, bool] | None = None
 
     def available(self) -> bool:
@@ -116,21 +155,32 @@ class DockerRunner(Runner):
         if self._available and now - self._available[0] < 30:
             return self._available[1]
         try:
-            ok = (
-                subprocess.run(  # noqa: S603
-                    [self.docker, 'image', 'inspect', '--format', '{{.Id}}', self.sandbox.image],
-                    capture_output=True,
-                    timeout=10,
-                    check=False,
-                ).returncode
-                == 0
-            )
-        except (OSError, subprocess.TimeoutExpired):
-            ok = False
-        self._available = (now, ok)
-        return ok
+            ok = self._docker('image', 'inspect', '--format', '{{.Id}}', self.image, timeout=10)
+            available = bool(ok)
+        except EgressSetupError:
+            available = False
+        self._available = (now, available)
+        return available
 
-    def command(self, name: str, secret_names: list[str]) -> list[str]:
+    def _docker(self, *args: str, timeout: float = 30, check: bool = True) -> str:
+        try:
+            proc = subprocess.run(  # noqa: S603 - fixed docker arguments
+                [self.docker, *args], capture_output=True, text=True, timeout=timeout, check=False
+            )
+        except (OSError, subprocess.TimeoutExpired) as err:
+            raise EgressSetupError(f'docker {args[0]} failed: {err}') from err
+        if check and proc.returncode != 0:
+            raise EgressSetupError(f'docker {args[0]} failed: {proc.stderr.strip()[:500]}')
+        return proc.stdout
+
+    def command(
+        self,
+        name: str,
+        secret_names: list[str],
+        network: str = 'none',
+        add_hosts: Iterable[tuple[str, str]] = (),
+        env: dict[str, str] | None = None,
+    ) -> list[str]:
         s = self.sandbox
         cmd = [
             self.docker,
@@ -155,34 +205,126 @@ class DockerRunner(Runner):
             '--cpus',
             str(s.cpus),
             '--network',
-            s.network or 'none',
+            network,
             '-v',
             f'{HARNESS_SRC}:/opt/harness:ro',
+            '-v',
+            f'{RUNTIME_SRC}:/opt/runtime:ro',
             '-e',
-            'PYTHONPATH=/opt/harness',
+            'PYTHONPATH=/opt/harness:/opt/runtime',
             '-e',
             'HOME=/tmp',
             '-e',
             'HARNESS_LOG_LEVEL=INFO',
         ]
+        for host, address in add_hosts:
+            cmd += ['--add-host', f'{host}:{address}']
+        for key, value in (env or {}).items():
+            cmd += ['-e', f'{key}={value}']
         for root in self.data_roots:
             cmd += ['-v', f'{root.host_path}:{root.server_path}:ro']
+        if self.workspace and self.workspace.host_path.is_dir():
+            cmd += ['-v', f'{self.workspace.host_path}:{self.workspace.server_path}:ro']
         for secret in secret_names:
             cmd += ['-e', secret]  # value comes from our environment, not argv
         cmd += [
             '--entrypoint',
             '/venv/bin/python3',
-            s.image,
+            self.image,
             '-m',
             'pygeoapi_provider_harness.worker',
         ]
         return cmd
+
+    @contextmanager
+    def egress_network(
+        self, targets: list[HostPort], run_id: str
+    ) -> Iterator[tuple[str, list[tuple[str, str]], list[dict[str, Any]]]]:
+        """An internal network plus one gateway per declared host, removed afterwards."""
+        network = f'pb-net-{run_id}'
+        gateways: list[str] = []
+        events: list[dict[str, Any]] = []
+        by_host: dict[str, list[int]] = {}
+        for t in targets:
+            by_host.setdefault(t.host, []).append(t.port)
+        try:
+            self._docker('network', 'create', '--internal', network)
+            add_hosts = []
+            for i, (host, ports) in enumerate(sorted(by_host.items())):
+                name = f'pb-gw-{run_id}-{i}'
+                listen = [
+                    f'{p}:private' if self.sandbox.private(host, p) else str(p)
+                    for p in sorted(set(ports))
+                ]
+                self._docker(
+                    'run',
+                    '-d',
+                    '--rm',
+                    '--name',
+                    name,
+                    '--network',
+                    network,
+                    '--read-only',
+                    '--cap-drop',
+                    'ALL',
+                    '--security-opt',
+                    'no-new-privileges',
+                    '--user',
+                    '10001:0',
+                    '--sysctl',
+                    'net.ipv4.ip_unprivileged_port_start=0',
+                    '--memory',
+                    '64m',
+                    '--pids-limit',
+                    '64',
+                    '--cpus',
+                    '0.5',
+                    '-v',
+                    f'{GATEWAY}:/opt/gateway/gateway.py:ro',
+                    '--entrypoint',
+                    '/venv/bin/python3',
+                    self.image,
+                    '/opt/gateway/gateway.py',
+                    host,
+                    *listen,
+                )
+                gateways.append(name)
+                self._wait_ready(name)
+                self._docker('network', 'connect', self.sandbox.egress_network or 'bridge', name)
+                address = self._docker(
+                    'inspect',
+                    '-f',
+                    f'{{{{(index .NetworkSettings.Networks "{network}").IPAddress}}}}',
+                    name,
+                ).strip()
+                add_hosts.append((host, address))
+            yield network, add_hosts, events
+        finally:
+            for name in gateways:
+                try:
+                    for line in self._docker('logs', name, check=False).splitlines():
+                        event = json.loads(line) if line.startswith('{') else {}
+                        if event.get('event') in ('refused', 'unreachable'):
+                            events.append(event)
+                except (EgressSetupError, ValueError):
+                    pass
+                self._docker('rm', '-f', name, check=False)
+            self._docker('network', 'rm', network, check=False)
+
+    def _wait_ready(self, name: str) -> None:
+        deadline = time.monotonic() + GATEWAY_READY_S
+        while time.monotonic() < deadline:
+            if '"event": "ready"' in self._docker('logs', name, check=False):
+                return
+            time.sleep(0.1)
+        raise EgressSetupError(f'The egress gateway {name} did not start')
 
     def run(
         self,
         job: dict[str, Any],
         secrets: dict[str, str] | None = None,
         timeout_s: int | None = None,
+        egress: Iterable[HostPort] = (),
     ) -> Outcome:
         secrets = secrets or {}
         if not self.available():
@@ -191,31 +333,60 @@ class DockerRunner(Runner):
                 runner=self.name,
                 error=_error(
                     'SandboxUnavailable',
-                    f'Docker or the image {self.sandbox.image} is not available',
+                    f'Docker or the sandbox image {self.image} is not available (make images)',
                 ),
             )
-        name = f'pb-sandbox-{uuid.uuid4().hex[:12]}'
+        run_id = uuid.uuid4().hex[:12]
+        targets = sorted(set(egress))
+        if not targets:
+            return self._run(f'pb-sandbox-{run_id}', job, secrets, timeout_s)
+        try:
+            with self.egress_network(targets, run_id) as (network, add_hosts, events):
+                outcome = self._run(
+                    f'pb-sandbox-{run_id}',
+                    job,
+                    secrets,
+                    timeout_s,
+                    network,
+                    add_hosts,
+                    {'PYGEOAPI_SPEC_PRIVATE_HOSTS': '*'},  # the gateway enforces the policy
+                )
+        except EgressSetupError as err:
+            return Outcome(
+                ok=False, runner=self.name, error=_error('SandboxEgressError', str(err))
+            )
+        outcome.extra['egress'] = [str(t) for t in targets]
+        if events:
+            outcome.extra['egress_refused'] = events
+            notes = '\n'.join(f'egress gateway: {e}' for e in events)
+            outcome.logs = (outcome.logs + '\n' + notes).strip()
+        return outcome
+
+    def _run(
+        self,
+        name: str,
+        job: dict[str, Any],
+        secrets: dict[str, str],
+        timeout_s: int | None,
+        network: str = 'none',
+        add_hosts: Iterable[tuple[str, str]] = (),
+        env: dict[str, str] | None = None,
+    ) -> Outcome:
         job = {**job, 'protocol': PROTOCOL, 'secret_env': sorted(secrets)}
-        env = {**os.environ, **secrets}
         timeout = timeout_s or self.sandbox.timeout_s
         t0 = time.perf_counter()
         try:
             proc = subprocess.run(  # noqa: S603
-                self.command(name, sorted(secrets)),
+                self.command(name, sorted(secrets), network, add_hosts, env),
                 input=json.dumps(job),
                 text=True,
                 capture_output=True,
                 timeout=timeout,
-                env=env,
+                env={**os.environ, **secrets},
                 check=False,
             )
         except subprocess.TimeoutExpired:
-            subprocess.run(  # noqa: S603
-                [self.docker, 'kill', name],
-                capture_output=True,
-                timeout=15,
-                check=False,
-            )
+            self._docker('kill', name, check=False, timeout=15)
             return Outcome(
                 ok=False,
                 runner=self.name,
@@ -233,13 +404,22 @@ class SubprocessRunner(Runner):
         job: dict[str, Any],
         secrets: dict[str, str] | None = None,
         timeout_s: int | None = None,
+        egress: Iterable[HostPort] = (),
     ) -> Outcome:
+        """No network isolation here: egress is checked only by the spec engine itself."""
         secrets = secrets or {}
-        path_map = [{'server': r.server_path, 'host': str(r.host_path)} for r in self.data_roots]
-        job = {**job, 'protocol': PROTOCOL, 'secret_env': sorted(secrets), 'path_map': path_map}
+        job = {
+            **job,
+            'protocol': PROTOCOL,
+            'secret_env': sorted(secrets),
+            'path_map': self.path_map(),
+        }
         env = {k: v for k, v in os.environ.items() if k in ('PATH', 'LANG', 'LC_ALL', 'TZ')}
         env.update(secrets)
         env['HARNESS_LOG_LEVEL'] = 'INFO'
+        env['PYGEOAPI_SPEC_PRIVATE_HOSTS'] = ','.join(
+            sorted({h.split(':')[0] for h in self.sandbox.private_hosts})
+        )
         timeout = timeout_s or self.sandbox.timeout_s
         t0 = time.perf_counter()
         with tempfile.TemporaryDirectory(prefix='pb-worker-') as cwd:
@@ -265,10 +445,12 @@ class SubprocessRunner(Runner):
         return _parse(proc.stdout[:MAX_OUTPUT], proc.stderr, secrets, self.name, t0)
 
 
-def make_runner(sandbox: SandboxSettings, data_roots: list[DataRoot]) -> Runner:
+def make_runner(
+    sandbox: SandboxSettings, data_roots: list[DataRoot], workspace: Workspace | None = None
+) -> Runner:
     if sandbox.runner == 'subprocess':
-        return SubprocessRunner(sandbox, data_roots)
-    docker = DockerRunner(sandbox, data_roots)
+        return SubprocessRunner(sandbox, data_roots, workspace)
+    docker = DockerRunner(sandbox, data_roots, workspace)
     if sandbox.runner == 'docker' or docker.available():
         return docker
-    return SubprocessRunner(sandbox, data_roots)
+    return SubprocessRunner(sandbox, data_roots, workspace)

@@ -1,29 +1,59 @@
 # Dev stack for pygeoapi Provider Builder: `make stack-up` / `make stack-down`.
 #
-# - pygeoapi: the pinned official image, serving docker/pygeoapi/pygeoapi.config.yml.
-#   The image's entrypoint regenerates OpenAPI on every start, so after editing
-#   the config run `docker compose -f docker/compose.yaml restart pygeoapi`.
+# - pygeoapi: the sandbox image (the pinned geopython/pygeoapi:0.24.0 plus the
+#   spec engine's dependencies; `make images`), run like the stock image: root,
+#   /entrypoint.sh, serving docker/pygeoapi/pygeoapi.config.yml. The spec engine's
+#   source and the workspace's specs are mounted, so created providers can be
+#   published here. The entrypoint regenerates OpenAPI on every start, so after
+#   editing the config recreate the container (README, "Quickstart").
 # - postgis: seeded with pygeoapi's own test data (tests/data/hotosm_bdi_waterways.sql.gz:
 #   schema `osm`, table `hotosm_bdi_waterways`), as pygeoapi's CI does.
 #   imresamu/postgis is the multi-arch build by a docker-postgis maintainer; the
 #   official postgis/postgis images are amd64-only.
+# - mockapi: docker/mock-api/mock_api.py, the JSON API Mode B tests and demos use.
 name: provider-builder-dev
 
 services:
   pygeoapi:
-    image: geopython/pygeoapi:0.24.0
+    image: ${SANDBOX_IMAGE:?run make stack-up, which builds the sandbox image}
+    user: root
+    entrypoint: ["/entrypoint.sh"]
     ports:
       - "127.0.0.1:5080:80"   # not 5000: macOS AirPlay Receiver listens there
     environment:
       PYGEOAPI_CONFIG: /config/pygeoapi.config.yml
+      PYTHONPATH: /opt/runtime
+      PYGEOAPI_SPEC_PRIVATE_HOSTS: mockapi   # the mock API has a private address
     env_file:
       - ./pygeoapi/pygeoapi.env        # secrets for the dev stack (gitignored; created by make)
     volumes:
       - ./pygeoapi:/config:ro          # a directory mount, so atomic file replaces are seen
       - ./data:/data                   # writable: pygeoapi's GeoPackage provider writes to .gpkg
+      - ../runtime/src:/opt/runtime:ro
+      - ../workspace/providers:/specs:ro
     depends_on:
       postgis:
         condition: service_healthy
+      mockapi:
+        condition: service_healthy
+
+  mockapi:
+    image: geopython/pygeoapi:0.24.0   # Flask and gunicorn are already in the pinned image
+    user: "10001:0"
+    read_only: true
+    entrypoint: ["/venv/bin/gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2",
+                 "--worker-tmp-dir", "/tmp", "--chdir", "/opt/mock", "mock_api:app"]
+    tmpfs: [/tmp]
+    ports:
+      - "127.0.0.1:8090:8000"
+    volumes:
+      - ./mock-api:/opt/mock:ro
+    healthcheck:
+      test: ["CMD", "/venv/bin/python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
 
   postgis:
     image: imresamu/postgis:17-3.6

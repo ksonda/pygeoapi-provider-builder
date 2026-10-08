@@ -44,13 +44,38 @@ class Target(BaseModel):
 
 class SandboxSettings(BaseModel):
     runner: Literal['auto', 'docker', 'subprocess'] = 'auto'
-    image: str = 'geopython/pygeoapi:0.24.0'
-    network: str | None = Field(
-        default=None, description='Docker network for sandbox runs (e.g. the dev compose network)'
+    image: str | None = Field(
+        default=None, description='Sandbox image; empty means the one built from docker/sandbox'
+    )
+    egress_network: str | None = Field(
+        default=None,
+        description='Docker network the egress gateway joins (e.g. the dev stack); default bridge',
+    )
+    private_hosts: list[str] = Field(
+        default=[],
+        description=(
+            'Hosts (or host:port) that may resolve to non-public addresses: the admin '
+            'allowlist for egress to private networks (PLAN.md §8.2)'
+        ),
     )
     timeout_s: int = 60
     memory: str = '1g'
     cpus: float = 1.0
+
+    def resolved_image(self) -> str:
+        from .images import sandbox_tag
+
+        return self.image or sandbox_tag()
+
+    def private(self, host: str, port: int) -> bool:
+        return host in self.private_hosts or f'{host}:{port}' in self.private_hosts
+
+
+class Workspace(BaseModel):
+    """Where created providers live, and where the pygeoapi server sees their specs."""
+
+    host_path: Path = Path('workspace/providers')
+    server_path: str = '/specs'
 
 
 class Settings(BaseModel):
@@ -59,6 +84,7 @@ class Settings(BaseModel):
     targets: list[Target] = []
     catalogs: list[Path] = [Path('catalog')]
     sandbox: SandboxSettings = SandboxSettings()
+    workspace: Workspace = Workspace()
     geoconnex: bool = True
     allowed_hosts: list[str] = ['127.0.0.1', 'localhost']
     allowed_origins: list[str] = []
@@ -87,4 +113,6 @@ def load_settings(path: Path | None = None) -> Settings:
     for t in raw.get('targets', []):
         t['base_config'] = rel(t['base_config'])
     raw['catalogs'] = [rel(c) for c in raw.get('catalogs', ['catalog'])]
+    workspace = raw.setdefault('workspace', {})
+    workspace['host_path'] = rel(workspace.get('host_path', 'workspace/providers'))
     return Settings(root=root, **raw)

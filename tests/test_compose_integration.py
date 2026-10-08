@@ -50,7 +50,9 @@ def service(workdir: Path) -> Service:
             Target(id='t', title='t', base_config=workdir / 'config' / 'pygeoapi.config.yml')
         ],
         catalogs=[REPO / 'catalog'],
-        sandbox=SandboxSettings(runner='docker', network=NETWORK),
+        sandbox=SandboxSettings(
+            runner='docker', egress_network=NETWORK, private_hosts=['postgis']
+        ),
     )
     return Service(settings, runner=DockerRunner(settings.sandbox, settings.data_roots))
 

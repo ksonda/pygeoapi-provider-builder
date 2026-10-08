@@ -18,9 +18,14 @@ catalogs: [catalog]
 
 sandbox:
   runner: auto                      # docker when available, else a local subprocess
-  image: geopython/pygeoapi:0.24.0
-  network: provider-builder-dev     # the dev stack's network, so probes reach `postgis`
+  # image: built from docker/sandbox by `make images` when not set
+  egress_network: provider-builder-dev   # the gateway joins the dev stack's network
+  private_hosts: [postgis, mockapi]      # the dev stack's services may be private addresses
   timeout_s: 60
+
+workspace:
+  host_path: workspace/providers    # created providers, one Git repo each (gitignored)
+  server_path: /specs               # where the dev pygeoapi container sees their specs
 
 geoconnex: true
 

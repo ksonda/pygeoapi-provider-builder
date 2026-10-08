@@ -15,6 +15,7 @@ import os
 import platform
 import shutil
 import sqlite3
+import sys
 import tempfile
 import time
 from collections.abc import Callable
@@ -42,7 +43,9 @@ def _materialize(job: dict[str, Any], key: str = 'resource_yaml') -> str:
     """The job's YAML text, with ``@files@`` pointing at the job's own files.
 
     ``job['files']`` maps flat file names to text, for example an unsaved spec
-    (``data: @files@/spec.yaml``). They're written to a fresh temporary folder.
+    (``data: @files@/spec.yaml``) or a provider module under test. They're written
+    to a fresh temporary folder; ``job['python_path']`` entries (``@files@``) are
+    added to ``sys.path``. This runs only inside the sandbox.
     """
     text = str(job[key])
     files = job.get('files') or {}
@@ -53,6 +56,11 @@ def _materialize(job: dict[str, Any], key: str = 'resource_yaml') -> str:
                 raise ValueError(f'Invalid job file name {name!r}')
             Path(workdir, name).write_text(content, encoding='utf-8')
         text = text.replace(FILES_PLACEHOLDER, workdir)
+        # Code that comes with the job (a provider under test) is importable from there.
+        for entry in job.get('python_path') or []:
+            path = str(entry).replace(FILES_PLACEHOLDER, workdir)
+            if path not in sys.path:
+                sys.path.insert(0, path)
     return text
 
 
