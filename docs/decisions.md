@@ -11,10 +11,10 @@ phase named; "Accepted" means work proceeds on it. Source citations are
 | [0002](#adr-0002-python-toolchain-uv--cpython-312) | Python toolchain: uv + CPython 3.12 | Accepted |
 | [0003](#adr-0003-lossless-editing-with-surgical-text-edits) | Lossless editing with surgical text edits | Accepted |
 | [0004](#adr-0004-form-rendering-small-in-house-renderer-over-compiled-descriptors) | Form rendering: small in-house renderer | Accepted (Phase 1) |
-| [0005](#adr-0005-a-template-built-providers-data-points-at-its-spec) | A template-built provider's `data` points at its spec | Proposed |
+| [0005](#adr-0005-a-template-built-providers-data-points-at-its-spec) | A template-built provider's `data` points at its spec | Accepted (Phase 2) |
 | [0006](#adr-0006-jsonpath-rfc-9535-via-python-jsonpath) | JSONPath: RFC 9535 via `python-jsonpath` | Accepted |
 | [0007](#adr-0007-sql-specs-parse-check-plus-database-side-limits) | SQL specs: parse check plus database-side limits | Accepted |
-| [0008](#adr-0008-sandbox-per-run-containers-with-an-egress-gateway) | Sandbox: per-run containers with an egress gateway | Phase 1 part built; gateway proposed (Q1, Q4) |
+| [0008](#adr-0008-sandbox-per-run-containers-with-an-egress-gateway) | Sandbox: per-run containers with an egress gateway | Accepted (built in Phase 2) |
 | [0009](#adr-0009-edr-engine-classes-define-their-query-methods-in-the-class-body) | EDR engine classes define query methods in the class body | Accepted |
 | [0010](#adr-0010-drift-check-ast-alias-tracking-plus-an-allowlist) | Drift check: AST alias tracking plus an allowlist | Accepted |
 | [0011](#adr-0011-typed-client-generated-from-the-backends-openapi) | Typed client generated from the backend's OpenAPI | Accepted |
@@ -23,6 +23,8 @@ phase named; "Accepted" means work proceeds on it. Source citations are
 | [0014](#adr-0014-a-cited-runtime-rules-layer-on-top-of-pygeoapis-schema) | A cited runtime-rules layer on top of pygeoapi's schema | Proposed (strictness: Q3) |
 | [0015](#adr-0015-the-admin-api-is-a-guarded-optional-target) | The Admin API is a guarded, optional target | Proposed (Q8) |
 | [0016](#adr-0016-spec-files-are-loaded-with-pygeoapis-own-yaml_load) | Spec files are loaded with pygeoapi's own `yaml_load` | Accepted |
+| [0017](#adr-0017-the-sandbox-image-holds-dependencies-our-code-is-mounted) | The sandbox image holds dependencies; our code is mounted | Accepted |
+| [0018](#adr-0018-the-spec-engine-vets-every-address-inside-the-connection) | The spec engine vets every address inside the connection | Accepted |
 
 ---
 
@@ -183,6 +185,13 @@ Admin-API-only deployments. Mode A never emits one by default.
 - The file target can't upload spec files to remote servers, so for those, use a
   package (`pkg:`) or the Git PR target.
 
+**Built in Phase 2.** `load_spec` takes a path, `pkg:<module>/<resource>` or an
+inline mapping, and caches each per process: files by path, mtime and size, and
+inline mappings by content, because pygeoapi builds a provider per request. Saved
+versions live at `workspace/providers/<id>/<version>/spec.yaml`. They never
+change, so a config pins a version by its path, and the dev stack mounts the
+workspace at `/specs`.
+
 ## ADR-0006: JSONPath: RFC 9535 via `python-jsonpath`
 
 **Context.** Specs select records and values with paths (`records: $.data.items`).
@@ -273,6 +282,21 @@ Database drivers speak raw TCP, so an HTTP proxy can't enforce egress for them.
   single-user v1, and revisited in Phase 6 (rootless Docker or a separate
   runner service).
 - The sandbox tests in PLAN.md §8.2 prove the limits.
+
+**Built in Phase 2** (`backend/provider_builder/runner.py`, `docker/gateway/gateway.py`):
+- A job with no egress gets `--network none`.
+- Otherwise each run gets `pb-net-<id>`, an `--internal` network, plus one
+  gateway container per declared host, from the sandbox image, non-root.
+- The gateway binds only to its internal address before it joins the upstream
+  network (`sandbox.egress_network`, the dev stack's network in dev). It
+  resolves the host itself and refuses link-local, metadata, multicast and
+  reserved addresses. It refuses private addresses unless `sandbox.private_hosts`
+  names the host.
+- The sandbox gets `--add-host`, so undeclared names don't resolve at all.
+- Egress is derived from what the job will connect to: a descriptor's `egress`
+  rule (`{kind: sql}` for PostgreSQL) or the URLs of a spec.
+- `tests/test_sandbox.py` runs a hostile provider shipped as a job file, and
+  every escape it tries is stopped.
 
 ## ADR-0009: EDR engine classes define their query methods in the class body
 
@@ -442,4 +466,50 @@ files the same way pygeoapi does. pygeoapi's behaviour has sharp edges:
 than re-implementing it. That gives bug-for-bug parity for free, and pygeoapi is
 already a dependency. The spec editor emits placeholders only in plain-scalar
 positions. The UI warns when a variable's value will be re-typed.
+
+## ADR-0017: The sandbox image holds dependencies; our code is mounted
+
+**Context.** PLAN.md §8.2 planned `provider-builder/sandbox:0.24.0` as the pinned
+image plus the harness and runtime packages, installed with pip. Baking our own
+code in means rebuilding the image for every change, and a stale image runs old
+checks against new code.
+
+**Decision.** `docker/sandbox/Dockerfile` adds only the spec engine's third-party
+dependencies to `geopython/pygeoapi:0.24.0`: httpx, httpcore, h11, anyio and
+python-jsonpath, at the versions `uv.lock` tests. Its tag is the hash of the
+Dockerfile and requirements (`make images`), and it is also tagged
+`provider-builder/sandbox:0.24.0` for compose. The harness and runtime sources
+are mounted read-only on `PYTHONPATH` at run time. The dev stack's pygeoapi runs
+the same image the way the stock one runs (root, `/entrypoint.sh`), with the
+runtime mounted.
+
+**Consequences.**
+- Code changes take effect at once. Only a dependency change needs `make images`
+  (CI builds it, which needs PyPI).
+- Production installs `pygeoapi-spec-providers` as a package, which brings the
+  same dependencies. certifi and idna stay as the image ships them, as they
+  would there.
+
+## ADR-0018: The spec engine vets every address inside the connection
+
+**Context.** PROMPT.md §7: HTTP sources follow the probes' host allowlist, never
+reaching link-local or metadata addresses. In the sandbox the gateway enforces
+that, but a production pygeoapi has no gateway, so the engine must enforce it
+too. A check before the request is open to DNS rebinding: the name can resolve
+differently when httpx connects.
+
+**Decision.** `pygeoapi_spec_providers.egress` puts a network backend in httpx's
+connection pool. It resolves the name, vets every address, refuses if any is
+link-local or metadata, and connects to a vetted address. TLS still verifies
+the certificate against the hostname.
+
+The rest of the policy is checked before each request:
+- only the spec's declared hosts, which also bounds redirects
+- `https`, unless the host is allowlisted
+- private ranges only for hosts in `PYGEOAPI_SPEC_PRIVATE_HOSTS`; the sandbox sets
+  `*`, because there the gateway decides
+
+**Consequences.** It relies on httpx's private `_pool` attribute; the runtime pins
+`httpx>=0.28,<0.29`, and `runtime/tests/test_egress.py` fails if the swap stops
+taking effect. A simulated rebind and a mixed DNS answer are both refused.
 

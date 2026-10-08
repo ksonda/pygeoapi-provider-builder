@@ -541,7 +541,7 @@ recorded in the research notes, and each entry has a fixture test. Examples:
   behaves exactly as in the config (notes §2).
 
 ### 7.2 Spec schema v1
-The JSON Schema lives at `runtime/pygeoapi_spec_providers/schemas/spec-v1.json`.
+The JSON Schema lives at `runtime/src/pygeoapi_spec_providers/schemas/spec-v1.json`.
 Common keys: `spec_version: 1`, `template`, `id` (slug), `title`, `description`,
 `version` (semver).
 
@@ -571,7 +571,7 @@ source:
   max_response_bytes: 20000000
   error_path: $.error                               # HTTP 200 with an error body (ESRI style)
 records: $.data.items                               # RFC 9535 JSONPath (ADR-0006)
-id: {from: well_id}                                 # field name or relative JSONPath; unique
+item_id: {from: well_id}                            # field name or relative JSONPath; unique
 geometry: {type: point, x: longitude, y: latitude, crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84}
                                                     # point | wkt {field} | geojson {field} | none
 properties:
@@ -736,6 +736,16 @@ limits: {max_locations: 50, max_observations: 10000}
      harness results.
    - "Publish a collection with this provider →" opens J1 pre-filled.
 
+*As built in Phase 2* (`frontend/src/create/`, `backend/provider_builder/suggest.py`):
+- The six steps are Source, Sample, Map fields, Paging and filters, Check and
+  Save.
+- The harness checklist arrives when the run ends. It isn't streamed: a run takes
+  a few seconds.
+- Each version is a folder (`<id>/<version>/spec.yaml`), so configs can pin one
+  by path. Each save is also a Git commit tagged `v<version>`.
+- The spec's own key `id` is its slug; the item id is `item_id` (§7.2's
+  example used `id` for both).
+
 ### 7.5 J5: code workspace
 - **Scaffolds for every type:** feature, record, coverage, EDR (pick query
   types), tile (MVT or raster) and map.
@@ -797,6 +807,18 @@ are pure functions over a loaded provider or an in-process `API`.
 Results form a checklist (`pass`/`fail`/`warn`/`skip`/`unsupported`), each with a
 plain explanation, a fix hint and details. The same checks ship as a pytest
 plugin, so generated packages run them in CI.
+
+*As built in Phase 2* (`harness/src/pygeoapi_provider_harness/checks.py`):
+- L1 covers feature and record providers in full. For EDR it checks
+  `x-ogc-unit` and the query types; CoverageJSON checks arrive with the
+  time-series template (Phase 4).
+- L2 calls pygeoapi's own endpoint functions on a fresh `API` object.
+- L3 runs gunicorn in the sandbox; it is skipped where gunicorn isn't installed.
+- The pytest plugin's fixture is `provider_contract`.
+- Writing the self-tests found two contract details:
+  - call `get()` with a string id, as the API does
+  - prove `q` filters by searching for a term that matches nothing (pygeoapi's
+    GeoJSON provider ignores `q`, notes §5.4)
 
 ### 7.8 J6: package, deliver, version
 - **Gate:** the harness must pass (warnings are allowed).
@@ -871,6 +893,16 @@ warns.
 - **Not yet decided:** Docker Desktop on this Mac is old (CLI 20.10.23, Compose
   2.15.1) and the daemon was stopped (questions Q4 and Q5).
 
+*As built in Phase 2* (ADR-0008, ADR-0017):
+- The image adds only the spec engine's dependencies. The harness and runtime
+  sources are mounted read-only.
+- There is one gateway per declared host, bound to the internal network. The
+  admin allowlist is `sandbox.private_hosts`.
+- Egress comes from descriptors' `egress` rules and from specs.
+- The dev stack's mock API (`docker/mock-api/mock_api.py`) is a Flask app, not
+  FastAPI: it runs in the pinned image unchanged, and tests serve it in-process.
+- The sandbox tests are in `tests/test_sandbox.py`.
+
 ## 9. Security
 
 | Threat | Mitigation | Test |
@@ -905,7 +937,7 @@ warns.
 | Mode A | `POST /api/render`, `POST /api/validate`, `POST /api/probe` (job), `GET /api/fs?root=&path=` (data-root browser) |
 | Config and targets | `GET /api/targets`, `GET /api/targets/{t}/config` (text, ETag, parsed summary), `GET /api/targets/{t}/resources`, `GET /api/targets/{t}/resources/{id}` (form state + extra), `POST /api/import` (YAML snippet → form state), `GET /api/targets/{t}/resources/{id}/health` |
 | Publish | `POST /api/publish` (job: diff, write, OpenAPI, reload, verify), `POST /api/publish/{pid}/rollback`, `GET /api/publish/log` |
-| Mode B | `POST /api/samples` (job), `POST /api/specs/validate`, `POST /api/specs/preview` (job), `GET/POST /api/workspace`, `GET/PUT /api/workspace/{id}/files/{path}`, `POST /api/workspace/{id}/lint`, `…/format`, `…/harness` (job), `…/eject`, `…/package` (job), `…/versions`, `GET /api/workspace/{id}/usage` |
+| Mode B | `POST /api/samples` (job), `POST /api/specs/suggest`, `POST /api/specs/validate`, `POST /api/specs/preview` (job), `POST /api/specs/harness` (job, before a save), `GET/POST /api/workspace`, `GET /api/workspace/{id}`, `GET/PUT /api/workspace/{id}/files/{path}`, `POST /api/workspace/{id}/lint`, `…/format`, `…/harness` (job), `…/eject`, `…/package` (job), `…/versions`, `GET /api/workspace/{id}/usage` |
 
 ## 11. Frontend
 
@@ -1002,6 +1034,8 @@ then the same for PostGIS, then a wrong password with its friendly error.
 
 **Exit:** the mock JSON API becomes a live collection without writing code. NOAA
 CO-OPS stations work as the real-API demo (Q7).
+*Met (2026-10-08):* both went from J4 through J1 to the dev stack's pygeoapi
+(PLAN.md §8.2 and §7.4 have the as-built notes).
 
 **Phase 3: publishing and editing**
 - the file target (surgical edits, ETag, backups, atomic write, OpenAPI then

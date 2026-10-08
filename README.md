@@ -15,18 +15,23 @@ Target: **pygeoapi 0.24.0** (pinned).
 
 ## Status
 
-**Phase 1: a walking skeleton of Mode A.** The configure wizard works end to
-end for CSV, GeoJSON, GeoPackage/SQLite and PostgreSQL/PostGIS:
-- connect, with lookups of files, tables and columns
-- a probe that loads the provider in the pinned pygeoapi image
-- field mapping from what the probe found
-- metadata and extents
-- review, with every validation layer and OpenAPI generation
-- export of the merged config
+**Phase 2: Mode B core.** Both modes work end to end.
 
-The dev stack's pygeoapi serves what you export. Mode B (Phase 2), writing
-configs in place (Phase 3) and the rest of the catalog (Phase 5) come next; see
-[PLAN.md §13](PLAN.md#13-milestones).
+- **Configure** (Phase 1): a wizard for CSV, GeoJSON, GeoPackage/SQLite,
+  PostgreSQL/PostGIS and providers made in Create. It covers connecting, a probe
+  in the sandbox, field mapping, metadata, review with every validation layer
+  and OpenAPI generation, and an export of the merged config.
+- **Create** (Phase 2): the HTTP JSON API template. The wizard fetches a sample in
+  the sandbox and suggests a mapping. You pick the records, id, geometry and
+  properties, preview them, set paging and filters, then run the contract
+  harness, from the provider itself to a live pygeoapi in the sandbox. Each saved
+  version goes to `workspace/providers/<id>/` (a Git repository) and shows up in
+  Configure's catalog.
+- **Sandbox:** every probe, sample and check runs in a locked-down container.
+  Network access goes only to declared hosts, through an egress gateway.
+
+Writing configs in place (Phase 3) and the SQL and time-series templates
+(Phase 4) come next; see [PLAN.md §13](PLAN.md#13-milestones).
 
 Background reading, in order:
 1. [PLAN.md](PLAN.md): architecture, schemas, API, sandbox, milestones and risks
@@ -49,13 +54,14 @@ brew install uv node
 
 Install everything else. This installs the Python and Node dependencies,
 checks out the source repositories the docs cite (`make vendor`), installs
-Chromium for the browser tests and pulls `geopython/pygeoapi:0.24.0`:
+Chromium for the browser tests, pulls `geopython/pygeoapi:0.24.0` and builds the
+sandbox image from it (`make images`, which needs PyPI):
 
 ```bash
 make setup
 ```
 
-Start the dev stack, pygeoapi and PostGIS:
+Start the dev stack: pygeoapi, PostGIS and a mock JSON API:
 
 ```bash
 make stack-up
@@ -97,6 +103,17 @@ To see the dev stack serve your collection:
 `git checkout docker/pygeoapi/pygeoapi.config.yml` restores the dev stack's
 config afterwards.
 
+To create a provider, choose **Create a provider** on the home page:
+- **The mock API:** URL `http://mockapi:8000/v2/wells`, with query parameters
+  `offset=0` and `limit=25` so the wizard spots the paging. That's the name the
+  sandbox and the dev stack's pygeoapi use.
+- **A real API:** `https://api.tidesandcurrents.noaa.gov/mdapi/prod/webapi/stations.json`
+  with `type=waterlevels`, NOAA CO-OPS's 302 water-level stations, no key needed.
+
+After **Save**, **Publish a collection with this provider →** opens Configure
+with the provider chosen. The dev stack's pygeoapi already has the spec engine
+and sees the workspace at `/specs`, so the steps above serve it.
+
 For frontend work with hot reload, run `make dev-backend` and `make
 dev-frontend` in two terminals, then open <http://127.0.0.1:5173>.
 
@@ -114,6 +131,7 @@ Everything binds to 127.0.0.1.
 | 5173 | Vite's dev server, which proxies `/api` to 8765 |
 | 5080 | The dev stack's pygeoapi. Not 5000: the macOS AirPlay Receiver uses that port. |
 | 55432 | The dev stack's PostGIS (database `test`, user and password `postgres`) |
+| 8090 | The dev stack's mock JSON API (`mockapi:8000` inside the stack) |
 | 8766 | The backend that the Playwright tests start |
 
 ## Checks
@@ -138,7 +156,9 @@ request (`.github/workflows/ci.yml`).
 ## Dependencies
 
 Each one is pinned. The Python ones are justified inline in
-[backend/pyproject.toml](backend/pyproject.toml) and
+[backend/pyproject.toml](backend/pyproject.toml),
+[runtime/pyproject.toml](runtime/pyproject.toml) (httpx and python-jsonpath, the
+spec engine's only additions to pygeoapi's own) and
 [pyproject.toml](pyproject.toml). For the frontend:
 
 | Package | Why |
@@ -163,6 +183,11 @@ Each one is pinned. The Python ones are justified inline in
   backend should call them. Never expose them publicly.
 - Custom provider code runs only in disposable sandbox containers, and it
   reaches production only as a reviewed package (Git pull request plus CI).
+- The sandbox reaches only the hosts a job declares, through an egress gateway
+  that refuses link-local and metadata addresses, and private ones unless
+  `sandbox.private_hosts` in `provider-builder.yaml` names the host.
+- A created provider's spec checks the same rules itself when it runs in
+  pygeoapi. Allow a private host there with `PYGEOAPI_SPEC_PRIVATE_HOSTS`.
 - Secrets are never written to config, specs, code, logs or Git. They're
   written as `${ENV_VAR}` placeholders, and the app lists the variables your
   deployment must define.

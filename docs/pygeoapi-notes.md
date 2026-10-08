@@ -254,8 +254,8 @@ Source notes: [research/provider-contract.md §8–9](research/provider-contract
 
 ### 5.4 Quirks of the Phase 1 core providers
 
-Found while writing the CSV, GeoJSON, SQLiteGPKG and PostgreSQL descriptors and
-running their probes.
+Found while writing the CSV, GeoJSON, SQLiteGPKG and PostgreSQL descriptors,
+running their probes, and (Phase 2) running the contract harness on them.
 
 - **SQLiteGPKG writes to its file when it loads.**
   - It opens the file read-write with `sqlite3.connect(self.data)` (`pygeoapi/provider/sqlite.py:181`).
@@ -265,6 +265,7 @@ running their probes.
   - So the pygeoapi server needs write access to the file and its folder. The builder probes a temporary copy (`probe.copy_data` in the descriptor) and explains the read-only case (error rule `gpkg-readonly`). `tools/vendor.py` reports a fixture changed this way.
 - **SQLiteGPKG reports only some column types.** `get_fields()` maps `INTEGER` and `REAL` to `number` (`pygeoapi/provider/sqlite.py:98`), and `TEXT…` and `BLOB` to `string` (`pygeoapi/provider/sqlite.py:100`). Columns declared any other way (`DATE`, `DATETIME`, `BOOLEAN`, `INT`, `DOUBLE`, …) are left out. They're missing from `/queryables` and from the builder's field pickers, which use the same list, and no column is ever an `integer`.
 - **CSV doesn't keep the order of `properties`.** With `properties` set, each feature's properties come from `set(self.properties) | set(select_properties)` (`pygeoapi/provider/csv_.py:180`), so their order is arbitrary and can change when the server restarts. The CSV descriptor's help text says so.
+- **GeoJSON ignores `q` and wants string ids.** Its `query()` accepts `q` (`pygeoapi/provider/geojson.py:168`) but never passes it on to `_load` (`pygeoapi/provider/geojson.py:189`), so a search returns everything. Its `get()` compares `str(feature.get('id')) == identifier` (`pygeoapi/provider/geojson.py:214`), which works because the API passes the URL segment, a string. Calling it with an int finds nothing. *Executed:* the Phase 2 contract harness reported both (it calls `get()` with a string, as the API does).
 - **PostgreSQL reads two undocumented `data` keys.** `database` is an alias of `dbname`, and `query` is stored but never used (`pygeoapi/provider/sql.py:607`, `pygeoapi/provider/sql.py:609`). The descriptor leaves both out, with reasons (`drift_ignore`, ADR-0010).
 
 ## 6. Validation and tooling
