@@ -7,7 +7,7 @@ from typing import Any
 
 import yaml
 from fastapi.testclient import TestClient
-from forms import csv_form
+from forms import csv_form, postgres_form
 
 
 def wait(client: TestClient, job_id: str) -> dict[str, Any]:
@@ -84,6 +84,15 @@ def test_probe_validate_export(client: TestClient) -> None:
     assert list(merged['resources']) == ['lakes', 'obs']
     assert e['merged_yaml'].startswith('# pygeoapi config for the Provider Builder dev stack')
     assert any('restart pygeoapi' in s for s in e['instructions'])
+
+
+def test_export_with_secrets_recreates_the_container(client: TestClient) -> None:
+    e = client.post('/api/export', json={'form': postgres_form(), 'target': 'test'}).json()
+    assert e['env'][0]['name'] == 'PYGEOAPI_WATERWAYS_DB_PASSWORD'
+    assert 'password: ${PYGEOAPI_WATERWAYS_DB_PASSWORD}' in e['merged_yaml']
+    assert any('PYGEOAPI_WATERWAYS_DB_PASSWORD' in s for s in e['instructions'])
+    assert any('--force-recreate pygeoapi' in s for s in e['instructions'])
+    assert not any('docker compose restart' in s for s in e['instructions'])
 
 
 def test_probe_failure_is_explained(client: TestClient) -> None:

@@ -318,11 +318,19 @@ class Service:
         if rendered.env:
             names = ', '.join(e.name for e in rendered.env)
             steps.append(f'Define these environment variables for the pygeoapi server: {names}.')
-        steps.append(
-            'Regenerate the OpenAPI document and restart pygeoapi. The official '
-            'Docker image does both when the container restarts, for example: '
-            'docker compose restart pygeoapi.'
-        )
+            # A restarted container keeps its old environment; only a new one rereads env files.
+            steps.append(
+                'Regenerate the OpenAPI document and restart pygeoapi. The official '
+                'Docker image regenerates it whenever a container starts. With docker '
+                'compose, recreate the container so it reads the new variables: '
+                'docker compose up -d --no-deps --force-recreate pygeoapi.'
+            )
+        else:
+            steps.append(
+                'Regenerate the OpenAPI document and restart pygeoapi. The official '
+                'Docker image does both when the container restarts, for example: '
+                'docker compose restart pygeoapi.'
+            )
         if target.server_url:
             steps.append(
                 f'Then open {target.server_url.rstrip("/")}/collections/{form.resource_id}/items'
