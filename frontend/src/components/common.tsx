@@ -1,5 +1,5 @@
 import { yaml } from '@codemirror/lang-yaml'
-import CodeMirror from '@uiw/react-codemirror'
+import CodeMirror, { EditorView } from '@uiw/react-codemirror'
 import { useEffect, useState } from 'react'
 
 import type { Finding } from '../api/client'
@@ -23,12 +23,11 @@ export function YamlView({ text, label }: { text: string; label: string }) {
     <div className="yaml-view">
       <CodeMirror
         value={text}
-        extensions={[yaml()]}
+        extensions={[yaml(), EditorView.lineWrapping, EditorView.contentAttributes.of({ 'aria-label': label, 'aria-readonly': 'true' })]}
         theme={dark ? 'dark' : 'light'}
         editable={false}
         readOnly
         basicSetup={{ foldGutter: false, highlightActiveLine: false }}
-        aria-label={label}
       />
     </div>
   )

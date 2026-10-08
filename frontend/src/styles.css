@@ -186,7 +186,7 @@ dialog::backdrop { background: rgb(0 0 0 / 40%); }
 @media (max-width: 760px) {
   main { padding: 1rem 0.75rem 3rem; }
   .wizard { grid-template-columns: minmax(0, 1fr); }
-  .steps ol { display: flex; overflow-x: auto; gap: 0.25rem; position: static; }
+  .steps ol { display: flex; flex-wrap: wrap; gap: 0.25rem; position: static; }
   .steps li span:last-child { display: none; }
   .steps li.current span:last-child { display: inline; }
   .step { padding: 1rem; }
