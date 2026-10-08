@@ -22,6 +22,9 @@ capabilities:
   transactions: true
 probe: {kind: feature}
 introspect: {what: sql, dialect: postgresql}
+drift_ignore:
+  - {key: data.database, reason: Undocumented alias of data.dbname; the form writes dbname, source: 'pygeoapi/provider/sql.py:607'}
+  - {key: data.query, reason: Stored but never used by pygeoapi, source: 'pygeoapi/provider/sql.py:609'}
 notes:
   - >-
     To publish a custom query, create a view (or materialized view) in the
@@ -91,6 +94,7 @@ variants:
         title: Schemas to search
         default: [public]
         step: connect
+        drift: passthrough
         source: pygeoapi/provider/sql.py:616
 fields:
   - key: table
@@ -137,6 +141,7 @@ fields:
     min: 1
     advanced: true
     step: connect
+    drift: passthrough
     source: pygeoapi/provider/sql.py:636
 
   - key: options.pool_timeout
@@ -146,6 +151,7 @@ fields:
     default: 30
     advanced: true
     step: connect
+    drift: passthrough
     source: pygeoapi/provider/sql.py:639
 
 examples:

@@ -67,6 +67,15 @@ def test_base_fields_are_cited(catalog: Catalog) -> None:
         assert ok, why
 
 
+def test_drift_ignores_are_cited(catalog: Catalog) -> None:
+    raws = [catalog.bases['feature'], *(d.raw for d in catalog.descriptors.values())]
+    ignores = [i for raw in raws for i in raw.get('drift_ignore', [])]
+    assert ignores
+    for i in ignores:
+        ok, why = _citation_ok(i['source'], i['key'])
+        assert ok, why
+
+
 def test_examples_are_cited_and_exist(catalog: Catalog) -> None:
     for d in catalog.descriptors.values():
         assert d.raw.get('examples'), f'{d.id} has no example from the pygeoapi docs'

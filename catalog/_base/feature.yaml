@@ -10,6 +10,13 @@ title: Feature provider (common keys)
 source:
   - pygeoapi/provider/base.py
   - pygeoapi/crs.py
+# BaseProvider reads these for every provider, but feature providers don't
+# use them (docs/research/providers-features-files.md §0).
+drift_ignore:
+  - {key: file_types, reason: Read only by the FileSystem and Azure STAC providers, source: 'pygeoapi/provider/filesystem.py:130'}
+  - {key: x_field, reason: 'Read only by Parquet, xarray and xarray-EDR; CSV uses geometry.x_field', source: 'pygeoapi/provider/parquet.py:232'}
+  - {key: y_field, reason: 'Read only by Parquet, xarray and xarray-EDR; CSV uses geometry.y_field', source: 'pygeoapi/provider/parquet.py:238'}
+  - {key: z_field, reason: Read only by xarray-EDR, source: 'pygeoapi/provider/xarray_edr.py:108'}
 fields:
   - key: id_field
     type: field

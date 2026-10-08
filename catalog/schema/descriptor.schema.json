@@ -87,6 +87,20 @@
           "provider": {"type": "object", "required": ["type", "name", "data"]}
         }
       }
+    },
+    "drift_ignore": {
+      "type": "array",
+      "description": "Keys the code reads that the descriptor deliberately leaves out, each with a reason (tools/drift_check.py)",
+      "items": {
+        "type": "object",
+        "required": ["key", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "key": {"type": "string"},
+          "reason": {"type": "string"},
+          "source": {"type": "string"}
+        }
+      }
     }
   },
   "allOf": [
