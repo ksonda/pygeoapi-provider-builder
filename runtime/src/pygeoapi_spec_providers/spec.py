@@ -326,6 +326,32 @@ def semantic_problems(doc: Mapping[str, Any]) -> list[Problem]:
     return problems
 
 
+SOURCE_VALIDATOR = Draft202012Validator({'$ref': '#/$defs/source', '$defs': SCHEMA['$defs']})
+
+
+def validate_source(source: Any) -> list[Problem]:
+    """Checks for a ``source`` block on its own (J4 samples a URL before there's a spec)."""
+    problems = [
+        Problem('/source' + _pointer(e.absolute_path), e.message)
+        for e in SOURCE_VALIDATOR.iter_errors(source)
+    ]
+    if problems:
+        return problems
+    doc = {
+        'source': source,
+        'records': '$',
+        'item_id': {'from': 'id'},
+        'geometry': {'type': 'none'},
+        'properties': [{'name': 'id', 'type': 'string'}],
+    }
+    return [p for p in semantic_problems(doc) if p.pointer.startswith('/source')]
+
+
+def normalize_source(source: Mapping[str, Any]) -> dict[str, Any]:
+    """A ``source`` block with defaults applied."""
+    return dict(merge_defaults({'source': source})['source'])
+
+
 def validate(doc: Any) -> list[Problem]:
     problems = schema_problems(doc)
     if problems:

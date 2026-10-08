@@ -106,3 +106,17 @@ def redact(value: Any, secrets: Iterable[str]) -> Any:
         return v
 
     return walk(value)
+
+
+def parse_time(value: Any) -> dt.datetime | None:
+    """A timezone-aware datetime from ISO 8601 text (naive means UTC), or None."""
+    if value is None or value == '':
+        return None
+    if isinstance(value, dt.datetime):
+        moment = value
+    else:
+        try:
+            moment = dt.datetime.fromisoformat(str(value).strip())
+        except ValueError:
+            return None
+    return moment.replace(tzinfo=dt.UTC) if moment.tzinfo is None else moment

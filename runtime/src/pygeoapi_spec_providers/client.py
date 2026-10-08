@@ -11,7 +11,7 @@ import json
 import threading
 import time
 from collections import OrderedDict
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -121,9 +121,14 @@ def retry_after(headers: httpx.Headers) -> float | None:
 
 
 class SourceClient:
-    def __init__(self, spec: Spec, environ: Mapping[str, str] | None = None):
-        source = spec.source
-        self.policy = Policy.for_hosts(spec.hosts(), environ)
+    def __init__(
+        self,
+        source: Mapping[str, Any],
+        hosts: Iterable[str],
+        environ: Mapping[str, str] | None = None,
+    ):
+        """``source`` is a spec's ``source`` block, with defaults applied."""
+        self.policy = Policy.for_hosts(hosts, environ)
         self.timeout = float(source['timeout_s'])
         self.retries = dict(source['retries'])
         self.max_bytes = int(source['max_response_bytes'])
@@ -162,6 +167,10 @@ class SourceClient:
         )
         self._cache: OrderedDict[str, tuple[float, Response]] = OrderedDict()
         self._lock = threading.Lock()
+
+    @classmethod
+    def for_spec(cls, spec: Spec, environ: Mapping[str, str] | None = None) -> SourceClient:
+        return cls(spec.source, spec.hosts(), environ)
 
     def _secret(self, value: Any) -> str:
         # yaml_load re-types substituted values, so a numeric key arrives as an int (notes §2).

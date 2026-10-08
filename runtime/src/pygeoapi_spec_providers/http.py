@@ -236,7 +236,7 @@ class Engine:
 
     def __init__(self, spec: Spec):
         self.spec = spec
-        self.client = SourceClient(spec)
+        self.client = SourceClient.for_spec(spec)
         self.mapper = Mapper(spec)
         self.pagination: dict[str, Any] = spec.data['pagination']
         self.filters: dict[str, Any] = spec.data['filters']

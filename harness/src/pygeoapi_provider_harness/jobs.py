@@ -35,14 +35,40 @@ def _load_yaml(text: str) -> Any:
     return yaml_load(io.StringIO(text))
 
 
-def _provider_def(job: dict[str, Any]) -> dict[str, Any]:
-    """The provider definition, placeholders resolved, paths remapped."""
-    resource = _load_yaml(job['resource_yaml'])
+FILES_PLACEHOLDER = '@files@'
+
+
+def _materialize(job: dict[str, Any], key: str = 'resource_yaml') -> str:
+    """The job's YAML text, with ``@files@`` pointing at the job's own files.
+
+    ``job['files']`` maps flat file names to text, for example an unsaved spec
+    (``data: @files@/spec.yaml``). They're written to a fresh temporary folder.
+    """
+    text = str(job[key])
+    files = job.get('files') or {}
+    if files:
+        workdir = job.setdefault('_files_dir', tempfile.mkdtemp(prefix='job-files-'))
+        for name, content in files.items():
+            if not name or '/' in name or '\\' in name or name.startswith('.'):
+                raise ValueError(f'Invalid job file name {name!r}')
+            Path(workdir, name).write_text(content, encoding='utf-8')
+        text = text.replace(FILES_PLACEHOLDER, workdir)
+    return text
+
+
+def _resource(job: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """The job's one resource, placeholders resolved, paths remapped."""
+    resource = remap_paths(_load_yaml(_materialize(job)), job.get('path_map', []))
     if not isinstance(resource, dict) or len(resource) != 1:
         raise ValueError('resource_yaml must hold exactly one resource')
-    (body,) = resource.values()
-    pdef = body['providers'][int(job.get('provider_index', 0))]
-    return remap_paths(pdef, job.get('path_map', []))  # type: ignore[no-any-return]
+    ((rid, body),) = resource.items()
+    return str(rid), body
+
+
+def _provider_def(job: dict[str, Any]) -> dict[str, Any]:
+    """The provider definition, placeholders resolved, paths remapped."""
+    _rid, body = _resource(job)
+    return dict(body['providers'][int(job.get('provider_index', 0))])
 
 
 # --------------------------------------------------------------------------- probe
@@ -464,8 +490,74 @@ def version(job: dict[str, Any]) -> dict[str, Any]:
     return {'pygeoapi': pygeoapi.__version__, 'python': platform.python_version()}
 
 
+# ------------------------------------------------------------------ harness, sample
+
+
+def harness(job: dict[str, Any]) -> dict[str, Any]:
+    """The contract checks (PLAN.md §7.7) on the job's one resource."""
+    from .checks import run_contract
+
+    rid, body = _resource(job)
+    levels = tuple(job.get('levels') or ('L1', 'L2', 'L3'))
+    t0 = time.perf_counter()
+    checklist = run_contract(
+        rid, body, int(job.get('provider_index', 0)), job.get('capabilities'), levels
+    )
+    return {
+        'checks': checklist.as_dicts(),
+        'summary': checklist.summary(),
+        'ok': checklist.ok(),
+        'ms': _ms(t0),
+    }
+
+
+SAMPLE_HEADERS = ('content-type', 'link', 'x-total-count', 'x-total', 'content-length')
+
+
+def sample(job: dict[str, Any]) -> dict[str, Any]:
+    """One response from an HTTP source, for the template wizard (PLAN.md §7.4).
+
+    The source block goes through the spec engine's own client, so the egress
+    rules, auth and size cap are the ones the provider will use.
+    """
+    from pygeoapi_spec_providers.client import SourceClient, describe
+    from pygeoapi_spec_providers.spec import normalize_source, validate_source
+
+    source = _load_yaml(_materialize(job, 'source_yaml'))
+    problems = validate_source(source)
+    if problems:
+        raise ValueError('; '.join(f'{p.pointer}: {p.message}' for p in problems))
+    source = normalize_source(source)
+    source['max_response_bytes'] = min(
+        int(source['max_response_bytes']), int(job.get('max_bytes', 5_000_000))
+    )
+    client = SourceClient(source, [str(httpx_host(source['url']))])
+    t0 = time.perf_counter()
+    response = client.get(source['url'], job.get('params') or {})
+    result: dict[str, Any] = {
+        'status': response.status,
+        'url': describe(response.url),
+        'headers': {k: v for k, v in response.headers.items() if k.lower() in SAMPLE_HEADERS},
+        'bytes': len(response.body),
+        'ms': _ms(t0),
+    }
+    try:
+        result['json'] = json.loads(response.body)
+    except ValueError:
+        result['text'] = response.body[:2000].decode('utf-8', errors='replace')
+    return result
+
+
+def httpx_host(url: str) -> str:
+    from urllib.parse import urlsplit
+
+    return (urlsplit(url).hostname or '').lower()
+
+
 JOBS: dict[str, JobFn] = {
     'probe': probe,
+    'harness': harness,
+    'sample': sample,
     'introspect': introspect,
     'openapi': openapi,
     'availability': availability,
