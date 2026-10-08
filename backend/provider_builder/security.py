@@ -48,7 +48,9 @@ class GuardMiddleware:
         if request.headers.get(CSRF_HEADER) != '1':
             return f'Missing {CSRF_HEADER} header'
         origin = request.headers.get('origin')
-        if origin and origin.rstrip('/').lower() not in self.allowed_origins:
+        # Same-origin is always fine: Host was checked against the allowlist above.
+        same_origin = f'{request.url.scheme}://{host}'
+        if origin and origin.rstrip('/').lower() not in {*self.allowed_origins, same_origin}:
             return f'Origin {origin!r} is not allowed'
         if request.headers.get('sec-fetch-site') == 'cross-site':
             return 'Cross-site requests are not allowed'

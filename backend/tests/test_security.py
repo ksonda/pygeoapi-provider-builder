@@ -93,3 +93,12 @@ def test_list_dir(settings: Settings) -> None:
     assert {e['name'] for e in listing['entries']} >= {'obs.csv', 'poi_portugal.gpkg'}
     assert all(e['server_path'].startswith('/data/') for e in listing['entries'])
     assert listing['parent'] is None
+
+
+def test_same_origin_passes(raw_client: TestClient) -> None:
+    r = raw_client.post(
+        '/api/render',
+        json={'form': {'resource_id': 'x'}},
+        headers={'X-Provider-Builder': '1', 'Origin': 'http://localhost'},
+    )
+    assert r.status_code == 200
