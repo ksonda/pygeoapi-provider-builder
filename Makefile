@@ -3,7 +3,6 @@ BIN := .venv/bin
 NPM := npm --prefix frontend
 COMPOSE := docker compose -f docker/compose.yaml
 IMAGE := geopython/pygeoapi:0.24.0
-SANDBOX_IMAGE = $(shell $(PYTHON) tools/images.py --tag)
 
 .PHONY: help setup vendor images check check-fast lint types check-docs drift test-unit test-docker \
 	frontend api-types api-types-update e2e fixtures stack-up stack-down dev-backend dev-frontend
@@ -95,11 +94,11 @@ fixtures:
 stack-up: fixtures images
 	touch docker/pygeoapi/pygeoapi.env
 	mkdir -p workspace/providers
-	SANDBOX_IMAGE=$(SANDBOX_IMAGE) $(COMPOSE) up -d --wait
+	$(COMPOSE) up -d --wait
 
 ## Stop the dev stack.
 stack-down:
-	SANDBOX_IMAGE=$(SANDBOX_IMAGE) $(COMPOSE) down
+	$(COMPOSE) down
 
 ## The backend on http://127.0.0.1:8765; it serves frontend/dist once built.
 dev-backend:

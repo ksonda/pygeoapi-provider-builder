@@ -15,6 +15,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 SANDBOX_DIR = REPO / 'docker' / 'sandbox'
 BASE_IMAGE = 'geopython/pygeoapi:0.24.0'
+#: A stable name for the current build, so plain `docker compose` commands work.
+STABLE_TAG = 'provider-builder/sandbox:0.24.0'
 
 
 def sandbox_tag() -> str:
@@ -47,4 +49,5 @@ def build_sandbox(docker: str | None = None) -> str:
     tag = sandbox_tag()
     if not image_exists(tag, docker):
         subprocess.run([docker, 'build', '-t', tag, str(SANDBOX_DIR)], check=True)  # noqa: S603
+    subprocess.run([docker, 'tag', tag, STABLE_TAG], check=True)  # noqa: S603
     return tag

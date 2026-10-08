@@ -15,7 +15,7 @@ name: provider-builder-dev
 
 services:
   pygeoapi:
-    image: ${SANDBOX_IMAGE:?run make stack-up, which builds the sandbox image}
+    image: provider-builder/sandbox:0.24.0   # make images tags the current build with this name
     user: root
     entrypoint: ["/entrypoint.sh"]
     ports:

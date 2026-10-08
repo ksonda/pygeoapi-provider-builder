@@ -23,7 +23,7 @@ from provider_builder.settings import DataRoot, SandboxSettings, Settings, Targe
 pytestmark = pytest.mark.docker
 
 DATA = REPO / 'vendor' / 'pygeoapi' / 'tests' / 'data'
-BASE = REPO / 'docker' / 'pygeoapi' / 'pygeoapi.config.yml'
+BASE = REPO / 'backend' / 'tests' / 'fixtures' / 'base.config.yml'
 FILE_CASES = ['csv', 'geojson', 'sqlitegpkg']
 
 
