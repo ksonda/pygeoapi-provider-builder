@@ -5,8 +5,7 @@ from typing import Any
 
 import pytest
 import yaml
-from conftest import BASE_CONFIG
-from forms import csv_form, postgres_form
+from forms import BASE_CONFIG, csv_form, postgres_form
 from provider_builder.catalog import Catalog
 from provider_builder.render import FormState
 from provider_builder.validation import (

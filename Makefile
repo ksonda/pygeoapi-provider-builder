@@ -33,9 +33,9 @@ lint:
 	$(BIN)/ruff check .
 	$(BIN)/ruff format --check .
 
-## mypy (strict) on the backend, the harness and the tools.
+## mypy (strict) on the backend, the harness, the runtime and the tools.
 types:
-	$(BIN)/mypy backend/provider_builder harness/src tools
+	$(BIN)/mypy backend/provider_builder harness/src runtime/src tools
 
 ## Pinned sources, then citations: strict for curated docs, errors only elsewhere.
 check-docs:
@@ -47,9 +47,9 @@ check-docs:
 drift:
 	$(PYTHON) tools/drift_check.py
 
-## Unit, golden and harness tests.
+## Unit, golden, harness and spec-engine tests (the engine runs against the mock API).
 test-unit:
-	$(BIN)/pytest backend/tests harness/tests -q
+	$(BIN)/pytest backend/tests harness/tests runtime/tests -q
 
 ## Contract tests in the pinned image, and integration tests on the dev stack.
 test-docker: stack-up

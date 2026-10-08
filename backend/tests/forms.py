@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
+
+REPO = Path(__file__).resolve().parents[2]
+BASE_CONFIG = REPO / 'docker' / 'pygeoapi' / 'pygeoapi.config.yml'
 
 
 def csv_form(**overrides: Any) -> dict[str, Any]:

@@ -1,9 +1,10 @@
 # uv workspace root (virtual: not a package itself). See docs/decisions.md ADR-0002.
 [tool.uv.workspace]
-members = ["backend", "harness"]
+members = ["backend", "harness", "runtime"]
 
 [tool.uv.sources]
 pygeoapi-provider-harness = { workspace = true }
+pygeoapi-spec-providers = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -38,7 +39,7 @@ ignore_missing_imports = true
 exclude = ["vendor/", "workspace/", "frontend/"]
 
 [tool.pytest.ini_options]
-testpaths = ["backend/tests", "harness/tests", "tests"]
+testpaths = ["backend/tests", "harness/tests", "runtime/tests", "tests"]
 markers = [
     "docker: needs a running Docker daemon and the pinned pygeoapi image",
     "compose: needs the docker compose dev stack (make stack-up)",

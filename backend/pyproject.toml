@@ -7,6 +7,7 @@ license = "MIT"
 dependencies = [
     "pygeoapi==0.24.0",               # pinned target (ADR-0001); schema, yaml_load semantics
     "pygeoapi-provider-harness",      # worker protocol and probe code (runs in the sandbox)
+    "pygeoapi-spec-providers",        # spec schema and validation only; never runs providers
     "fastapi>=0.141",                 # HTTP API and its OpenAPI document (ADR-0011)
     "uvicorn>=0.53",                  # ASGI server for local use
     "ruamel.yaml>=0.19",              # round-trip YAML: locate nodes, dump fragments (ADR-0003)

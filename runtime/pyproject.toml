@@ -1,0 +1,19 @@
+[project]
+name = "pygeoapi-spec-providers"
+version = "0.1.0"
+description = "Spec-driven pygeoapi providers: publish an HTTP JSON API as OGC API - Features without code"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    "pygeoapi==0.24.0",          # the base classes and yaml_load (ADR-0001, ADR-0016)
+    "httpx>=0.28,<0.29",         # HTTP client; egress.py plugs a vetted-address backend into it
+    "python-jsonpath>=2.2,<3",   # RFC 9535 JSONPath, no code evaluation (ADR-0006)
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pygeoapi_spec_providers"]
