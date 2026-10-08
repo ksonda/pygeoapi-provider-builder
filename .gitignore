@@ -38,3 +38,4 @@ backups/
 /docker/pygeoapi/pygeoapi.env
 frontend/test-results/
 frontend/playwright-report/
+/.e2e/

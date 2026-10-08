@@ -19,15 +19,16 @@ import httpx
 import pytest
 from dockerutil import IMAGE, NETWORK, REPO
 from forms import CASES
+from provider_builder.images import STABLE_TAG
 from provider_builder.render import FormState
 from provider_builder.runner import DockerRunner
 from provider_builder.service import Service
-from provider_builder.settings import DataRoot, SandboxSettings, Settings, Target
+from provider_builder.settings import DataRoot, SandboxSettings, Settings, Target, Workspace
 
 pytestmark = pytest.mark.compose
 
 DATA = REPO / 'vendor' / 'pygeoapi' / 'tests' / 'data'
-BASE = REPO / 'backend' / 'tests' / 'fixtures' / 'base.config.yml'
+BASE = REPO / 'backend' / 'tests' / 'fixtures' / 'pygeoapi.config.yml'
 SECRETS = {'PYGEOAPI_WATERWAYS_DB_PASSWORD': 'postgres'}
 
 
@@ -51,17 +52,26 @@ def service(workdir: Path) -> Service:
         ],
         catalogs=[REPO / 'catalog'],
         sandbox=SandboxSettings(
-            runner='docker', egress_network=NETWORK, private_hosts=['postgis']
+            runner='docker', egress_network=NETWORK, private_hosts=['postgis', 'mockapi']
         ),
+        workspace=Workspace(host_path=workdir / 'providers', server_path='/specs'),
     )
-    return Service(settings, runner=DockerRunner(settings.sandbox, settings.data_roots))
+    return Service(
+        settings, runner=DockerRunner(settings.sandbox, settings.data_roots, settings.workspace)
+    )
 
 
 @pytest.fixture
 def serve(workdir: Path) -> Iterator[callable]:  # type: ignore[valid-type]
     names: list[str] = []
 
-    def start(config_text: str, env: dict[str, str]) -> str:
+    def start(
+        config_text: str,
+        env: dict[str, str],
+        image: str = IMAGE,
+        volumes: tuple[str, ...] = (),
+        args: tuple[str, ...] = (),
+    ) -> str:
         (workdir / 'config' / 'pygeoapi.config.yml').write_text(config_text)
         name = f'pb-it-{uuid.uuid4().hex[:8]}'
         names.append(name)
@@ -85,7 +95,9 @@ def serve(workdir: Path) -> Iterator[callable]:  # type: ignore[valid-type]
         ]
         for key, value in env.items():
             cmd += ['-e', f'{key}={value}']
-        subprocess.run([*cmd, IMAGE], check=True, capture_output=True, timeout=60)
+        for volume in volumes:
+            cmd += ['-v', volume]
+        subprocess.run([*cmd, *args, image], check=True, capture_output=True, timeout=60)
         port = (
             subprocess.run(
                 ['docker', 'port', name, '80/tcp'],
@@ -158,3 +170,92 @@ def test_postgis_introspection(service: Service) -> None:
     waterways = tables[('osm', 'hotosm_bdi_waterways')]
     assert [c['name'] for c in waterways['columns'] if c['geometry']] == ['foo_geom']
     assert ('public', 'geometry_columns') not in tables  # PostGIS bookkeeping
+
+
+# --- Mode B: created providers -----------------------------------------------------------
+
+MOCK_SPEC = """spec_version: 1
+template: http-features
+id: mock-wells
+title: Mock wells
+version: 1.0.0
+source:
+  url: http://mockapi:8000/v2/wells
+records: $.data.items
+item_id:
+  from: well_id
+geometry:
+  type: geojson
+  field: location
+properties:
+  - name: well_id
+    type: string
+  - name: well_name
+    type: string
+  - name: county
+    type: string
+    from: county_name
+  - name: measured
+    type: datetime
+    from: lastMeasurementDate
+title_field: well_name
+time_field: measured
+pagination:
+  style: offset
+  offset_param: offset
+  limit_param: limit
+  total: $.meta.total
+filters:
+  bbox:
+    param: bbox
+    format: '{minx},{miny},{maxx},{maxy}'
+"""
+
+
+def test_the_harness_passes_in_the_sandbox_through_the_gateway(service: Service) -> None:
+    out = service.spec_harness(MOCK_SPEC, {}, ['L1', 'L2', 'L3'])
+    assert out['ok'], out.get('explanation')
+    assert out['egress'] == ['mockapi:8000']
+    checks = {c['id']: c['status'] for c in out['result']['checks']}
+    assert out['result']['ok'], [c for c in out['result']['checks'] if c['status'] == 'fail']
+    assert checks['L3.server'] == 'pass'  # gunicorn ran inside the sandbox
+    assert checks['L1.bbox'] == 'pass'
+
+
+def test_pygeoapi_serves_a_created_provider(
+    service: Service, serve: callable, workdir: Path
+) -> None:
+    saved = service.workspace_save(MOCK_SPEC, None, '', None)
+    form = FormState.model_validate(
+        {
+            'resource_id': 'wells',
+            'resource': {
+                'title': 'Wells',
+                'description': 'Mock wells',
+                'keywords': ['wells'],
+                'extents': {'spatial': {'bbox': [-118, 41, -110, 49]}},
+            },
+            'providers': [{'descriptor': saved['descriptor'], 'values': {'data': saved['data']}}],
+        }
+    )
+    probe = service.probe(form, 0, {})
+    assert probe['ok'], probe.get('explanation')
+    exported = service.export(form, 't')
+    assert not exported.validation.blocking, exported.validation.findings
+    # Like the dev stack: the sandbox image runs pygeoapi, with the runtime and specs mounted.
+    base = serve(
+        exported.merged_yaml,
+        {'PYTHONPATH': '/opt/runtime', 'PYGEOAPI_SPEC_PRIVATE_HOSTS': 'mockapi'},
+        image=STABLE_TAG,
+        volumes=(
+            f'{REPO / "runtime" / "src"}:/opt/runtime:ro',
+            f'{workdir / "providers"}:/specs:ro',
+        ),
+        args=('--user', 'root', '--entrypoint', '/entrypoint.sh'),
+    )
+    items = httpx.get(f'{base}/collections/wells/items?f=json&limit=2', timeout=60).json()
+    assert items['numberMatched'] == 120 and len(items['features']) == 2
+    nearby = httpx.get(f'{base}/collections/wells/items?f=json&bbox=-117,43,-115,45', timeout=60)
+    assert 0 < nearby.json()['numberMatched'] < 120
+    html = httpx.get(f'{base}/collections/wells/items?f=html&limit=2', timeout=60)
+    assert html.status_code == 200 and '<html' in html.text.lower()

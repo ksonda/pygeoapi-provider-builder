@@ -228,6 +228,6 @@ a.button.primary { background: var(--accent); color: var(--accent-text); border-
   .steps li span:last-child { display: none; }
   .steps li.current span:last-child { display: inline; }
   .step { padding: 1rem; }
-  .two-col, .link-row { grid-template-columns: 1fr; }
+  .two-col, .link-row { grid-template-columns: minmax(0, 1fr); }  /* 1fr would let wide tables spill out */
   .bbox-inputs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

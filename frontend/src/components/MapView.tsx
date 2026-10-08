@@ -138,7 +138,8 @@ export function MapView({ features, bbox, onDraw, label }: Props) {
 
   return (
     <figure className="map">
-      <div ref={container} className="map-canvas" role="img" aria-label={label} />
+      {/* A group, not an image: MapLibre puts focusable controls inside (axe: nested-interactive). */}
+      <div ref={container} className="map-canvas" role="group" aria-label={label} />
       <figcaption className="inline">
         <label className="small">
           <input type="checkbox" checked={osm} onChange={(e) => setOsm(e.target.checked)} /> OpenStreetMap background

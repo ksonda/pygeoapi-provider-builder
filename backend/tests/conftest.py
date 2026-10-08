@@ -14,7 +14,7 @@ from provider_builder.settings import DataRoot, SandboxSettings, Settings, Targe
 REPO = Path(__file__).resolve().parents[2]
 PYGEOAPI_DATA = REPO / 'vendor' / 'pygeoapi' / 'tests' / 'data'
 FIXTURES = ['obs.csv', 'ne_110m_lakes.geojson', 'poi_portugal.gpkg']
-BASE_CONFIG = REPO / 'backend' / 'tests' / 'fixtures' / 'base.config.yml'
+BASE_CONFIG = REPO / 'backend' / 'tests' / 'fixtures' / 'pygeoapi.config.yml'
 
 
 @pytest.fixture(scope='session')

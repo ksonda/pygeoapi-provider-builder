@@ -7,7 +7,7 @@ from typing import Any
 
 REPO = Path(__file__).resolve().parents[2]
 # A pristine copy of the dev stack's config: demos edit the real one (README, Quickstart).
-BASE_CONFIG = REPO / 'backend' / 'tests' / 'fixtures' / 'base.config.yml'
+BASE_CONFIG = REPO / 'backend' / 'tests' / 'fixtures' / 'pygeoapi.config.yml'
 
 
 def csv_form(**overrides: Any) -> dict[str, Any]:

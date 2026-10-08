@@ -79,9 +79,9 @@ api-types-update:
 	$(PYTHON) tools/export_openapi.py frontend/src/api/openapi.json
 	$(NPM) run gen:api
 
-## Playwright with axe, including the PostGIS specs.
+## Playwright with axe, including the specs that need the dev stack (PostGIS, mock API).
 e2e: frontend stack-up
-	E2E_POSTGIS=1 $(NPM) run e2e
+	E2E_STACK=1 $(NPM) run e2e
 
 FIXTURES := obs.csv ne_110m_lakes.geojson poi_portugal.gpkg
 

@@ -1,0 +1,33 @@
+# Settings for the backend Playwright starts (playwright.config.ts). Like
+# provider-builder.yaml, but the workspace is a throwaway folder (.e2e/, wiped
+# before each run) and the target is the tests' pristine copy of the dev config.
+# Relative paths resolve against this file's folder.
+
+data_roots:
+  - name: sample-data
+    host_path: ../../docker/data
+    server_path: /data
+
+targets:
+  - id: dev-stack
+    title: Local dev stack (docker compose)
+    kind: export
+    base_config: ../../backend/tests/fixtures/pygeoapi.config.yml
+    server_url: http://localhost:5080
+
+catalogs: [../../catalog]
+
+sandbox:
+  runner: auto
+  egress_network: provider-builder-dev
+  private_hosts: [postgis, mockapi]
+  timeout_s: 60
+
+workspace:
+  host_path: ../../.e2e/providers
+  server_path: /specs
+
+geoconnex: true
+
+allowed_hosts: [127.0.0.1, localhost]
+allowed_origins: [http://127.0.0.1:8766]

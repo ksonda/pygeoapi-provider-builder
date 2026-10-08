@@ -1,10 +1,10 @@
 // The PostGIS path against the dev stack, including a wrong password
-// (PLAN.md §12, E2E). Needs `make stack-up`; `make e2e` sets E2E_POSTGIS=1.
+// (PLAN.md §12, E2E). Needs the dev stack; `make e2e` sets E2E_STACK=1.
 import { expect, test } from '@playwright/test'
 
 import { expectAccessible, next, startWizard } from './helpers'
 
-test.skip(!process.env.E2E_POSTGIS, 'needs the dev stack (make stack-up), E2E_POSTGIS=1')
+test.skip(!process.env.E2E_STACK, 'needs the dev stack (make stack-up), E2E_STACK=1')
 
 test('a wrong password gets a friendly error, then the table publishes', async ({ page }) => {
   await startWizard(page, /PostgreSQL/)
