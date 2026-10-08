@@ -9,7 +9,7 @@ from provider_builder.app import create_app
 from provider_builder.catalog import Catalog
 from provider_builder.runner import SubprocessRunner
 from provider_builder.service import Service
-from provider_builder.settings import DataRoot, SandboxSettings, Settings, Target
+from provider_builder.settings import DataRoot, SandboxSettings, Settings, Target, Workspace
 
 REPO = Path(__file__).resolve().parents[2]
 PYGEOAPI_DATA = REPO / 'vendor' / 'pygeoapi' / 'tests' / 'data'
@@ -42,7 +42,8 @@ def settings(tmp_path: Path) -> Settings:
             )
         ],
         catalogs=[REPO / 'catalog'],
-        sandbox=SandboxSettings(runner='subprocess', timeout_s=60),
+        sandbox=SandboxSettings(runner='subprocess', timeout_s=60, private_hosts=['127.0.0.1']),
+        workspace=Workspace(host_path=tmp_path / 'workspace' / 'providers', server_path='/specs'),
         allowed_hosts=['localhost', '127.0.0.1'],
         allowed_origins=['http://localhost:5173'],
     )
@@ -50,7 +51,10 @@ def settings(tmp_path: Path) -> Settings:
 
 @pytest.fixture
 def service(settings: Settings) -> Service:
-    return Service(settings, runner=SubprocessRunner(settings.sandbox, settings.data_roots))
+    return Service(
+        settings,
+        runner=SubprocessRunner(settings.sandbox, settings.data_roots, settings.workspace),
+    )
 
 
 @pytest.fixture

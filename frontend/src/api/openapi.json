@@ -274,6 +274,46 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "HarnessRequest": {
+        "properties": {
+          "levels": {
+            "default": [
+              "L1",
+              "L2",
+              "L3"
+            ],
+            "items": {
+              "enum": [
+                "L1",
+                "L2",
+                "L3"
+              ],
+              "type": "string"
+            },
+            "title": "Levels",
+            "type": "array"
+          },
+          "spec": {
+            "description": "The spec as YAML, with ${VAR} placeholders for secrets",
+            "title": "Spec",
+            "type": "string"
+          },
+          "test_secrets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "description": "ENV_NAME -> value",
+            "title": "Test Secrets",
+            "type": "object"
+          }
+        },
+        "required": [
+          "spec"
+        ],
+        "title": "HarnessRequest",
+        "type": "object"
+      },
       "IntrospectRequest": {
         "properties": {
           "provider": {
@@ -719,6 +759,72 @@
         "title": "ResourceState",
         "type": "object"
       },
+      "SampleRequest": {
+        "properties": {
+          "source": {
+            "additionalProperties": true,
+            "description": "A spec's source block (url, query, headers, auth)",
+            "title": "Source",
+            "type": "object"
+          },
+          "test_secrets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "description": "ENV_NAME -> value",
+            "title": "Test Secrets",
+            "type": "object"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "SampleRequest",
+        "type": "object"
+      },
+      "SaveRequest": {
+        "properties": {
+          "changes": {
+            "default": "",
+            "title": "Changes",
+            "type": "string"
+          },
+          "harness": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The checklist to keep",
+            "title": "Harness"
+          },
+          "spec": {
+            "title": "Spec",
+            "type": "string"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          }
+        },
+        "required": [
+          "spec"
+        ],
+        "title": "SaveRequest",
+        "type": "object"
+      },
       "SecretRef": {
         "properties": {
           "env": {
@@ -763,6 +869,42 @@
           }
         },
         "title": "Spatial",
+        "type": "object"
+      },
+      "SpecCheckRequest": {
+        "properties": {
+          "spec": {
+            "title": "Spec",
+            "type": "string"
+          }
+        },
+        "required": [
+          "spec"
+        ],
+        "title": "SpecCheckRequest",
+        "type": "object"
+      },
+      "SpecRequest": {
+        "properties": {
+          "spec": {
+            "description": "The spec as YAML, with ${VAR} placeholders for secrets",
+            "title": "Spec",
+            "type": "string"
+          },
+          "test_secrets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "description": "ENV_NAME -> value",
+            "title": "Test Secrets",
+            "type": "object"
+          }
+        },
+        "required": [
+          "spec"
+        ],
+        "title": "SpecRequest",
         "type": "object"
       },
       "Temporal": {
@@ -1365,6 +1507,47 @@
         ]
       }
     },
+    "/api/samples": {
+      "post": {
+        "operationId": "samples_api_samples_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SampleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Samples",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
     "/api/settings": {
       "get": {
         "operationId": "public_settings_api_settings_get",
@@ -1385,6 +1568,131 @@
         "summary": "Public Settings",
         "tags": [
           "meta"
+        ]
+      }
+    },
+    "/api/specs/harness": {
+      "post": {
+        "operationId": "spec_harness_api_specs_harness_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HarnessRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Spec Harness",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/specs/preview": {
+      "post": {
+        "operationId": "spec_preview_api_specs_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpecRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Spec Preview",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/specs/validate": {
+      "post": {
+        "operationId": "spec_validate_api_specs_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpecCheckRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Spec Validate Api Specs Validate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Spec Validate",
+        "tags": [
+          "mode-b"
         ]
       }
     },
@@ -1480,6 +1788,117 @@
         "summary": "Validate",
         "tags": [
           "mode-a"
+        ]
+      }
+    },
+    "/api/workspace": {
+      "get": {
+        "operationId": "workspace_list_api_workspace_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Workspace List Api Workspace Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Workspace List",
+        "tags": [
+          "mode-b"
+        ]
+      },
+      "post": {
+        "operationId": "workspace_save_api_workspace_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Workspace Save Api Workspace Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Workspace Save",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/workspace/{provider_id}": {
+      "get": {
+        "operationId": "workspace_detail_api_workspace__provider_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Workspace Detail Api Workspace  Provider Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Workspace Detail",
+        "tags": [
+          "mode-b"
         ]
       }
     }

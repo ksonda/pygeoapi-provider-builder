@@ -88,6 +88,20 @@
         }
       }
     },
+    "env": {
+      "description": "Environment variables the provider reads itself (a created provider's spec placeholders); listed in the export instructions",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+          "secret": {"type": "boolean"},
+          "help": {"type": "string"}
+        }
+      }
+    },
     "egress": {
       "description": "Where the sandbox may connect for this provider (PLAN.md §8.2): sql reads data's host and port; spec reads the URLs of the spec data points at",
       "type": "object",

@@ -205,6 +205,12 @@ def render(form: FormState, catalog: Catalog, mapping_indent: int = 4) -> Render
     for p in form.providers:
         d = catalog.get(p.descriptor)
         providers.append(render_provider(p, d, form.resource_id, env))
+        # Variables the provider reads itself, such as a created provider's spec placeholders.
+        for var in d.raw.get('env', []):
+            entry = env.setdefault(
+                var['name'], EnvVar(name=var['name'], used_by=[], secret=bool(var.get('secret')))
+            )
+            entry.used_by.append(f'{form.resource_id}: the provider spec')
     res['providers'] = providers
     text = yamlio.dump({form.resource_id: res}, mapping_indent=mapping_indent)
     return RenderResult(

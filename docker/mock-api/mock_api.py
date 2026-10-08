@@ -60,6 +60,7 @@ def make_wells(n: int = 120) -> list[dict[str, Any]]:
 
 WELLS = make_wells()
 app = Flask(__name__)
+app.json.sort_keys = False  # keep fields in their natural order, as most APIs do
 _flaky: dict[str, int] = {}
 _flaky_lock = threading.Lock()
 

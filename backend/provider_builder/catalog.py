@@ -77,7 +77,7 @@ def _load_yaml(path: Path) -> dict[str, Any]:
 class Catalog:
     """All descriptors from one or more catalog directories."""
 
-    def __init__(self, dirs: list[Path]):
+    def __init__(self, dirs: list[Path], created: Path | None = None):
         schema = json.loads(SCHEMA_FILE.read_text(encoding='utf-8'))
         self.validator = Draft202012Validator(schema)
         self.bases: dict[str, dict[str, Any]] = {}
@@ -86,6 +86,8 @@ class Catalog:
         files: list[Path] = []
         for d in dirs:
             files += sorted(p for p in d.rglob('*.yaml') if 'schema' not in p.parts)
+        if created is not None and created.is_dir():  # workspace/providers/<id>/descriptor.yaml
+            files += sorted(created.glob('*/descriptor.yaml'))
         raws = []
         for path in files:
             try:
@@ -321,4 +323,5 @@ def card(d: Descriptor) -> dict[str, Any]:
         'notes': raw.get('notes', []),
         'verdict': raw.get('verdict'),
         'version': raw.get('version'),
+        'env': raw.get('env', []),
     }

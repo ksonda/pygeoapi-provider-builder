@@ -8,7 +8,7 @@ import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -21,6 +21,7 @@ from .render import FormState, ProviderState, RenderResult
 from .security import GuardMiddleware
 from .service import ExportResult, ProbeSummary, Service, ValidateResult
 from .settings import Settings, load_settings
+from .workspace import WorkspaceError
 from .yamlio import SpliceError
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / 'frontend' / 'dist'
@@ -67,6 +68,29 @@ class ExportRequest(BaseModel):
 
 class VerifyRequest(BaseModel):
     resource_id: str
+
+
+class SampleRequest(TestSecrets):
+    source: dict[str, Any] = Field(description="A spec's source block (url, query, headers, auth)")
+
+
+class SpecRequest(TestSecrets):
+    spec: str = Field(description='The spec as YAML, with ${VAR} placeholders for secrets')
+
+
+class SpecCheckRequest(BaseModel):
+    spec: str
+
+
+class HarnessRequest(SpecRequest):
+    levels: list[Literal['L1', 'L2', 'L3']] = ['L1', 'L2', 'L3']
+
+
+class SaveRequest(BaseModel):
+    spec: str
+    version: str | None = None
+    changes: str = ''
+    harness: dict[str, Any] | None = Field(default=None, description='The checklist to keep')
 
 
 class JobCreated(BaseModel):
@@ -158,7 +182,7 @@ def create_app(
     def catalog() -> list[dict[str, Any]]:
         return svc.cards()
 
-    @app.get('/api/catalog/{descriptor_id}', tags=['catalog'])
+    @app.get('/api/catalog/{descriptor_id:path}', tags=['catalog'])
     def catalog_detail(descriptor_id: str) -> dict[str, Any]:
         return svc.detail(descriptor_id)
 
@@ -215,6 +239,55 @@ def create_app(
         return svc.verify(target_id, req.resource_id)
 
     # ------------------------------------------------------------------- jobs
+
+    @app.exception_handler(WorkspaceError)
+    async def _workspace_error(request: Request, exc: WorkspaceError) -> JSONResponse:
+        return JSONResponse(
+            {
+                'title': 'Workspace error',
+                'status': 400,
+                'detail': str(exc),
+                'problems': [vars(p) for p in exc.problems],
+            },
+            status_code=400,
+            media_type='application/problem+json',
+        )
+
+    @app.post('/api/samples', status_code=202, tags=['mode-b'])
+    def samples(req: SampleRequest) -> JobCreated:
+        job = svc.jobs.submit('sample', lambda: svc.sample(req.source, req.test_secrets))
+        return JobCreated(job_id=job.id)
+
+    @app.post('/api/specs/validate', tags=['mode-b'])
+    def spec_validate(req: SpecCheckRequest) -> dict[str, Any]:
+        return svc.spec_check(req.spec)
+
+    @app.post('/api/specs/preview', status_code=202, tags=['mode-b'])
+    def spec_preview(req: SpecRequest) -> JobCreated:
+        job = svc.jobs.submit('spec-preview', lambda: svc.spec_preview(req.spec, req.test_secrets))
+        return JobCreated(job_id=job.id)
+
+    @app.post('/api/specs/harness', status_code=202, tags=['mode-b'])
+    def spec_harness(req: HarnessRequest) -> JobCreated:
+        job = svc.jobs.submit(
+            'harness', lambda: svc.spec_harness(req.spec, req.test_secrets, list(req.levels))
+        )
+        return JobCreated(job_id=job.id)
+
+    @app.get('/api/workspace', tags=['mode-b'])
+    def workspace_list() -> list[dict[str, Any]]:
+        return svc.workspace.list()
+
+    @app.get('/api/workspace/{provider_id}', tags=['mode-b'])
+    def workspace_detail(provider_id: str) -> dict[str, Any]:
+        try:
+            return svc.workspace.detail(provider_id)
+        except WorkspaceError as err:
+            raise HTTPException(404, str(err)) from err
+
+    @app.post('/api/workspace', tags=['mode-b'])
+    def workspace_save(req: SaveRequest) -> dict[str, Any]:
+        return svc.workspace_save(req.spec, req.version, req.changes, req.harness)
 
     @app.get('/api/jobs/{job_id}', tags=['jobs'])
     def job(job_id: str) -> JobInfo:

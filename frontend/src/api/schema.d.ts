@@ -191,6 +191,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/samples": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Samples */
+        post: operations["samples_api_samples_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings": {
         parameters: {
             query?: never;
@@ -202,6 +219,57 @@ export interface paths {
         get: operations["public_settings_api_settings_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/specs/harness": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Spec Harness */
+        post: operations["spec_harness_api_specs_harness_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/specs/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Spec Preview */
+        post: operations["spec_preview_api_specs_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/specs/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Spec Validate */
+        post: operations["spec_validate_api_specs_validate_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -236,6 +304,41 @@ export interface paths {
         put?: never;
         /** Validate */
         post: operations["validate_api_validate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspace": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workspace List */
+        get: operations["workspace_list_api_workspace_get"];
+        put?: never;
+        /** Workspace Save */
+        post: operations["workspace_save_api_workspace_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workspace/{provider_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Workspace Detail */
+        get: operations["workspace_detail_api_workspace__provider_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -362,6 +465,31 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HarnessRequest */
+        HarnessRequest: {
+            /**
+             * Levels
+             * @default [
+             *       "L1",
+             *       "L2",
+             *       "L3"
+             *     ]
+             */
+            levels?: ("L1" | "L2" | "L3")[];
+            /**
+             * Spec
+             * @description The spec as YAML, with ${VAR} placeholders for secrets
+             */
+            spec: string;
+            /**
+             * Test Secrets
+             * @description ENV_NAME -> value
+             * @default {}
+             */
+            test_secrets?: {
+                [key: string]: string;
+            };
         };
         /** IntrospectRequest */
         IntrospectRequest: {
@@ -567,6 +695,43 @@ export interface components {
              */
             type?: "collection";
         };
+        /** SampleRequest */
+        SampleRequest: {
+            /**
+             * Source
+             * @description A spec's source block (url, query, headers, auth)
+             */
+            source: {
+                [key: string]: unknown;
+            };
+            /**
+             * Test Secrets
+             * @description ENV_NAME -> value
+             * @default {}
+             */
+            test_secrets?: {
+                [key: string]: string;
+            };
+        };
+        /** SaveRequest */
+        SaveRequest: {
+            /**
+             * Changes
+             * @default
+             */
+            changes?: string;
+            /**
+             * Harness
+             * @description The checklist to keep
+             */
+            harness?: {
+                [key: string]: unknown;
+            } | null;
+            /** Spec */
+            spec: string;
+            /** Version */
+            version?: string | null;
+        };
         /** SecretRef */
         SecretRef: {
             /**
@@ -592,6 +757,27 @@ export interface components {
              * @default http://www.opengis.net/def/crs/OGC/1.3/CRS84
              */
             crs?: string;
+        };
+        /** SpecCheckRequest */
+        SpecCheckRequest: {
+            /** Spec */
+            spec: string;
+        };
+        /** SpecRequest */
+        SpecRequest: {
+            /**
+             * Spec
+             * @description The spec as YAML, with ${VAR} placeholders for secrets
+             */
+            spec: string;
+            /**
+             * Test Secrets
+             * @description ENV_NAME -> value
+             * @default {}
+             */
+            test_secrets?: {
+                [key: string]: string;
+            };
         };
         /** Temporal */
         Temporal: {
@@ -996,6 +1182,39 @@ export interface operations {
             };
         };
     };
+    samples_api_samples_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SampleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     public_settings_api_settings_get: {
         parameters: {
             query?: never;
@@ -1014,6 +1233,107 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    spec_harness_api_specs_harness_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HarnessRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    spec_preview_api_specs_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpecRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    spec_validate_api_specs_validate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpecCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -1075,6 +1395,96 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ValidateResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workspace_list_api_workspace_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+        };
+    };
+    workspace_save_api_workspace_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SaveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workspace_detail_api_workspace__provider_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

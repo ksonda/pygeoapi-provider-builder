@@ -18,12 +18,21 @@ from .jobs import JobManager
 from .render import EnvVar, FormState, ProviderState, RenderResult, render, render_provider
 from .runner import Outcome, Runner, make_runner
 from .settings import Settings
+from .suggest import suggest
 from .validation import (
     Finding,
     RuleContext,
     descriptor_findings,
     rule_findings,
     schema_findings,
+)
+from .workspace import (
+    PLUGIN,
+    ProviderWorkspace,
+    WorkspaceError,
+    check_spec_text,
+    generated_descriptor,
+    spec_env,
 )
 
 
@@ -54,7 +63,8 @@ class ExportResult(BaseModel):
 class Service:
     def __init__(self, settings: Settings, runner: Runner | None = None):
         self.settings = settings
-        self.catalog = Catalog(settings.catalogs)
+        self.catalog = Catalog(settings.catalogs, settings.workspace.host_path)
+        self.workspace = ProviderWorkspace(settings.workspace)
         self.runner = runner or make_runner(
             settings.sandbox, settings.data_roots, settings.workspace
         )
@@ -132,6 +142,8 @@ class Service:
 
     def _secrets(self, p: ProviderState, test_secrets: dict[str, str]) -> dict[str, str]:
         wanted = {ref.env for ref in p.secrets.values()}
+        if p.descriptor in self.catalog.descriptors:
+            wanted |= {v['name'] for v in self.catalog.get(p.descriptor).raw.get('env', [])}
         return {k: v for k, v in test_secrets.items() if k in wanted}
 
     def _spec_doc(self, pdef: dict[str, Any]) -> dict[str, Any] | None:
@@ -418,3 +430,123 @@ class Service:
                     }
                 )
         return {'ok': all(c['ok'] for c in checks), 'checks': checks}
+
+    # ------------------------------------------------------------------- Mode B
+
+    def reload_catalog(self) -> None:
+        self.catalog = Catalog(self.settings.catalogs, self.settings.workspace.host_path)
+
+    def sample(self, source: dict[str, Any], test_secrets: dict[str, str]) -> dict[str, Any]:
+        """Fetch one response in the sandbox and suggest a mapping (PLAN.md §7.4 steps 1-2)."""
+        from pygeoapi_spec_providers.spec import validate_source
+
+        problems = validate_source(source)
+        if problems:
+            return {'ok': False, 'problems': [vars(p) for p in problems]}
+        names = set(spec_env({'source': source}))
+        secrets = {k: v for k, v in test_secrets.items() if k in names}
+        out = self.runner.run(
+            {'kind': 'sample', 'source_yaml': yamlio.dump(source)},
+            secrets,
+            egress=egress.urls([source.get('url')]),
+        )
+        res = self._mode_b_outcome(out)
+        if out.ok and out.result and 'json' in out.result:
+            url = str(source['url'])
+            query = '&'.join(f'{k}={v}' for k, v in (source.get('query') or {}).items())
+            res['suggestions'] = suggest(
+                out.result['json'],
+                out.result.get('headers', {}),
+                f'{url}?{query}' if query else url,
+            )
+        return res
+
+    def spec_check(self, text: str) -> dict[str, Any]:
+        doc, problems = check_spec_text(text)
+        result: dict[str, Any] = {
+            'ok': doc is not None and not problems,
+            'problems': [vars(p) for p in problems],
+        }
+        if doc is not None:
+            result.update(
+                id=doc.get('id'),
+                version=doc.get('version'),
+                env=spec_env(doc),
+                hosts=sorted(str(h) for h in egress.spec(doc)),
+            )
+        return result
+
+    def _spec_job(
+        self, text: str, test_secrets: dict[str, str]
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str], set[egress.HostPort]]:
+        doc, problems = check_spec_text(text)
+        if doc is None or problems:
+            raise WorkspaceError('The spec has problems.', problems)
+        names = set(spec_env(doc))
+        secrets = {k: v for k, v in test_secrets.items() if k in names}
+        rid = str(doc['id'])
+        resource = {
+            rid: {
+                'type': 'collection',
+                'title': doc['title'],
+                'description': doc.get('description') or doc['title'],
+                'keywords': [rid],
+                'extents': {'spatial': {'bbox': [-180, -90, 180, 90]}},
+                'providers': [{'type': 'feature', 'name': PLUGIN, 'data': '@files@/spec.yaml'}],
+            }
+        }
+        job = {'resource_yaml': yamlio.dump(resource), 'files': {'spec.yaml': text}}
+        return doc, job, secrets, egress.spec(egress.fill(doc, secrets))
+
+    def spec_preview(self, text: str, test_secrets: dict[str, str]) -> dict[str, Any]:
+        try:
+            _doc, job, secrets, targets = self._spec_job(text, test_secrets)
+        except WorkspaceError as err:
+            return {'ok': False, 'problems': [vars(p) for p in err.problems]}
+        out = self.runner.run({**job, 'kind': 'probe', 'limit': 10}, secrets, egress=targets)
+        return self._mode_b_outcome(out)
+
+    def spec_harness(
+        self, text: str, test_secrets: dict[str, str], levels: list[str] | None = None
+    ) -> dict[str, Any]:
+        try:
+            doc, job, secrets, targets = self._spec_job(text, test_secrets)
+        except WorkspaceError as err:
+            return {'ok': False, 'problems': [vars(p) for p in err.problems]}
+        capabilities = generated_descriptor(str(doc['id']), [('0.0.0', doc)], '/')['capabilities']
+        out = self.runner.run(
+            {
+                **job,
+                'kind': 'harness',
+                'levels': levels or ['L1', 'L2', 'L3'],
+                'capabilities': capabilities,
+            },
+            secrets,
+            egress=targets,
+            timeout_s=max(self.settings.sandbox.timeout_s, 180),
+        )
+        return self._mode_b_outcome(out)
+
+    def _mode_b_outcome(self, out: Outcome) -> dict[str, Any]:
+        res: dict[str, Any] = {
+            'ok': out.ok,
+            'result': out.result,
+            'runner': out.runner,
+            'ms': out.ms,
+            'logs': out.logs,
+            'egress': out.extra.get('egress', []),
+        }
+        if not out.ok and out.error:
+            e = explain(
+                out.error, {'timeout': self.settings.sandbox.timeout_s} | out.extra, out.logs
+            )
+            res['error'] = out.error
+            res['explanation'] = {'code': e.code, 'message': e.message, 'hint': e.hint}
+        return res
+
+    def workspace_save(
+        self, text: str, version: str | None, changes: str, harness: dict[str, Any] | None
+    ) -> dict[str, Any]:
+        saved = self.workspace.save(text, version=version, changes=changes, harness=harness)
+        self.reload_catalog()
+        return saved
