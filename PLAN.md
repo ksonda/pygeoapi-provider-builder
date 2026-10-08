@@ -825,6 +825,11 @@ project venv (pygeoapi 0.24.0):
 
 It's *isolation from crashes and hangs*, not a security boundary. The UI says so.
 
+*As built:* Phase 1 went further. Probes run in `docker run` containers from the
+pinned image, with most of §8.2's limits (ADR-0008). The subprocess worker
+remains the fallback when Docker is unavailable, and the health check then
+warns.
+
 ### 8.2 Phase 2 onward: Docker
 - **Images:**
   - `provider-builder/sandbox:0.24.0` is `FROM geopython/pygeoapi:0.24.0`, plus
@@ -908,6 +913,11 @@ It's *isolation from crashes and hangs*, not a security boundary. The UI says so
   openapi-fetch, CodeMirror 6 (YAML and Python modes, lint from the backend),
   MapLibre GL, and ajv for inline validation.
   - Pin known-good majors in Phase 1: TypeScript 7 and ESLint 10 are new.
+  - *As built in Phase 1:* TypeScript 5.9.3, because openapi-typescript 7.13
+    needs TypeScript 5, and ESLint 10. React Router and TanStack Query aren't
+    in yet: two hash routes (`#/`, `#/configure/new`) and openapi-fetch with a
+    small job poller cover J1. They arrive with the routes for J2 and J3
+    (Phase 3).
 - **Routes:**
   - `/` for home
   - `/configure/new/:step`
@@ -930,11 +940,14 @@ It's *isolation from crashes and hangs*, not a security boundary. The UI says so
 
 ## 12. Testing
 
-`make check` runs everything below and fails on any failure.
+`make check` runs everything below and fails on any failure. It needs Docker,
+starts the dev stack, and treats a skipped Docker suite as an error.
+`make check-fast` runs the suites that don't need Docker. CI runs `make check`
+(`.github/workflows/ci.yml`) against the pinned sources in `tools/vendor.txt`.
 
 | Suite | Contents | From phase |
 |---|---|---|
-| Lint and types | ruff + mypy (backend, runtime, harness); eslint + `tsc --strict` | 1 |
+| Lint and types | ruff + mypy (backend, runtime, harness, tools); eslint + `tsc --strict` | 1 |
 | Docs | `tools/check_citations.py --strict docs/pygeoapi-notes.md` and descriptor `source` fields | 0 |
 | Catalog | every file validates against `descriptor.schema.json`; drift check; examples render | 1 |
 | Renderer | golden files for form state → YAML for each Tier-1 provider; env-var naming; placeholder style | 1 |
@@ -969,8 +982,11 @@ and a stop for your go-ahead.
 4. **Frontend:** the app shell; the J1 wizard (all 8 steps); the form renderer
    and widgets (secret, path, field picker, ordered list, bbox map); YAML
    preview; sample table and map.
-5. **docker compose:** `geopython/pygeoapi:0.24.0` (with `run-with-hot-reload`),
-   PostGIS seeded with pygeoapi's fixture, and the exported config mounted.
+5. **docker compose:** `geopython/pygeoapi:0.24.0`, PostGIS seeded with
+   pygeoapi's fixture, and the exported config mounted. *As built:* pygeoapi is
+   restarted after an export rather than run with `run-with-hot-reload`. The
+   hot reload doesn't regenerate OpenAPI (`docs/pygeoapi-notes.md` §9.1),
+   while a restart does, through the image's entrypoint.
 6. **Tests:** unit, golden, contract (OpenAPI generation in the image),
    integration (pygeoapi serves `/collections/{id}/items`), and E2E for CSV and
    PostGIS plus the wrong-password case.
@@ -1044,7 +1060,13 @@ the result in CI.
 
 ## 15. Open questions
 
-These are bundled into the Phase 0 confirmation message.
+These were bundled into the Phase 0 confirmation message. You replied "keep
+going", which I took as the defaults plus my recommendations:
+- **Answered:** Q2 (defaults), Q3 (block publishing), Q5 (Node from Homebrew),
+  Q6 (SQLiteGPKG is in Phase 1), Q7 (NOAA CO-OPS), Q9 (slugs only).
+- **Half answered:** Q4. I start Docker Desktop when needed, but I don't update
+  it without an explicit yes.
+- **Still open:** Q1, Q4 (the update), Q8, Q10, Q11, Q12.
 
 - **Q1. Which pygeoapi do your deployments run?** Upstream
   `geopython/pygeoapi:0.24.0`, or the Internet of Water fork (the Geoconnex

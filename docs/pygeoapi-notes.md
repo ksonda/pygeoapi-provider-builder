@@ -252,6 +252,21 @@ Source notes: [research/provider-contract.md §8–9](research/provider-contract
   - `None` means 204.
   - `get_metadata(**kwargs)` is called with keywords.
 
+### 5.4 Quirks of the Phase 1 core providers
+
+Found while writing the CSV, GeoJSON, SQLiteGPKG and PostgreSQL descriptors and
+running their probes.
+
+- **SQLiteGPKG writes to its file when it loads.**
+  - It opens the file read-write with `sqlite3.connect(self.data)` (`pygeoapi/provider/sqlite.py:181`).
+  - For a GeoPackage it then runs `SELECT AutoGPKGStart()` (`pygeoapi/provider/sqlite.py:220`), which refreshes SpatiaLite's `vgpkg_<table>` wrapper tables inside the file. pygeoapi's own `poi_portugal.gpkg` fixture already contains `vgpkg_poi_portugal`.
+  - *Executed:* loading that fixture once changed 121 bytes of it, the SQLite change counter and schema cookie among them. Its list of tables was the same before and after.
+  - On a read-only file, `AutoGPKGStart()` returns 0 and the provider raises `InvalidPluginError` with no message (`pygeoapi/provider/sqlite.py:227`). A missing file raises the same bare error (`pygeoapi/provider/sqlite.py:184`).
+  - So the pygeoapi server needs write access to the file and its folder. The builder probes a temporary copy (`probe.copy_data` in the descriptor) and explains the read-only case (error rule `gpkg-readonly`). `tools/vendor.py` reports a fixture changed this way.
+- **SQLiteGPKG reports only some column types.** `get_fields()` maps `INTEGER` and `REAL` to `number` (`pygeoapi/provider/sqlite.py:98`), and `TEXT…` and `BLOB` to `string` (`pygeoapi/provider/sqlite.py:100`). Columns declared any other way (`DATE`, `DATETIME`, `BOOLEAN`, `INT`, `DOUBLE`, …) are left out. They're missing from `/queryables` and from the builder's field pickers, which use the same list, and no column is ever an `integer`.
+- **CSV doesn't keep the order of `properties`.** With `properties` set, each feature's properties come from `set(self.properties) | set(select_properties)` (`pygeoapi/provider/csv_.py:180`), so their order is arbitrary and can change when the server restarts. The CSV descriptor's help text says so.
+- **PostgreSQL reads two undocumented `data` keys.** `database` is an alias of `dbname`, and `query` is stored but never used (`pygeoapi/provider/sql.py:607`, `pygeoapi/provider/sql.py:609`). The descriptor leaves both out, with reasons (`drift_ignore`, ADR-0010).
+
 ## 6. Validation and tooling
 
 ### 6.1 `validate_config` and `pygeoapi config validate`
@@ -314,17 +329,20 @@ Source note: [research/admin-api-and-runtime.md §3–4](research/admin-api-and-
 - **Reload:** `gunicorn --reload --reload-extra-file $PYGEOAPI_CONFIG` restarts workers when the file changes (`docker/entrypoint.sh:151`). It does **not** regenerate OpenAPI, so a publisher that writes the file must regenerate OpenAPI first, then trigger the reload.
 
 ### 9.2 The `geopython/pygeoapi:0.24.0` image
-Read from the `Dockerfile`; the daemon wasn't running.
+Read from the `Dockerfile` in Phase 0, then checked with `docker run` in Phase 1
+(2026-10-07).
+- Versions: Python 3.12.3, GDAL 3.8.4, SpatiaLite 5.1.0 and SQLite 3.45.1.
+  psycopg2, GeoAlchemy2, rasterio, xarray and requests are installed; httpx
+  isn't.
 - Base and Python:
   - `FROM ubuntu:noble` (`Dockerfile:37`), with GDAL, rasterio, Fiona, psycopg2, xarray and more from apt and the ubuntugis-unstable PPA.
   - A venv at `/venv` with `--system-site-packages` (`Dockerfile:133`). Extra packages go in with `/venv/bin/python3 -m pip install`.
 - Runtime:
   - It runs as **root**, on port 80, with no `HEALTHCHECK`.
   - The entrypoint runs `openapi generate … --fail-on-invalid-collection` at every start (`docker/entrypoint.sh:87`), so a provider that fails to load stops the container.
-- **Sandbox consequences:**
+- **Sandbox consequences** (done for Phase 1's probes, ADR-0008):
   - Bypass the entrypoint for probes.
   - Run as a non-root UID. The image's `chmod -R g=u /pygeoapi` makes that workable.
-  - Check the exact Python and GDAL versions once Docker is running (open item, §12).
 
 ## 10. Admin API
 
@@ -373,7 +391,8 @@ Source notes: [research/prior-art.md](research/prior-art.md), [research/org-plug
 ## 12. Open items
 
 To be checked when Docker is available, or in the phase noted.
-1. The exact Python and GDAL versions inside `geopython/pygeoapi:0.24.0` (Phase 1).
+1. **Resolved in Phase 1:** the exact Python and GDAL versions inside
+   `geopython/pygeoapi:0.24.0` (§9.2).
 2. Starlette and Django Admin API behaviour, and the Admin API's PUT/PATCH/DELETE diffs (Phase 3; the source note marks them pending).
 3. Executed checks for tiles, maps, records and STAC. The code reading is complete, but the runs are pending (Phase 5).
 4. Live checks of the pygeoapi-plugins providers against PostGIS, Redis and a CKAN endpoint (Phase 5).

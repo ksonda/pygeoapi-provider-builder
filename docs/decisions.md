@@ -10,11 +10,11 @@ phase named; "Accepted" means work proceeds on it. Source citations are
 | [0001](#adr-0001-pin-pygeoapi-0240-and-vendor-its-source) | Pin pygeoapi 0.24.0 and vendor its source | Accepted (pending §1 confirmation) |
 | [0002](#adr-0002-python-toolchain-uv--cpython-312) | Python toolchain: uv + CPython 3.12 | Accepted |
 | [0003](#adr-0003-lossless-editing-with-surgical-text-edits) | Lossless editing with surgical text edits | Accepted |
-| [0004](#adr-0004-form-rendering-small-in-house-renderer-over-compiled-descriptors) | Form rendering: small in-house renderer | Proposed (Phase 1 spike) |
+| [0004](#adr-0004-form-rendering-small-in-house-renderer-over-compiled-descriptors) | Form rendering: small in-house renderer | Accepted (Phase 1) |
 | [0005](#adr-0005-a-template-built-providers-data-points-at-its-spec) | A template-built provider's `data` points at its spec | Proposed |
 | [0006](#adr-0006-jsonpath-rfc-9535-via-python-jsonpath) | JSONPath: RFC 9535 via `python-jsonpath` | Accepted |
 | [0007](#adr-0007-sql-specs-parse-check-plus-database-side-limits) | SQL specs: parse check plus database-side limits | Accepted |
-| [0008](#adr-0008-sandbox-per-run-containers-with-an-egress-gateway) | Sandbox: per-run containers with an egress gateway | Proposed (Q1, Q4) |
+| [0008](#adr-0008-sandbox-per-run-containers-with-an-egress-gateway) | Sandbox: per-run containers with an egress gateway | Phase 1 part built; gateway proposed (Q1, Q4) |
 | [0009](#adr-0009-edr-engine-classes-define-their-query-methods-in-the-class-body) | EDR engine classes define query methods in the class body | Accepted |
 | [0010](#adr-0010-drift-check-ast-alias-tracking-plus-an-allowlist) | Drift check: AST alias tracking plus an allowlist | Accepted |
 | [0011](#adr-0011-typed-client-generated-from-the-backends-openapi) | Typed client generated from the backend's OpenAPI | Accepted |
@@ -44,6 +44,10 @@ re-clone, rerun the citation check, the drift check and the golden tests, and
 update `docs/pygeoapi-notes.md`. The backend checks at startup that its own
 pygeoapi version matches the sandbox image's.
 
+Since Phase 1, `tools/vendor.txt` pins every repository the docs cite to the
+commit that was read. `make vendor` checks them out, and `make check` fails
+when one is missing, at another commit or modified.
+
 **Evidence.** PyPI lists 0.24.0 (2026-07-28) as the latest release, with
 `requires_python >=3.12`. The installed wheel is byte-identical to the tag's
 `pygeoapi/` tree (`diff -rq`, 2026-09-23). Docker Hub has
@@ -64,6 +68,11 @@ it differs.
 
 **Consequences.** Contributors need uv, not a system Python. The README records
 the setup steps.
+
+**Confirmed in Phase 1.** The image runs Python 3.12.3 (`docker run`,
+2026-10-07). The workspace uses uv-managed CPython 3.12 (`.python-version`;
+3.12.14 locally) with one `uv.lock`. Its members so far are `backend/` and
+`harness/`; `runtime/` arrives in Phase 2.
 
 ## ADR-0003: Lossless editing with surgical text edits
 
@@ -131,6 +140,19 @@ probe-driven pickers, secrets, focus management) are custom either way.
 (two variants, a secret, a field picker, advanced options) both ways. Switch to
 rjsf if the in-house version isn't clearly simpler, or if it fails the axe
 audit.
+
+**Outcome (Phase 1): accepted.** The renderer is
+`frontend/src/forms/DescriptorForm.tsx` (338 lines) plus `validate.ts` (85
+lines: Ajv for draft 2020-12, with the backend's format checks). It renders all
+four Phase 1 descriptors. That includes PostgreSQL's two variants, its secret
+with an editable environment-variable name, the probe-driven pickers, an
+ordered property list and advanced options. The E2E suite runs axe (WCAG 2.1 A
+and AA) on the connect step for CSV (desktop and phone) and for PostgreSQL with
+an error showing, and on the review step. No serious or critical issue remains.
+Only the in-house half of the spike was built. With it passing the audit at
+this size, rjsf's remaining advantage is generic JSON Schema, which the
+descriptor vocabulary doesn't use. Revisit if descriptors ever need arbitrary
+nested schemas.
 
 ## ADR-0005: A template-built provider's `data` points at its spec
 
@@ -219,8 +241,14 @@ Relevant facts about the official image (`docs/pygeoapi-notes.md` §9.2):
 Database drivers speak raw TCP, so an HTTP proxy can't enforce egress for them.
 
 **Decision.**
-- **Phase 1:** a subprocess worker with a timeout. Only core providers run, so
-  no user code does.
+- **Phase 1 (built):** probes already run in containers, but from the pinned
+  image itself, with the harness mounted read-only on `PYTHONPATH`
+  (`backend/provider_builder/runner.py`). They use the container settings
+  below, except for the network: `--network none`, or the dev stack's network
+  when configured (to reach PostGIS), and no gateway yet. Secrets reach the
+  container by name (`-e NAME`), never on the command line. With `runner:
+  auto`, a subprocess worker takes over when Docker is unavailable. That is
+  acceptable only while nothing but core providers runs.
 - **Phase 2 onward**, each run is a fresh container from
   `provider-builder/sandbox:0.24.0`:
   - `FROM geopython/pygeoapi:0.24.0` plus the harness and runtime packages
@@ -302,12 +330,27 @@ such as PostgreSQL's `data.*`, and keys read only by a base class, such as
 It reports missing and invented keys. It runs in CI and whenever pygeoapi is
 bumped, and it covers Mode B scaffolds as well.
 
+**Implemented in Phase 1** as `tools/drift_check.py` (`make drift`, part of
+`make check`), for the core descriptors.
+- `ALIAS_HINTS` names variables that hold `data` across function boundaries.
+  PostgreSQL's connection keys arrive as the `connection_data` parameter, so
+  plain alias tracking can't see them.
+- Keys the API layer reads itself (`type`, `name`, `crs`, `format`, …) count
+  as read.
+- A descriptor's `drift_ignore` lists keys the code reads that it leaves out on
+  purpose, each with a reason and a citation, which a test checks:
+  - BaseProvider reads `file_types` and `x_field`/`y_field`/`z_field` for every
+    provider, but only STAC, Parquet and xarray providers use them.
+  - PostgreSQL also reads `data.database`, an undocumented alias of `dbname`,
+    and `data.query`, which it never uses.
+
 ## ADR-0011: Typed client generated from the backend's OpenAPI
 
 **Decision.** FastAPI publishes the backend's OpenAPI document. `openapi-typescript`
 (7.13) generates types and `openapi-fetch` (0.17) is the runtime client, both
 widely used and dependency-light. CI fails if the committed schema and the
-generated types are stale.
+generated types are stale: `make api-types` regenerates both into a temporary
+directory and compares them (`make api-types-update` refreshes them).
 
 ## ADR-0012: CSRF and DNS-rebinding protection even on 127.0.0.1
 
@@ -323,6 +366,12 @@ web page the user visits. A malicious page can POST to
   preflight, which we never grant.
 - When deployed behind a reverse proxy, the proxy handles authentication and
   these checks stay on.
+
+**Implemented in Phase 1** (`backend/provider_builder/security.py`). An
+`Origin` equal to the request's own scheme and `Host` passes, since `Host` has
+already been checked. The backend can therefore serve the built UI on any
+allowlisted host and port, such as Playwright's 8766. Requests marked
+`Sec-Fetch-Site: cross-site` are refused as well.
 
 ## ADR-0013: Track provider versions in a publish log, not in the config
 
