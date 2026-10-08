@@ -138,13 +138,15 @@ export function reducer(state: WizardState, action: Action): WizardState {
       for (const f of Object.values(d.ui.fields)) if (f.suggest !== undefined && f.suggest !== null) values[f.key] = f.suggest
       const variant = d.ui.variants[0]?.id ?? null
       if (variant) values['$variant'] = variant
+      // A created provider is one API: its id is a good collection id to start from.
+      const resourceId = !state.idEdited && !state.form.resource_id && d.origin === 'created' ? slug(d.id.split('/').pop() ?? '') : state.form.resource_id
       const next: WizardState = {
         ...state,
         detail: d,
         introspection: null,
         probe: null,
         envEdited: {},
-        form: { ...state.form, providers: [{ descriptor: d.id, variant, values, secrets: {}, extra: {} }] },
+        form: { ...state.form, resource_id: resourceId, providers: [{ descriptor: d.id, variant, values, secrets: {}, extra: {} }] },
       }
       return syncEnvNames(next)
     }
@@ -198,6 +200,11 @@ export function runSecrets(state: WizardState): Record<string, string> {
   for (const [key, ref] of Object.entries(state.form.providers[0]?.secrets ?? {})) {
     const v = state.testSecrets[key]
     if (v) out[ref.env] = v
+  }
+  // A created provider's own variables (its spec placeholders), by name.
+  for (const v of state.detail?.env ?? []) {
+    const value = state.testSecrets[`env:${v.name}`]
+    if (value) out[v.name] = value
   }
   return out
 }

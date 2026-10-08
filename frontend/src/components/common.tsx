@@ -171,3 +171,11 @@ export function ErrorSummary({ errors, onGo }: { errors: [string, string][]; onG
     </div>
   )
 }
+
+export function Spinner({ label }: { label: string }) {
+  return (
+    <p className="status" role="status" aria-live="polite">
+      <span className="spinner" aria-hidden="true" /> {label}
+    </p>
+  )
+}

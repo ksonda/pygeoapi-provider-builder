@@ -183,7 +183,45 @@ dialog::backdrop { background: rgb(0 0 0 / 40%); }
 .fs-list { list-style: none; padding: 0; max-height: 50vh; overflow: auto; }
 .fs-list li { padding: 0.2rem 0; }
 
+/* J4: create a provider */
+fieldset { border: 1px solid var(--border); border-radius: var(--radius); margin: 0 0 1rem; padding: 0.6rem 0.9rem 0.9rem; }
+legend { font-weight: 600; padding: 0 0.3rem; }
+.step > label, fieldset > label:not(.radio):not(.check) { display: block; font-weight: 600; margin: 0.9rem 0 0.25rem; }
+label.block { display: block; margin: 0.5rem 0; }
+label.check { display: flex; align-items: center; gap: 0.5rem; margin: 0.5rem 0; font-weight: 500; }
+.field-error { color: var(--err); margin: 0.25rem 0 0; }
+.kv-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto; gap: 0.5rem; align-items: end; margin-bottom: 0.5rem; }
+.kv-row label { font-size: 0.875rem; }
+.inline-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.75rem; margin: 0.5rem 0 1rem; }
+.inline-fields label { font-size: 0.9rem; font-weight: 600; }
+table.props input, table.props select { min-width: 7rem; }
+a.button { display: inline-block; padding: 0.45rem 0.9rem; border: 1px solid var(--border); border-radius: 6px; text-decoration: none; background: var(--surface-2); color: var(--text); }
+a.button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+.tree-wrap { min-width: 0; }
+.json-tree { list-style: none; margin: 0; padding: 0.4rem; max-height: 28rem; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); font-family: var(--mono); font-size: 0.85rem; }
+.json-node { display: flex; gap: 0.5rem; align-items: baseline; padding: 0.1rem 0.3rem; border-radius: 4px; cursor: default; white-space: nowrap; }
+.json-node.pickable { cursor: pointer; }
+.json-node:hover { background: var(--surface-2); }
+.json-node[aria-selected='true'] { background: var(--info-bg); box-shadow: inset 3px 0 0 var(--accent); }
+.json-caret { width: 1ch; color: var(--muted); }
+.json-key { font-weight: 600; }
+.json-value { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.json-pick { margin-left: auto; font-family: system-ui, sans-serif; font-size: 0.75rem; color: var(--accent); text-decoration: underline; }
+.json-node[aria-selected='true'] .json-pick { text-decoration: none; font-weight: 600; }
+.checklist { list-style: none; padding: 0; margin: 0 0 1rem; }
+.checklist li { padding: 0.45rem 0.6rem; border-left: 4px solid var(--border); margin-bottom: 0.35rem; background: var(--surface-2); border-radius: 0 6px 6px 0; }
+.checklist li p { margin: 0.25rem 0 0; }
+.check-status { display: inline-block; min-width: 6.5rem; font-weight: 700; font-size: 0.85rem; }
+.check-pass { border-left-color: var(--ok) !important; }
+.check-pass .check-status { color: var(--ok); }
+.check-fail { border-left-color: var(--err) !important; background: var(--err-bg) !important; }
+.check-fail .check-status { color: var(--err); }
+.check-warn { border-left-color: var(--warn) !important; }
+.check-warn .check-status { color: var(--warn); }
+
 @media (max-width: 760px) {
+  .kv-row { grid-template-columns: minmax(0, 1fr); }
+  .json-node { white-space: normal; }
   main { padding: 1rem 0.75rem 3rem; }
   .wizard { grid-template-columns: minmax(0, 1fr); }
   .steps ol { display: flex; flex-wrap: wrap; gap: 0.25rem; position: static; }

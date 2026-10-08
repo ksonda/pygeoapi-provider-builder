@@ -22,6 +22,8 @@ export interface CatalogCard {
   notes: string[]
   verdict?: { status: string; note?: string } | null
   version?: string | null
+  /** Variables the provider reads itself (a created provider's spec placeholders). */
+  env?: { name: string; secret?: boolean; help?: string }[]
   availability: Availability
 }
 
@@ -175,3 +177,155 @@ export interface VerifyResult {
   checks: { url: string; status: number | null; ok: boolean; detail?: string | null }[]
   message?: string
 }
+
+// ------------------------------------------------------------------ Mode B (J4)
+
+export type PropertyType = 'string' | 'integer' | 'number' | 'boolean' | 'datetime'
+
+export interface SpecProperty {
+  name: string
+  type: PropertyType
+  from?: string
+  format?: string
+}
+
+export type GeometrySpec =
+  | { type: 'point'; x: string; y: string; crs?: string }
+  | { type: 'wkt' | 'geojson'; field: string; crs?: string }
+  | { type: 'none' }
+
+export type PaginationStyle = 'none' | 'offset' | 'page' | 'next_link' | 'cursor'
+
+export interface Pagination {
+  style: PaginationStyle
+  offset_param?: string
+  limit_param?: string
+  max_page_size?: number
+  page?: { page_param: string; page_start?: number; size_param?: string }
+  next_link?: { next: string }
+  cursor?: { cursor_param: string; cursor_path: string }
+  total?: string
+}
+
+export interface Filters {
+  bbox?: { param: string; format: string }
+  datetime?: { param?: string; start_param?: string; end_param?: string; format?: string }
+  properties?: Record<string, string>
+  sortby?: { param: string; format?: string; properties: string[] }
+  q?: { param: string }
+}
+
+export type AuthSpec =
+  | { type: 'header' | 'query'; name: string; value: string }
+  | { type: 'bearer'; value: string }
+  | { type: 'basic'; username: string; password: string }
+
+export interface SourceSpec {
+  url: string
+  query?: Record<string, string>
+  headers?: Record<string, string>
+  auth?: AuthSpec
+}
+
+export interface SpecDoc {
+  spec_version: 1
+  template: 'http-features'
+  id: string
+  title: string
+  description?: string
+  version?: string
+  source: SourceSpec
+  records: string
+  item_id: { from: string }
+  geometry: GeometrySpec
+  properties: SpecProperty[]
+  time_field?: string
+  title_field?: string
+  pagination?: Pagination
+  filters?: Filters
+  limits?: { max_records_scanned?: number; max_pages?: number }
+}
+
+export interface SuggestColumn {
+  name: string
+  path: string
+  type: string
+  format: string | null
+  nulls: number
+  distinct: number
+  unique: boolean
+  examples: unknown[]
+}
+
+export interface Suggestions {
+  records: string | null
+  record_count: number
+  columns: SuggestColumn[]
+  item_id?: { from: string; candidates: string[] } | null
+  geometry?: GeometrySpec
+  properties?: SpecProperty[]
+  time_field?: string | null
+  title_field?: string | null
+  pagination?: Pagination & { hints: string[] }
+  notes: string[]
+}
+
+export interface SampleData {
+  status: number
+  url: string
+  headers: Record<string, string>
+  bytes: number
+  ms: number
+  json?: unknown
+  text?: string
+}
+
+export interface Problem {
+  pointer: string
+  message: string
+  hint?: string | null
+}
+
+export interface ModeBResult<T> extends SandboxResult<T> {
+  suggestions?: Suggestions
+  problems?: Problem[]
+  egress?: string[]
+}
+
+export type CheckStatus = 'pass' | 'fail' | 'warn' | 'skip' | 'unsupported'
+
+export interface HarnessCheck {
+  id: string
+  level: 'L1' | 'L2' | 'L3'
+  title: string
+  status: CheckStatus
+  message: string
+  hint?: string | null
+  details?: unknown
+  ms: number
+}
+
+export interface HarnessData {
+  checks: HarnessCheck[]
+  summary: Record<CheckStatus, number>
+  ok: boolean
+  ms: number
+}
+
+export interface SpecCheck {
+  ok: boolean
+  problems: Problem[]
+  text: string
+  id?: string
+  version?: string | null
+  env?: string[]
+  hosts?: string[]
+}
+
+export interface SavedProvider {
+  id: string
+  version: string
+  data: string
+  descriptor: string
+}
+

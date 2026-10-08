@@ -294,9 +294,17 @@
             "type": "array"
           },
           "spec": {
-            "description": "The spec as YAML, with ${VAR} placeholders for secrets",
-            "title": "Spec",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ],
+            "description": "The spec, as YAML text or an object, with ${VAR} placeholders for secrets",
+            "title": "Spec"
           },
           "test_secrets": {
             "additionalProperties": {
@@ -804,8 +812,16 @@
             "title": "Harness"
           },
           "spec": {
-            "title": "Spec",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ],
+            "title": "Spec"
           },
           "version": {
             "anyOf": [
@@ -874,8 +890,16 @@
       "SpecCheckRequest": {
         "properties": {
           "spec": {
-            "title": "Spec",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ],
+            "title": "Spec"
           }
         },
         "required": [
@@ -887,9 +911,17 @@
       "SpecRequest": {
         "properties": {
           "spec": {
-            "description": "The spec as YAML, with ${VAR} placeholders for secrets",
-            "title": "Spec",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              }
+            ],
+            "description": "The spec, as YAML text or an object, with ${VAR} placeholders for secrets",
+            "title": "Spec"
           },
           "test_secrets": {
             "additionalProperties": {
@@ -905,6 +937,44 @@
           "spec"
         ],
         "title": "SpecRequest",
+        "type": "object"
+      },
+      "SuggestRequest": {
+        "properties": {
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "title": "Headers",
+            "type": "object"
+          },
+          "json": {
+            "description": "A sampled response body",
+            "title": "Json"
+          },
+          "records": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "JSONPath of the record array",
+            "title": "Records"
+          },
+          "url": {
+            "default": "",
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "json"
+        ],
+        "title": "SuggestRequest",
         "type": "object"
       },
       "Temporal": {
@@ -1648,6 +1718,49 @@
           }
         },
         "summary": "Spec Preview",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/specs/suggest": {
+      "post": {
+        "operationId": "spec_suggest_api_specs_suggest_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SuggestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Spec Suggest Api Specs Suggest Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Spec Suggest",
         "tags": [
           "mode-b"
         ]

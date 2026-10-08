@@ -394,8 +394,32 @@ def suggest_title(
     return best[2] if best else None
 
 
-def suggest(doc: Any, headers: Mapping[str, str] | None = None, url: str = '') -> dict[str, Any]:
-    records_path, records = find_records(doc)
+def records_at(doc: Any, path: str) -> list[Mapping[str, Any]]:
+    from pygeoapi_spec_providers.jsonpaths import findall
+
+    matches = findall(path, doc)
+    if len(matches) == 1 and isinstance(matches[0], list):
+        matches = matches[0]
+    return [m for m in matches if isinstance(m, Mapping)]
+
+
+def suggest(
+    doc: Any, headers: Mapping[str, str] | None = None, url: str = '', records: str | None = None
+) -> dict[str, Any]:
+    """Suggestions for the record array ``records`` (a JSONPath), or the likeliest one."""
+    if records:
+        return _suggest(doc, headers, url, records, records_at(doc, records))
+    path, found = find_records(doc)
+    return _suggest(doc, headers, url, path, found)
+
+
+def _suggest(
+    doc: Any,
+    headers: Mapping[str, str] | None,
+    url: str,
+    records_path: str | None,
+    records: list[Mapping[str, Any]],
+) -> dict[str, Any]:
     if records_path is None:
         return {
             'records': None,

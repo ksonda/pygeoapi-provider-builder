@@ -13,7 +13,7 @@ import type {
   VerifyResult,
 } from '../api/types'
 import { MapView } from '../components/MapView'
-import { CopyButton, ExplainedError, FindingList, SampleTable, YamlView } from '../components/common'
+import { CopyButton, ExplainedError, FindingList, SampleTable, Spinner, YamlView } from '../components/common'
 import { DescriptorForm } from '../forms/DescriptorForm'
 import { runSecrets, useWizard, type StepId, type WizardState } from './state'
 
@@ -73,13 +73,6 @@ function useFormProps(props: StepProps, step: 'connect' | 'map') {
   }
 }
 
-function Spinner({ label }: { label: string }) {
-  return (
-    <p className="status" role="status" aria-live="polite">
-      <span className="spinner" aria-hidden="true" /> {label}
-    </p>
-  )
-}
 
 // -------------------------------------------------------------------- start
 
@@ -299,6 +292,25 @@ export function ConnectStep(props: StepProps) {
         </ul>
       ) : null}
       <DescriptorForm {...form} />
+      {state.detail?.env?.length ? (
+        <fieldset>
+          <legend>Variables the provider reads</legend>
+          <p className="muted small">
+            Its spec reads these from the pygeoapi server's environment. Values entered here are for this test only and stay in this page's memory.
+          </p>
+          {state.detail.env.map((v) => (
+            <label key={v.name} className="block">
+              Test value for <code>{v.name}</code>
+              <input
+                type={v.secret ? 'password' : 'text'}
+                autoComplete="off"
+                value={state.testSecrets[`env:${v.name}`] ?? ''}
+                onChange={(e) => dispatch({ type: 'testSecret', key: `env:${v.name}`, value: e.target.value })}
+              />
+            </label>
+          ))}
+        </fieldset>
+      ) : null}
       <div className="lookup">
         {busy ? (
           <Spinner label="Looking up tables and columns in the sandbox…" />
@@ -376,7 +388,7 @@ export function TestStep() {
               {typeof r.sample?.numberMatched === 'number' ? ` of ${r.sample.numberMatched}` : ''}.
             </p>
             <p className="muted small">
-              Tested with {probe?.runner === 'docker' ? 'the geopython/pygeoapi:0.24.0 image' : 'a local pygeoapi 0.24.0'} in {probe?.ms} ms
+              Tested with {probe?.runner === 'docker' ? 'the sandbox image (geopython/pygeoapi:0.24.0 plus the spec engine)' : 'a local pygeoapi 0.24.0, without the sandbox'} in {probe?.ms} ms
               {r.timings.load_ms !== undefined ? ` (load ${r.timings.load_ms} ms, query ${r.timings.query_ms ?? '?'} ms)` : ''}.
             </p>
           </div>

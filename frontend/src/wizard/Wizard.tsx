@@ -3,7 +3,8 @@
 // blocked "Next" presses show an error summary linked to the fields.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { PublicSettings } from '../api/types'
+import { api, unwrap } from '../api/client'
+import type { DescriptorDetail, PublicSettings } from '../api/types'
 import { ErrorSummary } from '../components/common'
 import { fieldId } from '../forms/DescriptorForm'
 import { validateProvider } from '../forms/validate'
@@ -52,7 +53,7 @@ function stepErrors(state: WizardState, step: StepId): Record<string, string> {
   }
 }
 
-export function Wizard({ settings }: { settings: PublicSettings }) {
+export function Wizard({ settings, initialDescriptor }: { settings: PublicSettings; initialDescriptor?: string | null }) {
   const { state, dispatch } = useWizard()
   const heading = useRef<HTMLHeadingElement>(null)
   const [showErrors, setShowErrors] = useState(false)
@@ -61,6 +62,23 @@ export function Wizard({ settings }: { settings: PublicSettings }) {
   const index = STEPS.findIndex((s) => s.id === state.step)
   const step = STEPS[index] ?? STEPS[0]
   const errors = useMemo(() => stepErrors(state, state.step), [state])
+
+  // Opened from J4's "Publish a collection with this provider": start at Connect.
+  useEffect(() => {
+    if (!initialDescriptor) return
+    let live = true
+    api
+      .GET('/api/catalog/{descriptor_id}', { params: { path: { descriptor_id: initialDescriptor } } })
+      .then((r) => {
+        if (!live) return
+        dispatch({ type: 'descriptor', detail: unwrap(r) as unknown as DescriptorDetail })
+        dispatch({ type: 'goto', step: 'connect' })
+      })
+      .catch(() => undefined)
+    return () => {
+      live = false
+    }
+  }, [initialDescriptor, dispatch])
 
   useEffect(() => {
     const key = pendingFocus.current

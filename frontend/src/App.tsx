@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 
 import { api, unwrap } from './api/client'
 import type { Health, PublicSettings } from './api/types'
+import { CreateWizard } from './create/CreateWizard'
+import { CreateProvider } from './create/state'
 import { WizardProvider } from './wizard/state'
 import { Wizard } from './wizard/Wizard'
 
@@ -15,7 +17,7 @@ function useHash(): [string, (h: string) => void] {
   return [hash, (h: string) => (window.location.hash = h)]
 }
 
-function Home({ health, onConfigure }: { health: Health | null; onConfigure: () => void }) {
+function Home({ health, onConfigure, onCreate }: { health: Health | null; onConfigure: () => void; onCreate: () => void }) {
   return (
     <div className="home">
       <p className="lead">Publish data with pygeoapi without writing YAML or Python.</p>
@@ -27,10 +29,10 @@ function Home({ health, onConfigure }: { health: Health | null; onConfigure: () 
             Create a collection
           </button>
         </section>
-        <section className="card mode disabled" aria-disabled="true">
+        <section className="card mode">
           <h2>Create</h2>
-          <p>Build a provider for a source pygeoapi can't read today, such as an agency's JSON API. Arrives in Phase 2.</p>
-          <button type="button" disabled>
+          <p>Build a provider for a source pygeoapi can't read today, such as an agency's JSON API, from a template and without code.</p>
+          <button type="button" className="primary" onClick={onCreate}>
             Create a provider
           </button>
         </section>
@@ -69,13 +71,15 @@ export function App() {
   }, [])
 
   const inWizard = hash.startsWith('#/configure')
+  const inCreate = hash.startsWith('#/create')
+  const descriptor = new URLSearchParams(hash.split('?')[1] ?? '').get('descriptor')
   return (
     <>
       <header className="app-header">
         <a href="#/" className="brand">
           pygeoapi Provider Builder
         </a>
-        {inWizard && (
+        {(inWizard || inCreate) && (
           <a href="#/" className="small">
             Leave the wizard
           </a>
@@ -83,11 +87,22 @@ export function App() {
       </header>
       <main id="main">
         {error && <p className="notice error">{error}</p>}
-        {!inWizard && <Home health={health} onConfigure={() => (setSession((s) => s + 1), go('#/configure/new'))} />}
+        {!inWizard && !inCreate && (
+          <Home
+            health={health}
+            onConfigure={() => (setSession((s) => s + 1), go('#/configure/new'))}
+            onCreate={() => (setSession((s) => s + 1), go('#/create/new'))}
+          />
+        )}
         {inWizard && settings && settings.targets[0] && (
-          <WizardProvider key={session} target={settings.targets[0].id}>
-            <Wizard settings={settings} />
+          <WizardProvider key={`${session}:${descriptor ?? ''}`} target={settings.targets[0].id}>
+            <Wizard settings={settings} initialDescriptor={descriptor} />
           </WizardProvider>
+        )}
+        {inCreate && (
+          <CreateProvider key={session}>
+            <CreateWizard />
+          </CreateProvider>
         )}
         {inWizard && settings && !settings.targets.length && <p className="notice error">No publish targets are configured.</p>}
       </main>

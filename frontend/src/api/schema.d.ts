@@ -259,6 +259,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/specs/suggest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Spec Suggest */
+        post: operations["spec_suggest_api_specs_suggest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/specs/validate": {
         parameters: {
             query?: never;
@@ -479,9 +496,11 @@ export interface components {
             levels?: ("L1" | "L2" | "L3")[];
             /**
              * Spec
-             * @description The spec as YAML, with ${VAR} placeholders for secrets
+             * @description The spec, as YAML text or an object, with ${VAR} placeholders for secrets
              */
-            spec: string;
+            spec: string | {
+                [key: string]: unknown;
+            };
             /**
              * Test Secrets
              * @description ENV_NAME -> value
@@ -728,7 +747,9 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             /** Spec */
-            spec: string;
+            spec: string | {
+                [key: string]: unknown;
+            };
             /** Version */
             version?: string | null;
         };
@@ -761,15 +782,19 @@ export interface components {
         /** SpecCheckRequest */
         SpecCheckRequest: {
             /** Spec */
-            spec: string;
+            spec: string | {
+                [key: string]: unknown;
+            };
         };
         /** SpecRequest */
         SpecRequest: {
             /**
              * Spec
-             * @description The spec as YAML, with ${VAR} placeholders for secrets
+             * @description The spec, as YAML text or an object, with ${VAR} placeholders for secrets
              */
-            spec: string;
+            spec: string | {
+                [key: string]: unknown;
+            };
             /**
              * Test Secrets
              * @description ENV_NAME -> value
@@ -778,6 +803,31 @@ export interface components {
             test_secrets?: {
                 [key: string]: string;
             };
+        };
+        /** SuggestRequest */
+        SuggestRequest: {
+            /**
+             * Headers
+             * @default {}
+             */
+            headers?: {
+                [key: string]: string;
+            };
+            /**
+             * Json
+             * @description A sampled response body
+             */
+            json: unknown;
+            /**
+             * Records
+             * @description JSONPath of the record array
+             */
+            records?: string | null;
+            /**
+             * Url
+             * @default
+             */
+            url?: string;
         };
         /** Temporal */
         Temporal: {
@@ -1290,6 +1340,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    spec_suggest_api_specs_suggest_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SuggestRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

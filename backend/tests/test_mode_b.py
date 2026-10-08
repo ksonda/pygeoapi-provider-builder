@@ -144,6 +144,7 @@ def test_the_whole_template_path(client: TestClient, mock_api: str) -> None:
     assert probe['ok'], probe.get('explanation')
     assert probe['result']['sample']['numberMatched'] == 120
     exported = client.post('/api/export', json={'form': form, 'target': 'test'}).json()
+    assert exported['merged_yaml'], exported['validation']['findings']
     provider = yaml.safe_load(exported['merged_yaml'])['resources']['wells']['providers'][0]
     assert provider == {
         'type': 'feature',

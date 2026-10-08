@@ -75,11 +75,20 @@ class SampleRequest(TestSecrets):
 
 
 class SpecRequest(TestSecrets):
-    spec: str = Field(description='The spec as YAML, with ${VAR} placeholders for secrets')
+    spec: str | dict[str, Any] = Field(
+        description='The spec, as YAML text or an object, with ${VAR} placeholders for secrets'
+    )
 
 
 class SpecCheckRequest(BaseModel):
-    spec: str
+    spec: str | dict[str, Any]
+
+
+class SuggestRequest(BaseModel):
+    json_body: Any = Field(alias='json', description='A sampled response body')
+    headers: dict[str, str] = {}
+    url: str = ''
+    records: str | None = Field(default=None, description='JSONPath of the record array')
 
 
 class HarnessRequest(SpecRequest):
@@ -87,7 +96,7 @@ class HarnessRequest(SpecRequest):
 
 
 class SaveRequest(BaseModel):
-    spec: str
+    spec: str | dict[str, Any]
     version: str | None = None
     changes: str = ''
     harness: dict[str, Any] | None = Field(default=None, description='The checklist to keep')
@@ -258,6 +267,17 @@ def create_app(
         job = svc.jobs.submit('sample', lambda: svc.sample(req.source, req.test_secrets))
         return JobCreated(job_id=job.id)
 
+    @app.post('/api/specs/suggest', tags=['mode-b'])
+    def spec_suggest(req: SuggestRequest) -> dict[str, Any]:
+        from pygeoapi_spec_providers.jsonpaths import PathError
+
+        from .suggest import suggest
+
+        try:
+            return suggest(req.json_body, req.headers, req.url, req.records)
+        except PathError as err:
+            raise HTTPException(400, str(err)) from err
+
     @app.post('/api/specs/validate', tags=['mode-b'])
     def spec_validate(req: SpecCheckRequest) -> dict[str, Any]:
         return svc.spec_check(req.spec)
@@ -276,7 +296,7 @@ def create_app(
 
     @app.get('/api/workspace', tags=['mode-b'])
     def workspace_list() -> list[dict[str, Any]]:
-        return svc.workspace.list()
+        return svc.workspace.providers()
 
     @app.get('/api/workspace/{provider_id}', tags=['mode-b'])
     def workspace_detail(provider_id: str) -> dict[str, Any]:

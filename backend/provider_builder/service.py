@@ -63,8 +63,9 @@ class ExportResult(BaseModel):
 class Service:
     def __init__(self, settings: Settings, runner: Runner | None = None):
         self.settings = settings
-        self.catalog = Catalog(settings.catalogs, settings.workspace.host_path)
         self.workspace = ProviderWorkspace(settings.workspace)
+        self.workspace.refresh()  # descriptors are generated: keep them current
+        self.catalog = Catalog(settings.catalogs, settings.workspace.host_path)
         self.runner = runner or make_runner(
             settings.sandbox, settings.data_roots, settings.workspace
         )
@@ -461,11 +462,18 @@ class Service:
             )
         return res
 
-    def spec_check(self, text: str) -> dict[str, Any]:
+    @staticmethod
+    def spec_text(spec: str | dict[str, Any]) -> str:
+        """Spec YAML; an object is written like a config, with placeholders as plain values."""
+        return spec if isinstance(spec, str) else yamlio.dump(spec, mapping_indent=2)
+
+    def spec_check(self, spec: str | dict[str, Any]) -> dict[str, Any]:
+        text = self.spec_text(spec)
         doc, problems = check_spec_text(text)
         result: dict[str, Any] = {
             'ok': doc is not None and not problems,
             'problems': [vars(p) for p in problems],
+            'text': text,
         }
         if doc is not None:
             result.update(
@@ -477,8 +485,9 @@ class Service:
         return result
 
     def _spec_job(
-        self, text: str, test_secrets: dict[str, str]
+        self, spec: str | dict[str, Any], test_secrets: dict[str, str]
     ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str], set[egress.HostPort]]:
+        text = self.spec_text(spec)
         doc, problems = check_spec_text(text)
         if doc is None or problems:
             raise WorkspaceError('The spec has problems.', problems)
@@ -498,7 +507,9 @@ class Service:
         job = {'resource_yaml': yamlio.dump(resource), 'files': {'spec.yaml': text}}
         return doc, job, secrets, egress.spec(egress.fill(doc, secrets))
 
-    def spec_preview(self, text: str, test_secrets: dict[str, str]) -> dict[str, Any]:
+    def spec_preview(
+        self, text: str | dict[str, Any], test_secrets: dict[str, str]
+    ) -> dict[str, Any]:
         try:
             _doc, job, secrets, targets = self._spec_job(text, test_secrets)
         except WorkspaceError as err:
@@ -507,7 +518,10 @@ class Service:
         return self._mode_b_outcome(out)
 
     def spec_harness(
-        self, text: str, test_secrets: dict[str, str], levels: list[str] | None = None
+        self,
+        text: str | dict[str, Any],
+        test_secrets: dict[str, str],
+        levels: list[str] | None = None,
     ) -> dict[str, Any]:
         try:
             doc, job, secrets, targets = self._spec_job(text, test_secrets)
@@ -545,8 +559,13 @@ class Service:
         return res
 
     def workspace_save(
-        self, text: str, version: str | None, changes: str, harness: dict[str, Any] | None
+        self,
+        spec: str | dict[str, Any],
+        version: str | None,
+        changes: str,
+        harness: dict[str, Any] | None,
     ) -> dict[str, Any]:
+        text = self.spec_text(spec)
         saved = self.workspace.save(text, version=version, changes=changes, harness=harness)
         self.reload_catalog()
         return saved
