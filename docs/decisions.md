@@ -9,7 +9,7 @@ phase named; "Accepted" means work proceeds on it. Source citations are
 |---|---|---|
 | [0001](#adr-0001-pin-pygeoapi-0240-and-vendor-its-source) | Pin pygeoapi 0.24.0 and vendor its source | Accepted (pending §1 confirmation) |
 | [0002](#adr-0002-python-toolchain-uv--cpython-312) | Python toolchain: uv + CPython 3.12 | Accepted |
-| [0003](#adr-0003-lossless-editing-with-surgical-text-edits) | Lossless editing with surgical text edits | Accepted |
+| [0003](#adr-0003-lossless-editing-with-surgical-text-edits) | Lossless editing with surgical text edits | Accepted (built in Phase 3) |
 | [0004](#adr-0004-form-rendering-small-in-house-renderer-over-compiled-descriptors) | Form rendering: small in-house renderer | Accepted (Phase 1) |
 | [0005](#adr-0005-a-template-built-providers-data-points-at-its-spec) | A template-built provider's `data` points at its spec | Accepted (Phase 2) |
 | [0006](#adr-0006-jsonpath-rfc-9535-via-python-jsonpath) | JSONPath: RFC 9535 via `python-jsonpath` | Accepted |
@@ -19,12 +19,14 @@ phase named; "Accepted" means work proceeds on it. Source citations are
 | [0010](#adr-0010-drift-check-ast-alias-tracking-plus-an-allowlist) | Drift check: AST alias tracking plus an allowlist | Accepted |
 | [0011](#adr-0011-typed-client-generated-from-the-backends-openapi) | Typed client generated from the backend's OpenAPI | Accepted |
 | [0012](#adr-0012-csrf-and-dns-rebinding-protection-even-on-127001) | CSRF and DNS-rebinding protection even on 127.0.0.1 | Accepted |
-| [0013](#adr-0013-track-provider-versions-in-a-publish-log-not-in-the-config) | Track provider versions in a publish log, not in the config | Accepted |
+| [0013](#adr-0013-track-provider-versions-in-a-publish-log-not-in-the-config) | Track provider versions in a publish log, not in the config | Accepted (built in Phase 3) |
 | [0014](#adr-0014-a-cited-runtime-rules-layer-on-top-of-pygeoapis-schema) | A cited runtime-rules layer on top of pygeoapi's schema | Proposed (strictness: Q3) |
-| [0015](#adr-0015-the-admin-api-is-a-guarded-optional-target) | The Admin API is a guarded, optional target | Proposed (Q8) |
+| [0015](#adr-0015-the-admin-api-is-a-guarded-optional-target) | The Admin API is a guarded, optional target | Built in Phase 3; keep or defer is Q8 |
 | [0016](#adr-0016-spec-files-are-loaded-with-pygeoapis-own-yaml_load) | Spec files are loaded with pygeoapi's own `yaml_load` | Accepted |
 | [0017](#adr-0017-the-sandbox-image-holds-dependencies-our-code-is-mounted) | The sandbox image holds dependencies; our code is mounted | Accepted |
 | [0018](#adr-0018-the-spec-engine-vets-every-address-inside-the-connection) | The spec engine vets every address inside the connection | Accepted |
+| [0019](#adr-0019-an-edit-is-the-forms-change-merged-into-the-files-resource) | An edit is the form's change merged into the file's resource | Accepted (Phase 3) |
+| [0020](#adr-0020-the-dev-stacks-config-is-a-gitignored-copy-of-a-tracked-seed) | The dev stack's config is a gitignored copy of a tracked seed | Accepted (Phase 3) |
 
 ---
 
@@ -113,6 +115,26 @@ lines they target). The corpus is pygeoapi's test configs, the Geoconnex
 example configs and hand-written fixtures with anchors, block scalars and odd
 indentation. Blocks we re-serialize may still normalise inside themselves;
 that minimal diff is documented and shown in the review step.
+
+**As built (Phase 3)** in `backend/provider_builder/configedit.py`:
+- ruamel locates nodes; PyYAML, pygeoapi's own loader, gives the data that is
+  compared, so YAML 1.1 types are what count.
+- Patches, from smallest to largest: a scalar in place (its quote style and
+  trailing comment kept, `${VAR}` always plain); a key's line span deleted or
+  inserted after its predecessor in the new order; a sequence item appended or
+  deleted; otherwise the smallest enclosing key or item re-serialized in the
+  file's detected style (mapping indent and dash offset), recorded as a note
+  that Review shows.
+- Keys a mapping writes itself stay editable next to a merge key (`<<: *x`). A
+  change to a merged-in key re-serializes the enclosing block.
+- The result must re-parse to exactly the intended document, with `1`, `1.0`
+  and `true` kept apart, or the edit is refused. CRLF line endings and a BOM
+  survive.
+- The corpus is 4 hand-written fixtures, 19 vendored configs and the dev seed
+  (`backend/tests/test_configedit.py`): no-op saves are byte-identical, a
+  title edit is one line, a delete touches only the resource's lines, and a
+  Hypothesis test makes random edits that must change only their resource.
+- Deleting the last resource writes `resources: {}`, which rewrites that block.
 
 ## ADR-0004: Form rendering: small in-house renderer over compiled descriptors
 
@@ -409,6 +431,12 @@ worked out from the log plus the provider's `name` and `data` in the current
 config, for example a versioned spec path or package reference. Nothing is
 added to the pygeoapi config.
 
+**As built (Phase 3).** The log is `<state_dir>/publish-log.jsonl`. An entry
+also records its status (`published`, `written` or `verify-failed`) and the
+backups it took. It's append-only: a rollback is a new entry with `rollback_of`,
+and readers mark the original as rolled back. A created provider shows as
+`<id>@<version>`, read from its versioned spec path.
+
 ## ADR-0014: A cited runtime-rules layer on top of pygeoapi's schema
 
 **Context.** `validate_config` is a schema-only check. It raises one
@@ -452,6 +480,13 @@ each one reproduces a 500 or 400) or only warn? That's Q3 in PLAN.md.
 - The file and Git PR targets are the recommended ones.
 
 **Open:** keep it in Phase 3, or defer it to v2 (Q8).
+
+**As built (Phase 3)** in `backend/provider_builder/admin.py`, behind every
+guardrail above. The config is read with `GET /admin/config` and planned like a
+file, so Review shows the same diff. Rollback `PUT`s the previous definition,
+`DELETE`s a new one or `POST`s a deleted one. Tests drive it against a fake
+server that rewrites its file with PyYAML, as pygeoapi does. Q8 is still yours:
+keeping the target costs little, and removing it means deleting one module.
 
 ## ADR-0016: Spec files are loaded with pygeoapi's own `yaml_load`
 
@@ -513,3 +548,39 @@ The rest of the policy is checked before each request:
 `httpx>=0.28,<0.29`, and `runtime/tests/test_egress.py` fails if the swap stops
 taking effect. A simulated rebind and a mixed DNS answer are both refused.
 
+
+## ADR-0019: An edit is the form's change merged into the file's resource
+
+**Context.** J2 loads a resource into the wizard's form and saves it back. The
+form can't represent everything a resource holds: unknown keys, a missing
+`crs` the renderer would default, an `end: null` it would drop, providers
+outside the catalog. Rendering the edited form and writing that would change
+lines nobody touched, and a no-op save wouldn't be byte-identical.
+
+**Decision.** The backend derives the form from the file's resource
+(`form_from_resource`), renders it (*base*), renders the edited form (*ours*),
+and applies the change base → ours to the file's resource (`merge3`):
+unchanged subtrees keep the file's values, changed keys take the form's, and
+lists merge item by item when their length is unchanged, or as an append, a
+single deletion or a reorder. The client sends only the edited form and the
+config's ETag; the server recomputes *base* from the current file.
+
+**Consequences.**
+- An untouched form plans an empty diff and writes nothing.
+- Providers outside the catalog travel as raw YAML (`_raw`) and are never
+  re-rendered.
+- A secret written as `${NAME}` keeps its name; a literal secret is kept, with
+  a warning to move it into a variable.
+
+## ADR-0020: The dev stack's config is a gitignored copy of a tracked seed
+
+**Context.** The dev stack is now a `file` target, so every publish rewrites
+its config. With the config tracked, each demo dirtied the repository.
+
+**Decision.** `docker/pygeoapi/pygeoapi.config.seed.yml` is tracked. `make
+stack-up` copies it to the gitignored `pygeoapi.config.yml` when that's missing,
+and `make stack-reset-config` restores it. Tests keep using their own pristine
+copy (`backend/tests/fixtures/pygeoapi.config.yml`).
+
+**Consequences.** An existing checkout keeps its current config as the live
+one. Backups and the publish log live in `.provider-builder/` (gitignored).

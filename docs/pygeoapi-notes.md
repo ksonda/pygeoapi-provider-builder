@@ -328,6 +328,7 @@ Source note: [research/admin-api-and-runtime.md §3–4](research/admin-api-and-
 - The config and OpenAPI document are read once, at import (`pygeoapi/flask_app.py:55-56`).
 - The OpenAPI file must be generated beforehand. Nothing generates it at server start except the Docker entrypoint and Admin API writes.
 - **Reload:** `gunicorn --reload --reload-extra-file $PYGEOAPI_CONFIG` restarts workers when the file changes (`docker/entrypoint.sh:151`). It does **not** regenerate OpenAPI, so a publisher that writes the file must regenerate OpenAPI first, then trigger the reload.
+- *Executed (Phase 3, `tests/test_publish_integration.py`):* with `run-with-hot-reload`, the reloader also picks up a config replaced atomically (temp file, then `os.replace`), and the server serves the OpenAPI document written just before it.
 
 ### 9.2 The `geopython/pygeoapi:0.24.0` image
 Read from the `Dockerfile` in Phase 0, then checked with `docker run` in Phase 1

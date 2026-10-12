@@ -240,6 +240,37 @@ Implements ADR-0003.
   flow-list spacing, explicit `null`, trailing spaces, mixed indentation
   (ADR-0003). The review step shows them.
 
+*As built in Phase 3* (`backend/provider_builder/configedit.py`, ADR-0003 and
+ADR-0019). The minimal diff each change produces:
+
+| Change | What is rewritten |
+|---|---|
+| A scalar (title, a field, a placeholder) | That value only. Its quotes and trailing comment stay; `${VAR}` stays plain |
+| A key added | Its lines, after its predecessor in the form's order |
+| A key removed | Its lines, plus comment lines indented under it, plus one blank separator |
+| A provider or list item appended | Its lines, after the last item |
+| A provider or list item removed | Its lines |
+| A new resource | Its block at the end of `resources:`, separated like its siblings |
+| A deleted resource | Its block and one blank separator |
+| Anything else (a type change, a block scalar, a flow list such as `bbox`) | The smallest enclosing key or item, in the file's indent and dash offset; Review lists it |
+
+For example, editing the dev stack's title changes one line, and the comment
+on `lakes:` stays:
+
+```diff
+@@ -44,7 +44,7 @@
+ resources:
+     lakes:  # a resource that ships with the stack
+         type: collection
+-        title: Large Lakes
++        title: Large Lakes of the World
+         description: lakes of the world, public domain
+```
+
+A save with no changes writes nothing. CRLF and a BOM are kept. If the result
+doesn't re-parse to exactly the intended document, the edit is refused and
+nothing is written.
+
 ## 5. Provider descriptors
 
 ### 5.1 Descriptor schema (v1)
@@ -509,6 +540,38 @@ recorded in the research notes, and each entry has a fixture test. Examples:
 - **Publish log.** Every publish appends `{time, target, resource_id,
   provider_id@version, config_hash, backup}` to a JSON Lines log (ADR-0013).
 
+*As built in Phase 3* (`backend/provider_builder/{targets,publish,admin}.py`):
+- **Plan, then publish.** `POST /api/publish/plan` returns the diff, the blocks
+  that will be rewritten, the findings and the variables the server needs.
+  The publish job plans again with the ETag check (409 with a diff of what
+  changed on disk), then:
+  validate → generate OpenAPI in the sandbox → back up → write OpenAPI, then
+  the config → reload → verify → log.
+  It re-checks the ETag immediately before writing.
+- **OpenAPI as the gate.** It runs on the whole new config, like `pygeoapi
+  openapi generate --fail-on-invalid-collection`. A provider that can't load
+  stops the publish before anything is written.
+- **Validation.** Schema problems elsewhere in the config that were already
+  there become warnings, so a pre-existing issue doesn't block an unrelated
+  edit.
+- **Verify** polls until `verify_timeout_s`, because the server may be
+  restarting. A delete expects 404. `reload: none` writes, logs `written` and
+  shows instructions.
+- **Rollback** restores the backups that publish recorded. It refuses if the
+  config changed since that publish, because restoring would undo later
+  changes too. Then it reloads and verifies.
+- **The dev stack** is a `file` target whose `reload_command` is `docker
+  compose … up -d --no-deps --force-recreate --wait pygeoapi`. Recreating the
+  container rereads `pygeoapi.env`, and the image's entrypoint regenerates
+  OpenAPI.
+- **Executed** against `geopython/pygeoapi:0.24.0` in
+  `tests/test_publish_integration.py`. With `docker restart`: add, update,
+  roll back, delete, roll back. With `run-with-hot-reload` and `openapi` set:
+  gunicorn's reloader picks up the atomic replace, and the OpenAPI written
+  first is served.
+- **Docker:** a container published as `127.0.0.1::80` gets a new host port
+  on every restart, so a target's `server_url` needs a fixed port.
+
 ### 6.5 J2 and J3
 - **J2** (load, list, edit, duplicate, delete, import):
   - Load from a file target or through the Admin API (read-only GET).
@@ -522,6 +585,27 @@ recorded in the research notes, and each entry has a fixture test. Examples:
   rules in §6.2 and explains them. For example: "a collection can have one
   feature provider and one tile provider; the feature provider stays the
   default."
+
+*As built in Phase 3* (`frontend/src/configs/`, `frontend/src/wizard/`):
+- **Collections page** (`#/configs`):
+  - each resource's providers, with created-provider versions, and a health
+    badge from `/collections/{id}`
+  - Edit, Add provider, Duplicate, YAML (the resource's own lines from the
+    file), and Delete (shows the diff first)
+  - Import YAML, and the publish log with rollback
+- **The wizard edits any provider by index.**
+  - Edit opens at Describe, and every step is reachable from the step list.
+  - Add provider starts at Choose a backend. Types the collection already has
+    are explained and disabled, because pygeoapi uses the first provider of
+    each type. With only feature providers in the catalog, J3 can't add
+    anything yet; tile and map descriptors arrive in Phase 5.
+  - Duplicate and Import open as a new collection with the form filled in.
+- **Loading** detects the descriptor variant. A secret written as `${NAME}`
+  keeps its name. A provider outside the catalog, or given by its dotted
+  class path, is matched through pygeoapi's plugin registry or kept as raw
+  YAML.
+- **Import** warns about quoted placeholders, non-string keys and the legacy
+  `template:` key.
 
 ## 7. Mode B: Create
 
@@ -1047,6 +1131,15 @@ CO-OPS stations work as the real-API demo (Q7).
 
 **Exit:** open, edit and save a commented config, with a documented minimal
 diff and a byte-identical no-op save. Break a publish and roll it back.
+*Met (2026-10-12):*
+- The dev stack's commented config was edited from the UI: one line changed
+  and the comment stayed. The no-op save is byte-identical in the corpus
+  tests, and the minimal diffs are documented in §4.
+- A broken publish (the server answers 500) is reported as `verify-failed`
+  and rolled back byte for byte (`test_targets.py`). A provider that can't
+  load is stopped by the OpenAPI gate before anything is written.
+- Publish, edit, delete and rollback ran against real pygeoapi containers
+  (`tests/test_publish_integration.py`, `e2e/publish.spec.ts`).
 
 **Phase 4: Mode B breadth**
 - the `sql-features` and `timeseries-edr` templates, with CoverageJSON schema

@@ -15,7 +15,8 @@ Target: **pygeoapi 0.24.0** (pinned).
 
 ## Status
 
-**Phase 2: Mode B core.** Both modes work end to end.
+**Phase 3: publishing and editing.** Both modes work end to end, and the
+builder edits a server's config in place.
 
 - **Configure** (Phase 1): a wizard for CSV, GeoJSON, GeoPackage/SQLite,
   PostgreSQL/PostGIS and providers made in Create. It covers connecting, a probe
@@ -29,9 +30,17 @@ Target: **pygeoapi 0.24.0** (pinned).
   Configure's catalog.
 - **Sandbox:** every probe, sample and check runs in a locked-down container.
   Network access goes only to declared hosts, through an egress gateway.
+- **Publish and edit** (Phase 3): a *file* target edits the server's config in
+  place. Only the lines that change are rewritten; comments, quoting and keys
+  the form doesn't know stay byte for byte. Each publish shows the diff first,
+  generates pygeoapi's OpenAPI as a gate, takes a backup, writes atomically,
+  reloads pygeoapi and checks that it serves the collection. Any publish can be
+  rolled back in one click. The **Collections** page lists what a server
+  publishes, and lets you edit a collection, add a provider (J3), duplicate,
+  delete or import YAML. An optional *Admin API* target is guarded (ADR-0015).
 
-Writing configs in place (Phase 3) and the SQL and time-series templates
-(Phase 4) come next; see [PLAN.md §13](PLAN.md#13-milestones).
+The SQL and time-series templates and the code workspace (Phase 4) come next;
+see [PLAN.md §13](PLAN.md#13-milestones).
 
 Background reading, in order:
 1. [PLAN.md](PLAN.md): architecture, schemas, API, sandbox, milestones and risks
@@ -84,24 +93,23 @@ Open <http://127.0.0.1:8765> and choose **Create a collection**. For example:
   `foo_geom`. The host is `postgis` because that's how the sandbox and the dev
   stack's pygeoapi reach the database.
 
-To see the dev stack serve your collection:
-1. On the Publish step, download `pygeoapi.config.yml`. Save it over
-   `docker/pygeoapi/pygeoapi.config.yml`.
-2. If the step lists environment variables, add them to
-   `docker/pygeoapi/pygeoapi.env` (gitignored), for example
-   `PYGEOAPI_HOTOSM_BDI_WATERWAYS_DB_PASSWORD=postgres`.
-3. Recreate the container. It regenerates OpenAPI on start, and a plain
-   restart wouldn't reread the env file:
+The dev stack is a *file* target, so **Publish** serves your collection there
+directly. It writes `docker/pygeoapi/pygeoapi.config.yml`, then recreates the
+pygeoapi container, which regenerates OpenAPI and rereads its env file. Then it
+checks `/collections/{id}` and the items. If Review lists environment
+variables, add them to `docker/pygeoapi/pygeoapi.env` (gitignored) before you
+publish, for example `PYGEOAPI_HOTOSM_BDI_WATERWAYS_DB_PASSWORD=postgres`.
 
-   ```bash
-   docker compose -f docker/compose.yaml up -d --no-deps --force-recreate pygeoapi
-   ```
+**Collections** (top right) lists what the dev stack serves: edit, add a
+provider, duplicate, delete, import YAML, and the publish log with rollback.
+The live config is gitignored; `make stack-up` copies it from
+`docker/pygeoapi/pygeoapi.config.seed.yml` when it's missing. To start over:
 
-4. Use **Check the live server** on the Publish step, or open
-   <http://localhost:5080/collections>.
+```bash
+make stack-reset-config
+```
 
-`git checkout docker/pygeoapi/pygeoapi.config.yml` restores the dev stack's
-config afterwards.
+Backups and the publish log go to `.provider-builder/` (gitignored).
 
 To create a provider, choose **Create a provider** on the home page:
 - **The mock API:** URL `http://mockapi:8000/v2/wells`, with query parameters
@@ -112,7 +120,22 @@ To create a provider, choose **Create a provider** on the home page:
 
 After **Save**, **Publish a collection with this provider →** opens Configure
 with the provider chosen. The dev stack's pygeoapi already has the spec engine
-and sees the workspace at `/specs`, so the steps above serve it.
+and sees the workspace at `/specs`, so publishing serves it.
+
+### Targets
+
+`provider-builder.yaml` lists where collections are published:
+
+| `kind` | What Publish does |
+|---|---|
+| `export` | Nothing on the server: download the merged config or copy the block. |
+| `file` | Edits `base_config` in place. If `openapi` is set, it writes the OpenAPI document there first, then the config. Then it reloads with `reload`: `none` (instructions only), `command` (`reload_command`, an argv list run in the settings folder), `signal` (HUP the pid in `pid_file`) or `watch` (the server reloads itself, e.g. gunicorn `--reload --reload-extra-file`). Then it polls `server_url` for up to `verify_timeout_s`. Keeps the last `keep_backups` backups. |
+| `admin` | Writes through pygeoapi's Admin API, one write per publish. Requires `reload: watch` or `command`, warns that the Admin API drops comments, and needs an acknowledgement for secret-bearing providers (ADR-0015). |
+
+With the official Docker image, leave `openapi` unset and recreate or restart
+the container: its entrypoint regenerates OpenAPI at start. With
+`run-with-hot-reload`, nothing regenerates it, so set `openapi` to the file
+`PYGEOAPI_OPENAPI` names.
 
 For frontend work with hot reload, run `make dev-backend` and `make
 dev-frontend` in two terminals, then open <http://127.0.0.1:5173>.
@@ -133,6 +156,7 @@ Everything binds to 127.0.0.1.
 | 55432 | The dev stack's PostGIS (database `test`, user and password `postgres`) |
 | 8090 | The dev stack's mock JSON API (`mockapi:8000` inside the stack) |
 | 8766 | The backend that the Playwright tests start |
+| 5081 | The throwaway pygeoapi the publish E2E tests write to |
 
 ## Checks
 
@@ -191,3 +215,8 @@ spec engine's only additions to pygeoapi's own) and
 - Secrets are never written to config, specs, code, logs or Git. They're
   written as `${ENV_VAR}` placeholders, and the app lists the variables your
   deployment must define.
+- A `file` target's `reload_command` runs with the builder's permissions.
+  It comes only from `provider-builder.yaml`, never from the UI.
+- With `server.admin: true`, pygeoapi's OpenAPI document embeds the resolved
+  config, secrets included, and serves it at `/openapi`. Prefer the `file`
+  target, which writes without enabling the Admin API.
