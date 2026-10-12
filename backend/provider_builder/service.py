@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 import threading
 from typing import Any
 
@@ -15,7 +17,15 @@ from .catalog import Catalog, Descriptor, card, compile_descriptor
 from .errors import explain
 from .fs import PathError, list_dir, resolve_server_path
 from .jobs import JobManager
-from .render import EnvVar, FormState, ProviderState, RenderResult, render, render_provider
+from .render import (
+    RAW_DESCRIPTOR,
+    EnvVar,
+    FormState,
+    ProviderState,
+    RenderResult,
+    render,
+    render_provider,
+)
 from .runner import Outcome, Runner, make_runner
 from .settings import Settings
 from .suggest import suggest
@@ -70,6 +80,9 @@ class Service:
             settings.sandbox, settings.data_roots, settings.workspace
         )
         self.jobs = JobManager()
+        from .targets import TargetOps  # it imports this module
+
+        self.targets = TargetOps(self)
         self.availability: dict[str, bool] | None = None
         self.sandbox_versions: dict[str, Any] | None = None
         self._startup_lock = threading.Lock()
@@ -143,7 +156,9 @@ class Service:
 
     def _secrets(self, p: ProviderState, test_secrets: dict[str, str]) -> dict[str, str]:
         wanted = {ref.env for ref in p.secrets.values()}
-        if p.descriptor in self.catalog.descriptors:
+        if p.descriptor == RAW_DESCRIPTOR:
+            wanted |= set(re.findall(r'\$\{(\w+)', json.dumps(p.extra, default=str)))
+        elif p.descriptor in self.catalog.descriptors:
             wanted |= {v['name'] for v in self.catalog.get(p.descriptor).raw.get('env', [])}
         return {k: v for k, v in test_secrets.items() if k in wanted}
 

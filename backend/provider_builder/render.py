@@ -17,6 +17,8 @@ from .catalog import VARIANT_KEY, Catalog, Descriptor
 
 CRS84 = 'http://www.opengis.net/def/crs/OGC/1.3/CRS84'
 EMPTY: tuple[Any, ...] = (None, '', [], {})
+# A provider the catalog doesn't describe, loaded from a config: kept as-is in ``extra``.
+RAW_DESCRIPTOR = '_raw'
 
 
 class SecretRef(BaseModel):
@@ -203,6 +205,9 @@ def render(form: FormState, catalog: Catalog, mapping_indent: int = 4) -> Render
         res['templates'] = {'path': r.templates_path}
     providers = []
     for p in form.providers:
+        if p.descriptor == RAW_DESCRIPTOR:
+            providers.append(dict(p.extra))
+            continue
         d = catalog.get(p.descriptor)
         providers.append(render_provider(p, d, form.resource_id, env))
         # Variables the provider reads itself, such as a created provider's spec placeholders.
@@ -223,13 +228,16 @@ def render(form: FormState, catalog: Catalog, mapping_indent: int = 4) -> Render
 
 
 def form_values_from_provider(
-    d: Descriptor, provider: dict[str, Any], variant: str | None = None
+    d: Descriptor,
+    provider: dict[str, Any],
+    variant: str | None = None,
+    resource_id: str = 'resource',
 ) -> ProviderState:
     """The reverse mapping: a provider dict (e.g. a docs example) -> form state.
 
     Keys the descriptor doesn't know go to ``extra``, so nothing is lost.
-    Secret values become references to suggested variable names; the values
-    themselves are dropped.
+    A secret written as ``${NAME}`` becomes a reference to ``NAME``; any other
+    secret value becomes a reference to a suggested name, and the value is dropped.
     """
     fields = {f['key']: f for f in d.active_fields(variant)}
     values: dict[str, Any] = {}
@@ -244,7 +252,9 @@ def form_values_from_provider(
             f = fields.get(key)
             if f is not None:
                 if f['type'] == 'secret':
-                    secrets[key] = SecretRef(env=env_name('resource', f))
+                    m = re.fullmatch(r'\$\{(\w+)(:-[^}]*)?\}', v) if isinstance(v, str) else None
+                    name = m.group(1) if m else env_name(resource_id, f)
+                    secrets[key] = SecretRef(env=name)
                 else:
                     values[key] = v
             elif isinstance(v, dict) and any(fk.startswith(key + '.') for fk in fields):
@@ -261,3 +271,117 @@ def form_values_from_provider(
     return ProviderState(
         descriptor=d.id, variant=variant, values=values, secrets=secrets, extra=extra
     )
+
+
+def detect_variant(d: Descriptor, provider: dict[str, Any]) -> str | None:
+    """The variant whose fields best match a provider's keys and value shapes."""
+    if not d.variants:
+        return None
+
+    def keys(obj: dict[str, Any], prefix: str = '') -> set[str]:
+        out = set()
+        for k, v in obj.items():
+            out.add(f'{prefix}{k}')
+            if isinstance(v, dict):
+                out |= keys(v, f'{prefix}{k}.')
+        return out
+
+    present = keys(provider)
+    best, score = d.variants[0]['id'], -1
+    for v in d.variants:
+        n = 0
+        for f in v['fields']:
+            if f['key'] in present:
+                n += 2
+            elif f.get('required'):
+                n -= 1
+        if n > score:
+            best, score = v['id'], n
+    return str(best)
+
+
+class LoadedResource(BaseModel):
+    form: FormState
+    editable: bool = Field(description='False when only the YAML can be shown')
+    warnings: list[str] = []
+
+
+def _iso(value: Any) -> str | None:
+    if value in (None, ''):
+        return None
+    if isinstance(value, dt.datetime):
+        if value.tzinfo is not None:
+            value = value.astimezone(dt.UTC).replace(tzinfo=None)
+        return str(value.isoformat()) + 'Z'
+    if isinstance(value, dt.date):
+        return value.isoformat() + 'T00:00:00Z'
+    return str(value)
+
+
+def form_from_resource(resource_id: str, res: dict[str, Any], catalog: Catalog) -> LoadedResource:
+    """A resource from a config -> form state (J2). Edits are merged back with ``merge3``."""
+    warnings: list[str] = []
+    editable = True
+    if res.get('type') != 'collection':
+        editable = False
+        warnings.append(
+            f'Resources of type {res.get("type")!r} can be listed, not edited, in forms.'
+        )
+    r = ResourceState()
+    for key in ('title', 'description', 'keywords'):
+        if isinstance(res.get(key), str | dict | list):
+            setattr(r, key, res[key])
+    links = []
+    for i, link in enumerate(res.get('links') or []):
+        try:
+            links.append(Link(**link))
+        except (TypeError, ValueError):
+            warnings.append(f'Link {i + 1} is missing a required key; it is kept but not shown.')
+    r.links = links
+    ext = res.get('extents') or {}
+    spatial = ext.get('spatial') or {}
+    if isinstance(spatial.get('bbox'), list):
+        r.extents.spatial.bbox = spatial['bbox']
+    if isinstance(spatial.get('crs'), str):
+        r.extents.spatial.crs = spatial['crs']
+    temporal = ext.get('temporal')
+    if isinstance(temporal, dict):
+        r.extents.temporal = Temporal(
+            begin=_iso(temporal.get('begin')), end=_iso(temporal.get('end'))
+        )
+    ld = res.get('linked-data')
+    if isinstance(ld, dict) and isinstance(ld.get('context'), list):
+        r.linked_data_context = ld['context']
+    templates = res.get('templates')
+    if isinstance(templates, dict) and isinstance(templates.get('path'), str):
+        r.templates_path = templates['path']
+    if 'template' in res:
+        warnings.append(
+            'The legacy template: key is ignored by pygeoapi 0.24 (it was an Internet of '
+            'Water fork feature). Use templates: path: instead (docs/pygeoapi-notes.md §8).'
+        )
+    providers = []
+    for i, pdef in enumerate(res.get('providers') or []):
+        name = pdef.get('name') if isinstance(pdef, dict) else None
+        d = catalog.by_plugin(name) if isinstance(name, str) else None
+        if d is None:
+            providers.append(ProviderState(descriptor=RAW_DESCRIPTOR, extra=dict(pdef or {})))
+            warnings.append(
+                f'Provider {i + 1} ({name}) is not in the catalog; it is kept as YAML.'
+            )
+            continue
+        variant = detect_variant(d, pdef)
+        providers.append(form_values_from_provider(d, pdef, variant, resource_id))
+        for f in d.active_fields(variant):
+            if f['type'] != 'secret':
+                continue
+            node: Any = pdef
+            for part in f['key'].split('.'):
+                node = node.get(part) if isinstance(node, dict) else None
+            if isinstance(node, str) and node and not node.startswith('${'):
+                warnings.append(
+                    f'Provider {i + 1} has a literal value for {f["key"]}. It is kept, but '
+                    'secrets belong in environment variables: replace it with a reference.'
+                )
+    form = FormState(resource_id=resource_id, resource=r, providers=providers)
+    return LoadedResource(form=form, editable=editable, warnings=warnings)

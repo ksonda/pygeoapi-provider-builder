@@ -21,6 +21,7 @@ from .render import FormState, ProviderState, RenderResult
 from .security import GuardMiddleware
 from .service import ExportResult, ProbeSummary, Service, ValidateResult
 from .settings import Settings, load_settings
+from .targets import ConflictError, PublishPlan, PublishRequest, TargetError
 from .workspace import WorkspaceError
 from .yamlio import SpliceError
 
@@ -102,6 +103,10 @@ class SaveRequest(BaseModel):
     harness: dict[str, Any] | None = Field(default=None, description='The checklist to keep')
 
 
+class ImportRequest(BaseModel):
+    yaml: str = Field(description='A config, a resources mapping or one resource')
+
+
 class JobCreated(BaseModel):
     job_id: str
 
@@ -152,6 +157,18 @@ def create_app(
             status_code=400,
             media_type='application/problem+json',
         )
+
+    @app.exception_handler(TargetError)
+    async def _target_error(request: Request, exc: TargetError) -> JSONResponse:
+        body: dict[str, Any] = {
+            'type': 'about:blank',
+            'title': 'Conflict' if isinstance(exc, ConflictError) else 'Bad request',
+            'status': exc.status,
+            'detail': str(exc),
+        }
+        if isinstance(exc, ConflictError):
+            body.update(etag=exc.etag, diff=exc.diff)
+        return JSONResponse(body, status_code=exc.status, media_type='application/problem+json')
 
     def _target(target_id: str) -> None:
         try:
@@ -246,6 +263,73 @@ def create_app(
     def verify(target_id: str, req: VerifyRequest) -> dict[str, Any]:
         _target(target_id)
         return svc.verify(target_id, req.resource_id)
+
+    # ------------------------------------------------------- configs on targets (J2, J3)
+
+    @app.get('/api/targets', tags=['targets'])
+    def targets() -> list[dict[str, Any]]:
+        return [
+            {
+                'id': t.id,
+                'title': t.title,
+                'kind': t.kind,
+                'server_url': t.server_url,
+                'config': t.base_config.name,
+                'reload': t.reload,
+                'writes_openapi': t.openapi is not None,
+            }
+            for t in settings.targets
+        ]
+
+    @app.get('/api/targets/{target_id}/config', tags=['targets'])
+    def target_config(target_id: str) -> dict[str, Any]:
+        return svc.targets.config(target_id)
+
+    @app.get('/api/targets/{target_id}/resources', tags=['targets'])
+    def target_resources(target_id: str) -> dict[str, Any]:
+        return svc.targets.resources(target_id)
+
+    @app.get('/api/targets/{target_id}/resources/{resource_id:path}', tags=['targets'])
+    def target_resource(target_id: str, resource_id: str) -> dict[str, Any]:
+        return svc.targets.resource(target_id, resource_id)
+
+    @app.get('/api/targets/{target_id}/health/{resource_id:path}', tags=['targets'])
+    def target_health(target_id: str, resource_id: str) -> dict[str, Any]:
+        return svc.targets.health(target_id, resource_id)
+
+    @app.post('/api/import', tags=['targets'])
+    def import_yaml(req: ImportRequest) -> list[dict[str, Any]]:
+        return svc.targets.import_yaml(req.yaml)
+
+    # ---------------------------------------------------------------- publish
+
+    @app.post('/api/publish/plan', tags=['publish'])
+    def publish_plan(req: PublishRequest) -> PublishPlan:
+        return svc.targets.plan(req)[0]
+
+    @app.post('/api/publish', status_code=202, tags=['publish'])
+    def publish(req: PublishRequest) -> JobCreated:
+        svc.targets.target(req.target)
+        job = svc.jobs.submit('publish', lambda: svc.targets.publish(req))
+        return JobCreated(job_id=job.id)
+
+    @app.post('/api/publish/{entry_id}/rollback', status_code=202, tags=['publish'])
+    def rollback(entry_id: str) -> JobCreated:
+        entry = svc.targets.log.get(entry_id)
+        if entry is None:
+            raise HTTPException(404, f'No publish {entry_id!r} in the log')
+        job = svc.jobs.submit('rollback', lambda: svc.targets.rollback(entry_id))
+        return JobCreated(job_id=job.id)
+
+    @app.get('/api/publish/log', tags=['publish'])
+    def publish_log(target: str | None = None, resource_id: str | None = None) -> list[Any]:
+        entries = svc.targets.log.entries()
+        return [
+            e.model_dump()
+            for e in reversed(entries)
+            if (target is None or e.target == target)
+            and (resource_id is None or e.resource_id == resource_id)
+        ]
 
     # ------------------------------------------------------------------- jobs
 

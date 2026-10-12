@@ -477,7 +477,13 @@ def openapi(job: dict[str, Any]) -> dict[str, Any]:
     cfg = remap_paths(_load_yaml(job['config_yaml']), job.get('path_map', []))
     t0 = time.perf_counter()
     oas = get_oas(cfg, fail_on_invalid_collection=True)
-    return {'paths': sorted(oas.get('paths', {})), 'ms': _ms(t0)}
+    out: dict[str, Any] = {'paths': sorted(oas.get('paths', {})), 'ms': _ms(t0)}
+    if job.get('document'):
+        import yaml
+
+        # As ``pygeoapi openapi generate`` writes it (pygeoapi/openapi.py:1052).
+        out['document'] = yaml.safe_dump(oas, default_flow_style=False)
+    return out
 
 
 def availability(job: dict[str, Any]) -> dict[str, Any]:

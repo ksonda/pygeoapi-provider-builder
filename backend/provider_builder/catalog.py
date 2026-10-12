@@ -150,8 +150,15 @@ class Catalog:
             raise CatalogError(f'Unknown provider descriptor {descriptor_id!r}') from None
 
     def by_plugin(self, name: str) -> Descriptor | None:
+        """The descriptor for a provider ``name``: a short name or its dotted path."""
+        from pygeoapi.plugin import PLUGINS
+
+        names = {name}
+        for short, dotted in PLUGINS['provider'].items():
+            if name in (short, dotted):
+                names |= {short, dotted}
         for d in self.descriptors.values():
-            if d.plugin == name:
+            if d.plugin in names:
                 return d
         return None
 

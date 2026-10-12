@@ -33,13 +33,42 @@ class DataRoot(BaseModel):
 
 
 class Target(BaseModel):
-    """Where a resource is published. Phase 1 supports ``export`` only."""
+    """Where a resource is published (PLAN.md §6.4).
+
+    - ``export``: copy or download YAML; ``base_config`` is only read.
+    - ``file``: ``base_config`` is the server's config, edited in place:
+      OpenAPI first, backups, atomic writes, then reload and verify.
+    - ``admin``: the server's Admin API (guarded, ADR-0015); ``base_config`` is
+      not used for writes.
+    """
 
     id: str
     title: str
-    kind: Literal['export'] = 'export'
-    base_config: Path = Field(description='The pygeoapi config the resource is merged into')
-    server_url: str | None = Field(default=None, description='pygeoapi base URL, for links')
+    kind: Literal['export', 'file', 'admin'] = 'export'
+    base_config: Path = Field(description='The pygeoapi config (merged into, or edited)')
+    server_url: str | None = Field(default=None, description='pygeoapi base URL')
+    openapi: Path | None = Field(
+        default=None,
+        description=(
+            'file: the OpenAPI document the server reads (PYGEOAPI_OPENAPI), written before '
+            'the config. Leave empty when the server regenerates it at start (the Docker image)'
+        ),
+    )
+    reload: Literal['none', 'command', 'signal', 'watch'] = Field(
+        default='none',
+        description=(
+            'How the server picks up a new config: none (show instructions), command (run '
+            'reload_command), signal (HUP the pid in pid_file) or watch (the server reloads '
+            'itself, e.g. gunicorn --reload --reload-extra-file)'
+        ),
+    )
+    reload_command: list[str] = Field(default=[], description='argv, run in the settings dir')
+    pid_file: Path | None = None
+    verify_timeout_s: int = 90
+    keep_backups: int = 20
+    admin_url: str | None = Field(
+        default=None, description='admin: the Admin API base; default <server_url>/admin'
+    )
 
 
 class SandboxSettings(BaseModel):
@@ -86,6 +115,10 @@ class Settings(BaseModel):
     sandbox: SandboxSettings = SandboxSettings()
     workspace: Workspace = Workspace()
     geoconnex: bool = True
+    state_dir: Path = Field(
+        default=Path('.provider-builder'),
+        description='Backups and the publish log (ADR-0013)',
+    )
     allowed_hosts: list[str] = ['127.0.0.1', 'localhost']
     allowed_origins: list[str] = []
 
@@ -111,7 +144,10 @@ def load_settings(path: Path | None = None) -> Settings:
     for dr in raw.get('data_roots', []):
         dr['host_path'] = rel(dr['host_path'])
     for t in raw.get('targets', []):
-        t['base_config'] = rel(t['base_config'])
+        for key in ('base_config', 'openapi', 'pid_file'):
+            if t.get(key):
+                t[key] = rel(t[key])
+    raw['state_dir'] = rel(raw.get('state_dir', '.provider-builder'))
     raw['catalogs'] = [rel(c) for c in raw.get('catalogs', ['catalog'])]
     workspace = raw.setdefault('workspace', {})
     workspace['host_path'] = rel(workspace.get('host_path', 'workspace/providers'))
