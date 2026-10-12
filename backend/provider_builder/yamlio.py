@@ -58,10 +58,12 @@ _Representer.add_representer(dt.datetime, _represent_datetime)
 _Representer.add_representer(type(None), _represent_none)
 
 
-def make_yaml(mapping_indent: int = 4) -> YAML:
+def make_yaml(mapping_indent: int = 4, seq_offset: int | None = None) -> YAML:
+    """``seq_offset``: the dash's indent under its key (default: ``mapping_indent``)."""
+    offset = mapping_indent if seq_offset is None else seq_offset
     y = YAML(typ='rt')
     y.Representer = _Representer
-    y.indent(mapping=mapping_indent, sequence=mapping_indent + 2, offset=mapping_indent)
+    y.indent(mapping=mapping_indent, sequence=offset + 2, offset=offset)
     y.width = 4096
     return y
 
@@ -83,9 +85,9 @@ def to_tree(obj: Any, key: str | None = None) -> Any:
     return obj
 
 
-def dump(obj: Any, mapping_indent: int = 4) -> str:
+def dump(obj: Any, mapping_indent: int = 4, seq_offset: int | None = None) -> str:
     buf = io.StringIO()
-    make_yaml(mapping_indent).dump(to_tree(obj), buf)
+    make_yaml(mapping_indent, seq_offset).dump(to_tree(obj), buf)
     return buf.getvalue()
 
 
@@ -111,50 +113,17 @@ class SpliceError(ValueError):
 def append_resource(base_text: str, resource_id: str, resource: dict[str, Any]) -> str:
     """Return ``base_text`` with a new resource added at the end of ``resources:``.
 
-    Everything else in the file is left byte-for-byte as it was.
+    Everything else in the file is left byte-for-byte as it was (``configedit``).
     """
+    from .configedit import EditError, load, resources, set_resources
+
     try:
-        parsed = pyyaml.safe_load(base_text) or {}
-    except pyyaml.YAMLError as err:
-        raise SpliceError(f'The base config is not valid YAML: {err}') from err
-    resources = parsed.get('resources') if isinstance(parsed, dict) else None
-    if isinstance(resources, dict) and resource_id in resources:
+        existing = resources(load(base_text) or {})
+    except EditError as err:
+        raise SpliceError(str(err)) from err
+    if resource_id in existing:
         raise SpliceError(f'The config already has a resource called {resource_id!r}')
-
-    newline = '\r\n' if '\r\n' in base_text else '\n'
-    lines = base_text.splitlines()
-    indent = detect_mapping_indent(base_text)
-    start = next(
-        (
-            i
-            for i, line in enumerate(lines)
-            if re.match(r'^resources:\s*(\{\s*\})?\s*(#.*)?$', line)
-        ),
-        None,
-    )
-    block = dump({resource_id: resource}, mapping_indent=indent).rstrip('\n').split('\n')
-
-    if start is None:
-        body = [*lines, '', 'resources:', *[' ' * indent + b for b in block]]
-        return newline.join(body) + newline
-    if re.match(r'^resources:\s*\{\s*\}', lines[start]):
-        lines[start] = 'resources:'
-    content = [
-        j
-        for j in range(start + 1, len(lines))
-        if lines[j].strip() and not lines[j].lstrip().startswith('#')
-    ]
-    end = next((j for j in content if not lines[j].startswith(' ')), len(lines))
-    first_child = next((j for j in content if j < end), None)
-    child_indent = indent
-    if first_child is not None:
-        child_indent = len(lines[first_child]) - len(lines[first_child].lstrip(' '))
-    # Leave blank lines and column-0 comments that introduce the next top-level key.
-    while end > start + 1 and (not lines[end - 1].strip() or lines[end - 1].startswith('#')):
-        end -= 1
-    insert = [' ' * child_indent + b for b in block]
-    if end > start + 1 and lines[end - 1].strip():
-        insert = ['', *insert]
-    out = lines[:end] + insert + lines[end:]
-    text = newline.join(out)
-    return text + newline if base_text.endswith(('\n', '\r\n')) or not base_text else text
+    try:
+        return set_resources(base_text, {resource_id: resource}).text
+    except EditError as err:
+        raise SpliceError(str(err)) from err

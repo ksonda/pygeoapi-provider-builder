@@ -1,0 +1,53 @@
+# Hand-written corpus file: anchors, merge keys, block scalars, comments.
+server:
+  bind:
+    host: 0.0.0.0
+    port: 80
+  url: http://localhost:5000
+  limits: &limits
+    default_items: 10
+    max_items: 50
+
+x-common: &common
+  type: collection
+  keywords: [a, b]
+
+resources:
+  # first resource
+  with-merge:
+    <<: *common
+    title: Merged
+    description: |
+      A block scalar
+      over two lines.
+    extents:
+      spatial:
+        bbox: [-180, -90, 180, 90]   # whole world
+    providers:
+    - type: feature
+      name: GeoJSON
+      data: /data/a.geojson
+      id_field: id
+
+  plain:
+    type: collection
+    title: 'Quoted title'   # keep the quotes
+    description: "Double quoted"
+    keywords:
+    - one
+    - two
+    extents:
+      spatial:
+        bbox: [0,0,1,1]
+    providers:
+    - type: feature
+      name: CSV
+      data: /data/b.csv
+      id_field: id
+      geometry:
+        x_field: lon
+        y_field: lat
+
+# trailing comment about logging
+logging:
+  level: ERROR

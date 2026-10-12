@@ -1,0 +1,11 @@
+server:
+    url: http://localhost
+
+resources:
+    a:
+        type: collection
+        title: A
+        providers:
+            - type: feature
+              name: CSV
+              data: /data/a.csv

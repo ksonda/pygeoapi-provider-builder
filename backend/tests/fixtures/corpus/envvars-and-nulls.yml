@@ -1,0 +1,24 @@
+server:
+    url: ${PYGEOAPI_SERVER_URL:-http://localhost:5000}
+resources:
+    pg:
+        type: collection
+        title: PG   # inline
+        description: d
+        keywords: []
+        extents:
+            spatial:
+                bbox: [-180,-90,180,90]
+            temporal:
+                begin: 2000-10-30T18:24:39Z
+                end: null  # ongoing
+        providers:
+            - type: feature
+              name: PostgreSQL
+              data:
+                  host: ${PG_HOST}
+                  dbname: test
+                  user: postgres
+                  password: ${PG_PASSWORD}
+              id_field: osm_id
+              table: hotosm_bdi_waterways

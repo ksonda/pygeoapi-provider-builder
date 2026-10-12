@@ -1,0 +1,8 @@
+﻿resources:
+  a:
+    type: collection
+    title: BOM
+    providers:
+      - type: feature
+        name: CSV
+        data: /x.csv
