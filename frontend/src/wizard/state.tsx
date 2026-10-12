@@ -18,8 +18,17 @@ export const STEPS = [
 
 export type StepId = (typeof STEPS)[number]['id']
 
+/**
+ * new: J1 (also a duplicate or an imported snippet, prefilled).
+ * edit: J2, an existing resource on a target; `addProvider` is J3.
+ */
+export type Mode = { kind: 'new' } | { kind: 'edit'; resourceId: string; etag: string; addProvider: boolean }
+
 export interface WizardState {
   step: StepId
+  mode: Mode
+  /** The provider the Connect, Test and Map steps work on (J3 appends one). */
+  index: number
   target: string
   detail: DescriptorDetail | null
   form: FormState
@@ -29,6 +38,15 @@ export interface WizardState {
   probe: SandboxResult<ProbeData> | null
   idEdited: boolean
   envEdited: Record<string, boolean>
+  /** Admin API risks the user accepted on Review (ADR-0015). */
+  acknowledge: string[]
+}
+
+/** The steps each mode walks through. */
+export function stepsFor(mode: Mode): (typeof STEPS)[number][] {
+  if (mode.kind === 'edit' && mode.addProvider) return STEPS.filter((s) => s.id !== 'start')
+  if (mode.kind === 'edit') return STEPS.filter((s) => s.id !== 'start' && s.id !== 'backend')
+  return [...STEPS]
 }
 
 const CRS84 = 'http://www.opengis.net/def/crs/OGC/1.3/CRS84'
@@ -49,6 +67,8 @@ export function emptyResource(): ResourceState {
 export function initialState(target: string): WizardState {
   return {
     step: 'start',
+    mode: { kind: 'new' },
+    index: 0,
     target,
     detail: null,
     form: { form_version: 1, resource_id: '', resource: emptyResource(), providers: [] },
@@ -57,6 +77,7 @@ export function initialState(target: string): WizardState {
     probe: null,
     idEdited: false,
     envEdited: {},
+    acknowledge: [],
   }
 }
 
@@ -80,6 +101,14 @@ export function envName(resourceId: string, key: string, hint?: string | null): 
 
 export type Action =
   | { type: 'goto'; step: StepId }
+  | {
+      type: 'load'
+      form: FormState
+      mode: Mode
+      index: number
+      detail: DescriptorDetail | null
+      step: StepId
+    }
   | { type: 'target'; target: string }
   | { type: 'descriptor'; detail: DescriptorDetail }
   | { type: 'value'; key: string; value: unknown }
@@ -90,9 +119,23 @@ export type Action =
   | { type: 'probe'; result: SandboxResult<ProbeData> | null }
   | { type: 'resource'; patch: Partial<ResourceState> }
   | { type: 'resourceId'; id: string; edited: boolean }
+  | { type: 'acknowledge'; value: string; on: boolean }
+
+const EMPTY_PROVIDER: ProviderState = { descriptor: '', variant: null, values: {}, secrets: {}, extra: {} }
+
+/** The provider being edited. */
+export function current(state: WizardState): ProviderState | undefined {
+  return state.form.providers[state.index]
+}
 
 function provider(state: WizardState): ProviderState {
-  return state.form.providers[0] ?? { descriptor: '', variant: null, values: {}, secrets: {}, extra: {} }
+  return current(state) ?? EMPTY_PROVIDER
+}
+
+function replaceProvider(state: WizardState, p: ProviderState): ProviderState[] {
+  const providers = [...state.form.providers]
+  providers[state.index] = p
+  return providers
 }
 
 /** Connection fields decide whether the provider loads; changing one invalidates the probe. */
@@ -103,19 +146,19 @@ function isConnectKey(detail: DescriptorDetail | null, key: string): boolean {
 }
 
 function withProvider(state: WizardState, p: ProviderState, invalidate = true): WizardState {
-  return { ...state, form: { ...state.form, providers: [p] }, probe: invalidate ? null : state.probe }
+  return { ...state, form: { ...state.form, providers: replaceProvider(state, p) }, probe: invalidate ? null : state.probe }
 }
 
 function syncEnvNames(state: WizardState): WizardState {
   const d = state.detail
-  const p = state.form.providers[0]
+  const p = current(state)
   if (!d || !p) return state
   const secrets = { ...(p.secrets ?? {}) }
   for (const f of Object.values(d.ui.fields)) {
     if (f.type !== 'secret' || state.envEdited[f.key]) continue
     secrets[f.key] = { env: envName(state.form.resource_id, f.key, f.env_name) }
   }
-  return { ...state, form: { ...state.form, providers: [{ ...p, secrets }] } }
+  return { ...state, form: { ...state.form, providers: replaceProvider(state, { ...p, secrets }) } }
 }
 
 function suggestId(state: WizardState, key: string, value: unknown): WizardState {
@@ -130,6 +173,23 @@ export function reducer(state: WizardState, action: Action): WizardState {
   switch (action.type) {
     case 'goto':
       return { ...state, step: action.step }
+    case 'load': {
+      // Loaded secrets keep their variable names: the server already defines them.
+      const loaded = action.form.providers[action.index]
+      const envEdited = Object.fromEntries(Object.keys(loaded?.secrets ?? {}).map((k) => [k, true]))
+      return {
+        ...state,
+        form: action.form,
+        mode: action.mode,
+        index: action.index,
+        detail: action.detail,
+        step: action.step,
+        idEdited: true,
+        envEdited,
+        introspection: null,
+        probe: null,
+      }
+    }
     case 'target':
       return { ...state, target: action.target }
     case 'descriptor': {
@@ -146,7 +206,7 @@ export function reducer(state: WizardState, action: Action): WizardState {
         introspection: null,
         probe: null,
         envEdited: {},
-        form: { ...state.form, resource_id: resourceId, providers: [{ descriptor: d.id, variant, values, secrets: {}, extra: {} }] },
+        form: { ...state.form, resource_id: resourceId, providers: replaceProvider(state, { descriptor: d.id, variant, values, secrets: {}, extra: {} }) },
       }
       return syncEnvNames(next)
     }
@@ -176,6 +236,8 @@ export function reducer(state: WizardState, action: Action): WizardState {
       return { ...state, probe: action.result }
     case 'resource':
       return { ...state, form: { ...state.form, resource: { ...state.form.resource, ...action.patch } } }
+    case 'acknowledge':
+      return { ...state, acknowledge: action.on ? [...new Set([...state.acknowledge, action.value])] : state.acknowledge.filter((a) => a !== action.value) }
     case 'resourceId':
       return syncEnvNames({ ...state, idEdited: action.edited, form: { ...state.form, resource_id: action.id } })
   }
@@ -197,7 +259,7 @@ export function useWizard() {
 /** The secret values a run needs: only those the provider references. */
 export function runSecrets(state: WizardState): Record<string, string> {
   const out: Record<string, string> = {}
-  for (const [key, ref] of Object.entries(state.form.providers[0]?.secrets ?? {})) {
+  for (const [key, ref] of Object.entries(current(state)?.secrets ?? {})) {
     const v = state.testSecrets[key]
     if (v) out[ref.env] = v
   }

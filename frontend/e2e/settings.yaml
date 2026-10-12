@@ -14,6 +14,16 @@ targets:
     kind: export
     base_config: ../../backend/tests/fixtures/pygeoapi.config.yml
     server_url: http://localhost:5080
+  # A throwaway pygeoapi (e2e/global-setup.ts) serving a copy of the same config,
+  # which publish.spec.ts edits in place.
+  - id: e2e-file
+    title: E2E file target
+    kind: file
+    base_config: ../../.e2e/config/pygeoapi.config.yml
+    server_url: http://127.0.0.1:5081
+    reload: command
+    reload_command: [docker, restart, pb-e2e-pygeoapi]
+    verify_timeout_s: 120
 
 catalogs: [../../catalog]
 
@@ -28,6 +38,8 @@ workspace:
   server_path: /specs
 
 geoconnex: true
+
+state_dir: ../../.e2e/state
 
 allowed_hosts: [127.0.0.1, localhost]
 allowed_origins: [http://127.0.0.1:8766]

@@ -322,6 +322,20 @@
         "title": "HarnessRequest",
         "type": "object"
       },
+      "ImportRequest": {
+        "properties": {
+          "yaml": {
+            "description": "A config, a resources mapping or one resource",
+            "title": "Yaml",
+            "type": "string"
+          }
+        },
+        "required": [
+          "yaml"
+        ],
+        "title": "ImportRequest",
+        "type": "object"
+      },
       "IntrospectRequest": {
         "properties": {
           "provider": {
@@ -465,6 +479,24 @@
         "title": "Link",
         "type": "object"
       },
+      "Note": {
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "message"
+        ],
+        "title": "Note",
+        "type": "object"
+      },
       "OpenAPICheckRequest": {
         "properties": {
           "form": {
@@ -591,6 +623,181 @@
           "descriptor"
         ],
         "title": "ProviderState",
+        "type": "object"
+      },
+      "PublishPlan": {
+        "properties": {
+          "action": {
+            "enum": [
+              "add",
+              "update",
+              "delete"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "blocking": {
+            "title": "Blocking",
+            "type": "boolean"
+          },
+          "changed": {
+            "title": "Changed",
+            "type": "boolean"
+          },
+          "diff": {
+            "title": "Diff",
+            "type": "string"
+          },
+          "env": {
+            "items": {
+              "$ref": "#/components/schemas/EnvVar"
+            },
+            "title": "Env",
+            "type": "array"
+          },
+          "etag": {
+            "title": "Etag",
+            "type": "string"
+          },
+          "etag_after": {
+            "title": "Etag After",
+            "type": "string"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "notes": {
+            "items": {
+              "$ref": "#/components/schemas/Note"
+            },
+            "title": "Notes",
+            "type": "array"
+          },
+          "resource_id": {
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "target",
+          "kind",
+          "action",
+          "resource_id",
+          "changed",
+          "etag",
+          "etag_after",
+          "diff",
+          "notes",
+          "findings",
+          "blocking",
+          "env"
+        ],
+        "title": "PublishPlan",
+        "type": "object"
+      },
+      "PublishRequest": {
+        "properties": {
+          "acknowledge": {
+            "default": [],
+            "description": "Admin API risks accepted, e.g. admin-secrets (ADR-0015)",
+            "items": {
+              "type": "string"
+            },
+            "title": "Acknowledge",
+            "type": "array"
+          },
+          "action": {
+            "enum": [
+              "add",
+              "update",
+              "delete"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The config's ETag when it was loaded",
+            "title": "Etag"
+          },
+          "form": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FormState"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "add and update"
+          },
+          "probes": {
+            "default": [],
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ProbeSummary"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Probes",
+            "type": "array"
+          },
+          "resource_id": {
+            "description": "The new id (add) or the existing one",
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "target": {
+            "title": "Target",
+            "type": "string"
+          },
+          "test_secrets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "description": "Kept in memory for this run",
+            "title": "Test Secrets",
+            "type": "object"
+          }
+        },
+        "required": [
+          "target",
+          "action",
+          "resource_id"
+        ],
+        "title": "PublishRequest",
         "type": "object"
       },
       "RenderRequest": {
@@ -1331,6 +1538,52 @@
         ]
       }
     },
+    "/api/import": {
+      "post": {
+        "operationId": "import_yaml_api_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Import Yaml Api Import Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Import Yaml",
+        "tags": [
+          "targets"
+        ]
+      }
+    },
     "/api/introspect": {
       "post": {
         "operationId": "introspect_api_introspect_post",
@@ -1533,6 +1786,197 @@
         "summary": "Probe",
         "tags": [
           "mode-a"
+        ]
+      }
+    },
+    "/api/publish": {
+      "post": {
+        "operationId": "publish_api_publish_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish",
+        "tags": [
+          "publish"
+        ]
+      }
+    },
+    "/api/publish/log": {
+      "get": {
+        "operationId": "publish_log_api_publish_log_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "target",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Resource Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {},
+                  "title": "Response Publish Log Api Publish Log Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Log",
+        "tags": [
+          "publish"
+        ]
+      }
+    },
+    "/api/publish/plan": {
+      "post": {
+        "operationId": "publish_plan_api_publish_plan_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublishPlan"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Publish Plan",
+        "tags": [
+          "publish"
+        ]
+      }
+    },
+    "/api/publish/{entry_id}/rollback": {
+      "post": {
+        "operationId": "rollback_api_publish__entry_id__rollback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "entry_id",
+            "required": true,
+            "schema": {
+              "title": "Entry Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rollback",
+        "tags": [
+          "publish"
         ]
       }
     },
@@ -1806,6 +2250,226 @@
         "summary": "Spec Validate",
         "tags": [
           "mode-b"
+        ]
+      }
+    },
+    "/api/targets": {
+      "get": {
+        "operationId": "targets_api_targets_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Targets Api Targets Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Targets",
+        "tags": [
+          "targets"
+        ]
+      }
+    },
+    "/api/targets/{target_id}/config": {
+      "get": {
+        "operationId": "target_config_api_targets__target_id__config_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "title": "Target Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Target Config Api Targets  Target Id  Config Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Target Config",
+        "tags": [
+          "targets"
+        ]
+      }
+    },
+    "/api/targets/{target_id}/health/{resource_id}": {
+      "get": {
+        "operationId": "target_health_api_targets__target_id__health__resource_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Target Health Api Targets  Target Id  Health  Resource Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Target Health",
+        "tags": [
+          "targets"
+        ]
+      }
+    },
+    "/api/targets/{target_id}/resources": {
+      "get": {
+        "operationId": "target_resources_api_targets__target_id__resources_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "title": "Target Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Target Resources Api Targets  Target Id  Resources Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Target Resources",
+        "tags": [
+          "targets"
+        ]
+      }
+    },
+    "/api/targets/{target_id}/resources/{resource_id}": {
+      "get": {
+        "operationId": "target_resource_api_targets__target_id__resources__resource_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target_id",
+            "required": true,
+            "schema": {
+              "title": "Target Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "title": "Resource Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Target Resource Api Targets  Target Id  Resources  Resource Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Target Resource",
+        "tags": [
+          "targets"
         ]
       }
     },

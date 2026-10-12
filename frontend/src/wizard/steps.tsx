@@ -15,7 +15,7 @@ import type {
 import { MapView } from '../components/MapView'
 import { CopyButton, ExplainedError, FindingList, SampleTable, Spinner, YamlView } from '../components/common'
 import { DescriptorForm } from '../forms/DescriptorForm'
-import { runSecrets, useWizard, type StepId, type WizardState } from './state'
+import { current, runSecrets, useWizard, type StepId, type WizardState } from './state'
 
 export interface StepProps {
   settings: PublicSettings
@@ -28,7 +28,7 @@ export interface StepProps {
 
 export function choicesFor(state: WizardState, f: UiField): string[] | null {
   const intro = state.introspection?.ok ? state.introspection.result : null
-  const values = state.form.providers[0]?.values ?? {}
+  const values = current(state)?.values ?? {}
   const table = intro?.tables?.find((t) => t.name === values.table)
   switch (f.choices_from) {
     case 'introspect.columns':
@@ -49,9 +49,10 @@ export function choicesFor(state: WizardState, f: UiField): string[] | null {
   }
 }
 
-function probeSummaries(state: WizardState) {
+/** One entry per provider: what the probe of the edited one found, null for the others. */
+export function probeSummaries(state: WizardState) {
   const r = state.probe?.ok ? state.probe.result : null
-  return [r ? { fields: r.fields, sample_stats: r.sample_stats ?? null } : null]
+  return state.form.providers.map((_, i) => (i === state.index && r ? { fields: r.fields, sample_stats: r.sample_stats ?? null } : null))
 }
 
 function useFormProps(props: StepProps, step: 'connect' | 'map') {
@@ -60,7 +61,7 @@ function useFormProps(props: StepProps, step: 'connect' | 'map') {
   return {
     detail: state.detail as DescriptorDetail,
     step,
-    provider: state.form.providers[0] ?? { descriptor: '', variant: null, values: {}, secrets: {}, extra: {} },
+    provider: current(state) ?? { descriptor: '', variant: null, values: {}, secrets: {}, extra: {} },
     errors: props.errors,
     showErrors: props.showErrors,
     testSecrets: state.testSecrets,
@@ -82,16 +83,9 @@ export function StartStep({ settings }: StepProps) {
   return (
     <>
       <p>Publish a data source as an OGC API collection on your pygeoapi server, without writing YAML.</p>
-      <fieldset>
-        <legend>What do you want to do?</legend>
-        <label className="radio">
-          <input type="radio" name="start" defaultChecked /> Create a new collection
-        </label>
-        <label className="radio disabled">
-          <input type="radio" name="start" disabled /> Add a provider to an existing collection{' '}
-          <span className="muted">(arrives with editing, in Phase 3)</span>
-        </label>
-      </fieldset>
+      <p>
+        To edit a collection, add a provider to one, or import YAML, go to <a href="#/configs">the collections on a server</a>.
+      </p>
       <div className="field">
         <label htmlFor="target">Publish to</label>
         <select id="target" value={state.target} onChange={(e) => dispatch({ type: 'target', target: e.target.value })}>
@@ -103,14 +97,19 @@ export function StartStep({ settings }: StepProps) {
         </select>
         {target && (
           <p className="help">
-            The new collection is merged into <code>{target.base_config}</code>
+            The new collection is added to <code>{target.base_config}</code>
             {target.server_url ? (
               <>
                 {' '}
                 for the server at <code>{target.server_url}</code>
               </>
             ) : null}
-            . Nothing is written to the server: you download the result (the export target).
+            .{' '}
+            {target.kind === 'export'
+              ? 'Nothing is written to the server: you download the result.'
+              : target.kind === 'admin'
+                ? 'Publishing writes it through the server\'s Admin API, then checks the server serves it.'
+                : 'Publishing edits that file in place (with a backup), reloads pygeoapi and checks it serves the collection.'}
           </p>
         )}
       </div>
@@ -171,6 +170,14 @@ export function BackendStep() {
 
   const q = query.trim().toLowerCase()
   const visible = (cards ?? []).filter((c) => !q || `${c.title} ${c.summary} ${c.plugin}`.toLowerCase().includes(q))
+  // J3: pygeoapi uses the first provider of each type, so a second one would never be used.
+  const taken = new Set(
+    state.mode.kind === 'edit' && state.mode.addProvider
+      ? state.form.providers
+          .filter((_, i) => i !== state.index)
+          .map((p) => cards?.find((c) => c.id === p.descriptor)?.provider_type ?? (p.extra as { type?: string } | undefined)?.type)
+      : [],
+  )
 
   return (
     <>
@@ -191,10 +198,12 @@ export function BackendStep() {
             <ul className="cards">
               {group.map((c) => {
                 const selected = state.detail?.id === c.id
+                const blocked = taken.has(c.provider_type)
                 return (
                   <li key={c.id} className={`card${selected ? ' selected' : ''}`}>
                     <h4>{c.title}</h4>
                     <p>{c.summary}</p>
+                    {blocked && <p className="muted small">This collection already has a {c.provider_type} provider, and pygeoapi only uses the first one of each type.</p>}
                     <p className="chips" aria-label="Capabilities">
                       {Object.entries(c.capabilities)
                         .filter(([, v]) => v)
@@ -217,7 +226,7 @@ export function BackendStep() {
                           Docs
                         </a>
                       )}
-                      <button type="button" aria-pressed={selected} onClick={() => void choose(c.id)} disabled={loading !== null}>
+                      <button type="button" aria-pressed={selected} onClick={() => void choose(c.id)} disabled={loading !== null || blocked}>
                         {selected ? 'Selected' : loading === c.id ? 'Loading…' : 'Use this'}
                       </button>
                     </p>
@@ -229,7 +238,7 @@ export function BackendStep() {
         )
       })}
       <p className="muted">
-        Nothing fits? <span aria-disabled="true">Create a new provider →</span> (Mode B arrives in Phase 2.)
+        Nothing fits? <a href="#/create/new">Create a new provider</a> for a source pygeoapi can't read today.
       </p>
     </>
   )
@@ -239,10 +248,10 @@ export function BackendStep() {
 
 function introspectionReady(state: WizardState): boolean {
   const d = state.detail
-  const values = state.form.providers[0]?.values ?? {}
+  const values = current(state)?.values ?? {}
   if (!d?.introspect) return false
   if (d.introspect.what === 'sql') {
-    const variant = state.form.providers[0]?.variant
+    const variant = current(state)?.variant
     if (variant === 'dsn') return Boolean(state.testSecrets.data)
     return Boolean(values['data.host'] && values['data.dbname'] && values['data.user'] && state.testSecrets['data.password'])
   }
@@ -254,7 +263,7 @@ export function ConnectStep(props: StepProps) {
   const form = useFormProps(props, 'connect')
   const [busy, setBusy] = useState(false)
   const ready = introspectionReady(state)
-  const p = state.form.providers[0]
+  const p = current(state)
   const key = JSON.stringify([p?.values?.data, p?.values?.['data.host'], p?.values?.['data.dbname'], p?.values?.['data.user'], p?.variant, state.testSecrets])
 
   const lookUp = useCallback(async () => {
@@ -345,7 +354,7 @@ export function TestStep() {
   const run = useCallback(async () => {
     setBusy(true)
     try {
-      const job = unwrap(await api.POST('/api/probe', { body: { form: state.form, provider_index: 0, test_secrets: runSecrets(state) } }))
+      const job = unwrap(await api.POST('/api/probe', { body: { form: state.form, provider_index: state.index, test_secrets: runSecrets(state) } }))
       dispatch({ type: 'probe', result: await waitForJob<SandboxResult<ProbeData>>(job.job_id) })
     } catch (e) {
       dispatch({ type: 'probe', result: { ok: false, explanation: { code: 'client', message: String(e) } } })
@@ -442,7 +451,7 @@ export function FieldsStep(props: StepProps) {
   const { state } = useWizard()
   const form = useFormProps(props, 'map')
   const r = state.probe?.ok ? state.probe.result : null
-  const values = state.form.providers[0]?.values ?? {}
+  const values = current(state)?.values ?? {}
   const uriField = typeof values.uri_field === 'string' ? values.uri_field : null
   const uriValues = uriField ? (r?.sample_stats?.[uriField]?.values ?? []).map(String) : []
   const props_ = Array.isArray(values.properties) ? (values.properties as string[]) : undefined

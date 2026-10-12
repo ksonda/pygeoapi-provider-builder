@@ -185,13 +185,21 @@ class TargetOps:
         if not isinstance(res, dict):
             raise TargetError(f'The config has no resource called {resource_id!r}.')
         loaded = form_from_resource(resource_id, res, self.svc.catalog)
+        return {'etag': tag, 'yaml': self.resource_text(text, resource_id), **loaded.model_dump()}
+
+    @staticmethod
+    def resource_text(text: str, resource_id: str) -> str:
+        """The resource's own lines from the file, comments included, dedented."""
         from . import yamlio
 
-        return {
-            'etag': tag,
-            'yaml': yamlio.dump({resource_id: res}),
-            **loaded.model_dump(),
-        }
+        try:
+            p = ce._Patcher(text.lstrip('\ufeff').replace('\r\n', '\n'))
+            line, col, end = p.key_span(p.rt['resources'], resource_id)
+        except (ce.EditError, KeyError, TypeError):
+            res = ce.resources(ce.load(text) or {}).get(resource_id)
+            return yamlio.dump({resource_id: res})
+        lines = p.lines[line:end]
+        return '\n'.join(ln[col:] if ln[:col].strip() == '' else ln for ln in lines) + '\n'
 
     def created_version(self, pdef: dict[str, Any]) -> str | None:
         """A created provider's version, from its versioned spec path (ADR-0013)."""

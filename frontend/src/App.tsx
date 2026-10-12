@@ -2,22 +2,57 @@ import { useEffect, useState } from 'react'
 
 import { api, unwrap } from './api/client'
 import type { Health, PublicSettings } from './api/types'
+import { Configs } from './configs/Configs'
+import { takeHandOff } from './configs/handoff'
 import { CreateWizard } from './create/CreateWizard'
 import { CreateProvider } from './create/state'
 import { WizardProvider } from './wizard/state'
-import { Wizard } from './wizard/Wizard'
+import { Wizard, type WizardLoad } from './wizard/Wizard'
 
-function useHash(): [string, (h: string) => void] {
-  const [hash, setHash] = useState(() => window.location.hash || '#/')
+type Route = { hash: string; load: WizardLoad | null; loadKey: string }
+
+/** The route, and what the wizard opens with (J2/J3 or an imported snippet). */
+function routeFor(hash: string): Route {
+  if (hash.startsWith('#/configure/edit')) {
+    const q = new URLSearchParams(hash.split('?')[1] ?? '')
+    const intent = q.get('intent')
+    const load: WizardLoad = {
+      kind: 'target',
+      target: q.get('target') ?? '',
+      id: q.get('id') ?? '',
+      intent: intent === 'provider' || intent === 'duplicate' ? intent : 'edit',
+    }
+    return { hash, load, loadKey: hash }
+  }
+  if (hash.startsWith('#/configure/import')) {
+    const h = takeHandOff()
+    return { hash, load: h ? { kind: 'import', form: h.form } : null, loadKey: `import:${Date.now()}` }
+  }
+  return { hash, load: null, loadKey: '' }
+}
+
+function useRoute(): [Route, (h: string) => void] {
+  const [route, setRoute] = useState(() => routeFor(window.location.hash || '#/'))
   useEffect(() => {
-    const on = () => setHash(window.location.hash || '#/')
+    const on = () => setRoute(routeFor(window.location.hash || '#/'))
     window.addEventListener('hashchange', on)
     return () => window.removeEventListener('hashchange', on)
   }, [])
-  return [hash, (h: string) => (window.location.hash = h)]
+  return [route, (h: string) => (window.location.hash = h)]
 }
 
-function Home({ health, onConfigure, onCreate }: { health: Health | null; onConfigure: () => void; onCreate: () => void }) {
+function Home({
+  health,
+  settings,
+  onConfigure,
+  onCreate,
+}: {
+  health: Health | null
+  settings: PublicSettings | null
+  onConfigure: () => void
+  onCreate: () => void
+}) {
+  const writable = settings?.targets.find((t) => t.kind !== 'export')
   return (
     <div className="home">
       <p className="lead">Publish data with pygeoapi without writing YAML or Python.</p>
@@ -37,6 +72,18 @@ function Home({ health, onConfigure, onCreate }: { health: Health | null; onConf
           </button>
         </section>
       </div>
+      {settings && settings.targets.length > 0 && (
+        <section className="card mode">
+          <h2>Manage</h2>
+          <p>
+            See the collections a server publishes, edit them, add a provider, delete them, import YAML, and roll back a publish
+            {writable ? ` on ${writable.title}` : ''}.
+          </p>
+          <a className="button" href="#/configs">
+            Manage collections
+          </a>
+        </section>
+      )}
       {health && (
         <p className="muted small">
           pygeoapi {health.pygeoapi} · tests run{' '}
@@ -53,7 +100,7 @@ function Home({ health, onConfigure, onCreate }: { health: Health | null; onConf
 }
 
 export function App() {
-  const [hash, go] = useHash()
+  const [{ hash, load, loadKey }, go] = useRoute()
   const [settings, setSettings] = useState<PublicSettings | null>(null)
   const [health, setHealth] = useState<Health | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -72,32 +119,50 @@ export function App() {
 
   const inWizard = hash.startsWith('#/configure')
   const inCreate = hash.startsWith('#/create')
-  const descriptor = new URLSearchParams(hash.split('?')[1] ?? '').get('descriptor')
+  const inConfigs = hash.startsWith('#/configs')
+  const query = new URLSearchParams(hash.split('?')[1] ?? '')
+  const descriptor = query.get('descriptor')
+  const loadTarget = load?.kind === 'target' ? load.target : null
+  const wizardTarget = loadTarget ?? settings?.targets[0]?.id
   return (
     <>
       <header className="app-header">
         <a href="#/" className="brand">
           pygeoapi Provider Builder
         </a>
-        {(inWizard || inCreate) && (
-          <a href="#/" className="small">
-            Leave the wizard
-          </a>
-        )}
+        <nav aria-label="Main" className="main-nav">
+          {!inConfigs && settings && settings.targets.length > 0 && (
+            <a href="#/configs" className="small">
+              Collections
+            </a>
+          )}
+          {(inWizard || inCreate) && (
+            <a href="#/" className="small">
+              Leave the wizard
+            </a>
+          )}
+        </nav>
       </header>
       <main id="main">
         {error && <p className="notice error">{error}</p>}
-        {!inWizard && !inCreate && (
+        {inConfigs && <Configs initialTarget={query.get('target')} />}
+        {!inWizard && !inCreate && !inConfigs && (
           <Home
             health={health}
+            settings={settings}
             onConfigure={() => (setSession((s) => s + 1), go('#/configure/new'))}
             onCreate={() => (setSession((s) => s + 1), go('#/create/new'))}
           />
         )}
-        {inWizard && settings && settings.targets[0] && (
-          <WizardProvider key={`${session}:${descriptor ?? ''}`} target={settings.targets[0].id}>
-            <Wizard settings={settings} initialDescriptor={descriptor} />
+        {inWizard && settings && wizardTarget && (hash.startsWith('#/configure/import') ? load?.kind === 'import' : true) && (
+          <WizardProvider key={`${session}:${descriptor ?? ''}:${loadKey}`} target={wizardTarget}>
+            <Wizard settings={settings} initialDescriptor={descriptor} load={load} />
           </WizardProvider>
+        )}
+        {hash.startsWith('#/configure/import') && load?.kind !== 'import' && (
+          <p className="notice info">
+            Nothing to import. <a href="#/configs">Import YAML from the collections page.</a>
+          </p>
         )}
         {inCreate && (
           <CreateProvider key={session}>

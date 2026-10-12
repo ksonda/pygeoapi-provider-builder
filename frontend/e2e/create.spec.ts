@@ -34,8 +34,11 @@ test('a JSON API becomes a provider, then a collection @mobile', async ({ page }
   const tree = page.getByRole('tree', { name: 'The sampled response' })
   await expect(tree.getByRole('treeitem', { selected: true })).toContainText('items')
   await tree.getByRole('treeitem').first().focus()
+  // The mock API keeps its keys in order: meta, then data (docker/mock-api/mock_api.py).
   await page.keyboard.press('ArrowDown')
-  await expect(tree.getByRole('treeitem', { name: /data/ }).first()).toBeFocused()
+  await expect(tree.getByRole('treeitem', { name: /^meta/ })).toBeFocused()
+  await page.keyboard.press('ArrowDown')
+  await expect(tree.getByRole('treeitem', { name: /^data/ })).toBeFocused()
   await expectAccessible(page)
   await next(page)
 

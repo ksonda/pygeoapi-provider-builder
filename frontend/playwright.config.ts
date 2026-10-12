@@ -18,8 +18,11 @@ export default defineConfig({
     { name: 'desktop', use: { ...devices['Desktop Chrome'] } },
     { name: 'mobile', use: { ...devices['Pixel 7'] }, grep: /@mobile/ },
   ],
+  // With E2E_STACK, a throwaway pygeoapi serves .e2e/config for publish.spec.ts.
+  globalSetup: './e2e/global-setup.ts',
+  globalTeardown: './e2e/global-teardown.ts',
   webServer: {
-    command: `cd .. && rm -rf .e2e && PROVIDER_BUILDER_SETTINGS=frontend/e2e/settings.yaml .venv/bin/python -m provider_builder --port ${PORT}`,
+    command: `cd .. && rm -rf .e2e/providers .e2e/state && PROVIDER_BUILDER_SETTINGS=frontend/e2e/settings.yaml .venv/bin/python -m provider_builder --port ${PORT}`,
     url: `http://127.0.0.1:${PORT}/api/health`,
     reuseExistingServer: false,
     timeout: 60_000,

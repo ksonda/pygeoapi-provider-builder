@@ -172,6 +172,90 @@ export interface PublicSettings {
   runner: string
 }
 
+// ------------------------------------------------------------------ targets (J2, J3, publish)
+
+export interface TargetInfo {
+  id: string
+  title: string
+  kind: 'export' | 'file' | 'admin'
+  server_url?: string | null
+  config: string
+  reload: 'none' | 'command' | 'signal' | 'watch'
+  writes_openapi: boolean
+}
+
+export interface ResourceSummary {
+  id: string
+  type: string | null
+  title: string
+  providers: { type: string | null; name: string | null; descriptor: string | null; default: boolean; version: string | null }[]
+  editable: boolean
+  warnings: string[]
+}
+
+export interface LoadedResource {
+  etag: string
+  yaml: string
+  form: import('./client').FormState
+  editable: boolean
+  warnings: string[]
+}
+
+export interface ImportedResource {
+  resource_id: string
+  form: import('./client').FormState
+  editable: boolean
+  warnings: string[]
+}
+
+export interface PublishPlan {
+  target: string
+  kind: string
+  action: 'add' | 'update' | 'delete'
+  resource_id: string
+  changed: boolean
+  etag: string
+  etag_after: string
+  diff: string
+  notes: { path: string; message: string }[]
+  findings: import('./client').Finding[]
+  blocking: boolean
+  env: import('./client').EnvVar[]
+  warnings: string[]
+}
+
+export interface PublishStepResult {
+  name: string
+  ok: boolean
+  message: string
+  detail?: unknown
+}
+
+export interface LogEntry {
+  id: string
+  time: string
+  target: string
+  action: 'add' | 'update' | 'delete' | 'rollback'
+  resource_id: string
+  providers: string[]
+  status: 'published' | 'written' | 'verify-failed' | 'failed'
+  config_hash_before: string
+  config_hash_after?: string | null
+  backup?: string | null
+  openapi_backup?: string | null
+  rollback_of?: string | null
+  message?: string | null
+  rolled_back_by?: string | null
+}
+
+export interface PublishResult {
+  ok: boolean
+  steps: PublishStepResult[]
+  entry: LogEntry | null
+  plan?: PublishPlan
+  conflict?: boolean
+}
+
 export interface VerifyResult {
   ok: boolean
   checks: { url: string; status: number | null; ok: boolean; detail?: string | null }[]
