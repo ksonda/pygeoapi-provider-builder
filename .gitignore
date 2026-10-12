@@ -36,6 +36,10 @@ backups/
 # Sample data copied from vendor/pygeoapi/tests/data by `make fixtures`
 /docker/data/
 /docker/pygeoapi/pygeoapi.env
+# The dev stack's live config: publishes edit it; make stack-up copies the seed when missing
+/docker/pygeoapi/pygeoapi.config.yml
+# Backups and the publish log (settings: state_dir)
+/.provider-builder/
 frontend/test-results/
 frontend/playwright-report/
 /.e2e/

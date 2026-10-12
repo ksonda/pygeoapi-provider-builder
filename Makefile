@@ -5,7 +5,7 @@ COMPOSE := docker compose -f docker/compose.yaml
 IMAGE := geopython/pygeoapi:0.24.0
 
 .PHONY: help setup vendor images check check-fast lint types check-docs drift test-unit test-docker \
-	frontend api-types api-types-update e2e fixtures stack-up stack-down dev-backend dev-frontend
+	frontend api-types api-types-update e2e fixtures stack-up stack-reset-config stack-down dev-backend dev-frontend
 
 ## List the targets.
 help:
@@ -93,8 +93,14 @@ fixtures:
 ## The dev stack: pygeoapi on :5080, PostGIS on :55432, the mock API on :8090.
 stack-up: fixtures images
 	touch docker/pygeoapi/pygeoapi.env
+	test -f docker/pygeoapi/pygeoapi.config.yml || cp docker/pygeoapi/pygeoapi.config.seed.yml docker/pygeoapi/pygeoapi.config.yml
 	mkdir -p workspace/providers
 	$(COMPOSE) up -d --wait
+
+## Put the dev stack's config back to the seed (publishes edit it), then recreate pygeoapi.
+stack-reset-config:
+	cp docker/pygeoapi/pygeoapi.config.seed.yml docker/pygeoapi/pygeoapi.config.yml
+	$(COMPOSE) up -d --no-deps --force-recreate --wait pygeoapi
 
 ## Stop the dev stack.
 stack-down:

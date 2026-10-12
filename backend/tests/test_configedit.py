@@ -19,7 +19,7 @@ VENDOR = [
     ROOT / 'vendor' / 'pygeoapi-geoconnex-examples' / 'pygeoapi.config.yml',
     ROOT / 'vendor' / 'pygeoapi-iow' / 'docker' / 'default.config.yml',
     ROOT / 'vendor' / 'pygeoapi-plugins' / 'tests' / 'pygeoapi-test-config.yml',
-    ROOT / 'docker' / 'pygeoapi' / 'pygeoapi.config.yml',
+    ROOT / 'docker' / 'pygeoapi' / 'pygeoapi.config.seed.yml',
 ]
 CORPUS = HAND + [p for p in VENDOR if p.is_file()]
 IDS = [p.relative_to(ROOT).as_posix() for p in CORPUS]
@@ -190,7 +190,7 @@ def test_placeholders_stay_plain_when_edited() -> None:
 
 
 def test_deleting_the_last_resource_leaves_an_empty_mapping() -> None:
-    text = read(ROOT / 'docker' / 'pygeoapi' / 'pygeoapi.config.yml')
+    text = read(ROOT / 'docker' / 'pygeoapi' / 'pygeoapi.config.seed.yml')
     rids = list(ce.resources(ce.load(text)))
     out = text
     for rid in rids:

@@ -2,10 +2,11 @@
 #
 # - pygeoapi: the sandbox image (the pinned geopython/pygeoapi:0.24.0 plus the
 #   spec engine's dependencies; `make images`), run like the stock image: root,
-#   /entrypoint.sh, serving docker/pygeoapi/pygeoapi.config.yml. The spec engine's
-#   source and the workspace's specs are mounted, so created providers can be
-#   published here. The entrypoint regenerates OpenAPI on every start, so after
-#   editing the config recreate the container (README, "Quickstart").
+#   /entrypoint.sh, serving docker/pygeoapi/pygeoapi.config.yml (gitignored; make
+#   stack-up copies pygeoapi.config.seed.yml when it's missing). The builder's
+#   dev-stack target edits that file and recreates this container, whose
+#   entrypoint regenerates OpenAPI. The spec engine's source and the
+#   workspace's specs are mounted, so created providers can be published here.
 # - postgis: seeded with pygeoapi's own test data (tests/data/hotosm_bdi_waterways.sql.gz:
 #   schema `osm`, table `hotosm_bdi_waterways`), as pygeoapi's CI does.
 #   imresamu/postgis is the multi-arch build by a docker-postgis maintainer; the

@@ -10,9 +10,15 @@ data_roots:
 targets:
   - id: dev-stack
     title: Local dev stack (docker compose)
-    kind: export
-    base_config: docker/pygeoapi/pygeoapi.config.yml
+    kind: file                      # edited in place: backup, atomic write, reload, verify
+    base_config: docker/pygeoapi/pygeoapi.config.yml   # gitignored; make stack-up seeds it
     server_url: http://localhost:5080
+    # Recreate, not restart: a new container rereads pygeoapi.env, and the image's
+    # entrypoint regenerates OpenAPI at start (docs/pygeoapi-notes.md §9).
+    reload: command
+    reload_command: [docker, compose, -f, docker/compose.yaml, up, -d, --no-deps,
+                     --force-recreate, --wait, pygeoapi]
+    verify_timeout_s: 90
 
 catalogs: [catalog]
 
@@ -28,6 +34,8 @@ workspace:
   server_path: /specs               # where the dev pygeoapi container sees their specs
 
 geoconnex: true
+
+state_dir: .provider-builder        # backups and the publish log (gitignored)
 
 allowed_hosts: [127.0.0.1, localhost]
 allowed_origins:
