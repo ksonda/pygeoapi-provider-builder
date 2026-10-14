@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { ErrorSummary } from '../../components/common'
-import { ENV_RE, StepList, metaErrors } from '../shared'
-import { SQL_STEPS, useSql, type SqlState, type SqlStepId } from './state'
+import { StepList, metaErrors } from '../shared'
+import { connectionErrors } from './connection'
+import { SQL_STEPS, connectionOf, useSql, type SqlState, type SqlStepId } from './state'
 import { SqlCheckStep, SqlMapStep, SqlSaveStep, SqlSourceStep } from './steps'
 
 /** Where the error summary sends focus for errors that aren't one input. */
@@ -14,16 +15,7 @@ function stepErrors(state: SqlState, step: SqlStepId): Record<string, string> {
   const out: Record<string, string> = {}
   switch (step) {
     case 'source': {
-      if (state.dialect === 'postgresql') {
-        if (state.connMode === 'fields') {
-          if (!state.host.trim()) out['db-host'] = 'Host is required.'
-          if (!state.dbname.trim()) out['db-name'] = 'Database is required.'
-          if (!state.user.trim()) out['db-user'] = 'User is required.'
-        }
-        if (!ENV_RE.test(state.secretEnv)) out['secret-env'] = 'Environment variable: upper-case letters, digits and underscores, starting with a letter.'
-      } else if (!state.path.startsWith('/')) {
-        out['db-path'] = 'File: the path the pygeoapi server sees, starting with /.'
-      }
+      Object.assign(out, connectionErrors(connectionOf(state)))
       if (!state.query.trim()) out['sql-query'] = 'Write the SELECT query to publish.'
       else if (!state.sample?.ok) out.sample = 'Run the query successfully before you continue.'
       return out

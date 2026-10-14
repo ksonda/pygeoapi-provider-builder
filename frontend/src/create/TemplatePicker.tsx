@@ -22,6 +22,13 @@ export const TEMPLATES: TemplateCard[] = [
     api: 'OGC API - Features',
     summary: 'A join, a view or computed columns over PostgreSQL/PostGIS, SQLite or a GeoPackage, run read-only.',
   },
+  {
+    id: 'timeseries-edr',
+    href: '#/create/timeseries',
+    title: 'Time series at monitoring locations',
+    api: 'OGC API - EDR',
+    summary: 'Stations, gages or wells with observations over time, from an HTTP API or SQL, as CoverageJSON point series.',
+  },
 ]
 
 export function TemplatePicker() {

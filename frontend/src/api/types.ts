@@ -114,10 +114,13 @@ export interface ProbeData {
   fields_cached: boolean
   sample?: FeatureCollection
   sample_stats?: Record<string, FieldStats>
-  extent?: { from: 'full' | 'sample'; bbox: number[] | null; temporal: string[] | null }
+  extent?: { from: 'full' | 'sample' | 'locations'; bbox: number[] | null; temporal: string[] | null }
   id_stats?: { count: number; nulls: number; duplicates: number }
   timings: Record<string, number>
   note?: string
+  /** EDR providers: the query types they offer and their parameters. */
+  query_types?: string[]
+  parameters?: string[]
 }
 
 export interface IntrospectColumn {
@@ -491,3 +494,84 @@ export interface SqlSampleData {
 }
 
 export type SqlSampleResult = Omit<ModeBResult<SqlSampleData>, 'suggestions'> & { suggestions?: SqlSuggestions }
+
+// ------------------------------------------------------------------ Mode B (J4): the time-series template
+
+export type EdrQueryType = 'locations' | 'position' | 'area' | 'cube'
+
+export interface TsParameter {
+  id: string
+  label: string
+  description?: string
+  unit: { symbol: string; label?: string }
+  observed_property?: string
+  unit_uri?: string
+  upstream?: string
+}
+
+export interface TsHttpLocations {
+  source: SourceSpec
+  records: string
+  item_id: { from: string }
+  geometry: GeometrySpec
+  properties: SpecProperty[]
+  title_field?: string
+}
+
+export interface TsSqlLocations {
+  source: SqlSource
+  query: string
+  item_id: { from: string; type?: SqlIdType }
+  geometry: SqlGeometry
+  properties: SpecProperty[]
+  title_field?: string
+}
+
+export interface TsHttpObservations {
+  url: string
+  query?: Record<string, string>
+  auth?: AuthSpec
+  records: string
+  error_path?: string
+  time: { from: string; format?: string }
+  value: { from: string }
+}
+
+export interface TsSqlObservations {
+  source: SqlSource
+  query: string
+  time: { from: string; format?: string }
+  value: { from: string }
+}
+
+export interface TsSpecDoc {
+  spec_version: 1
+  template: 'timeseries-edr'
+  id: string
+  title: string
+  description?: string
+  version?: string
+  locations: { from: 'http'; http: TsHttpLocations } | { from: 'sql'; sql: TsSqlLocations }
+  parameters: TsParameter[]
+  observations: ({ from: 'http'; http: TsHttpObservations } | { from: 'sql'; sql: TsSqlObservations }) & {
+    default_window?: string
+    max_window?: string
+  }
+  query_types?: EdrQueryType[]
+  position?: { snap_radius_km: number }
+  limits?: { max_locations?: number; max_observations?: number }
+}
+
+export interface ObservationSuggestions {
+  records: string | null
+  record_count: number
+  columns: SuggestColumn[]
+  time?: { from: string; format: string } | null
+  value?: { from: string } | null
+  notes: string[]
+}
+
+export type ObservationSampleResult = Omit<ModeBResult<SampleData & SqlSampleData>, 'suggestions'> & {
+  suggestions?: ObservationSuggestions & Partial<SqlSuggestions>
+  request?: { url: string; query: Record<string, string> }
+}

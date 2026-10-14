@@ -18,6 +18,7 @@ import type {
   SqlSuggestions,
 } from '../../api/types'
 import { nextMeta, type Meta } from '../shared'
+import { connectionSecrets, connectionSource, type SqlConnection } from './connection'
 
 export const SQL_STEPS = [
   { id: 'source', title: 'Database and query' },
@@ -155,34 +156,18 @@ export function sqlReducer(state: SqlState, action: SqlAction): SqlState {
   }
 }
 
-const placeholder = (name: string) => '${' + name + '}'
+export function connectionOf(state: SqlState): SqlConnection {
+  const { dialect, connMode, host, port, dbname, user, secretEnv, testSecret, searchPath, path, statementTimeout } = state
+  return { dialect, connMode, host, port, dbname, user, secretEnv, testSecret, searchPath, path, statementTimeout }
+}
 
 export function sourceOf(state: SqlState): SqlSource {
-  const timeout = { statement_timeout_s: state.statementTimeout }
-  if (state.dialect === 'sqlite') return { dialect: 'sqlite', path: state.path.trim(), ...timeout }
-  const searchPath = state.searchPath
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-  const extra = { ...(searchPath.length ? { search_path: searchPath } : {}), ...timeout }
-  if (state.connMode === 'dsn') return { dialect: 'postgresql', dsn: placeholder(state.secretEnv), ...extra }
-  const port = Number(state.port)
-  return {
-    dialect: 'postgresql',
-    connection: {
-      host: state.host.trim(),
-      ...(state.port.trim() ? { port: Number.isInteger(port) ? port : state.port.trim() } : {}),
-      dbname: state.dbname.trim(),
-      user: state.user.trim(),
-      password: placeholder(state.secretEnv),
-    },
-    ...extra,
-  }
+  return connectionSource(connectionOf(state))
 }
 
 /** The test secret, under the variable name the spec uses. */
 export function secretsOf(state: SqlState): Record<string, string> {
-  return state.dialect === 'postgresql' && state.testSecret ? { [state.secretEnv]: state.testSecret } : {}
+  return connectionSecrets(connectionOf(state))
 }
 
 export function buildSqlSpec(state: SqlState): SqlSpecDoc {

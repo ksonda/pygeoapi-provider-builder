@@ -8,9 +8,9 @@ import type { HarnessData, ModeBResult, ProbeData, PropertyType, SqlEncoding, Sq
 import { CodeEditor } from '../../components/CodeEditor'
 import { SampleTable, Spinner } from '../../components/common'
 import { MapView } from '../../components/MapView'
-import { FileBrowser } from '../../forms/FileBrowser'
 import { FieldError, Failure, HarnessPanel, Problems, SavePanel, described, type CreateStepProps } from '../shared'
-import { buildSqlSpec, secretsOf, sourceOf, useSql, type PropertyDraft } from './state'
+import { SqlConnectionFields } from './connection'
+import { buildSqlSpec, connectionOf, secretsOf, sourceOf, useSql, type PropertyDraft } from './state'
 
 const TYPES: PropertyType[] = ['string', 'integer', 'number', 'boolean', 'datetime']
 const TIME_FORMATS = ['iso8601', 'date', 'epoch_s', 'epoch_ms']
@@ -23,7 +23,6 @@ const ENCODINGS: [SqlEncoding, string][] = [
   ['xy', 'Longitude and latitude columns'],
   ['none', 'No geometry'],
 ]
-const DB_EXTENSIONS = ['.sqlite', '.sqlite3', '.db', '.gpkg']
 
 function show(v: unknown): string {
   if (v === null || v === undefined) return '—'
@@ -39,7 +38,6 @@ function show(v: unknown): string {
 export function SqlSourceStep({ errors, showErrors }: CreateStepProps) {
   const { state, dispatch } = useSql()
   const [busy, setBusy] = useState(false)
-  const [browsing, setBrowsing] = useState(false)
   const set = (patch: Parameters<typeof dispatch>[0] extends infer A ? (A extends { type: 'source'; patch: infer P } ? P : never) : never) => dispatch({ type: 'source', patch })
 
   const run = async () => {
@@ -65,88 +63,15 @@ export function SqlSourceStep({ errors, showErrors }: CreateStepProps) {
       <p className="muted small">
         Template: SQL query → OGC API - Features. <a href="#/create/new">Choose another template</a>
       </p>
-      <fieldset>
-        <legend>Database</legend>
-        <label className="radio">
-          <input type="radio" name="dialect" checked={pg} onChange={() => set({ dialect: 'postgresql' })} /> PostgreSQL or PostGIS
-        </label>
-        <label className="radio">
-          <input type="radio" name="dialect" checked={!pg} onChange={() => set({ dialect: 'sqlite' })} /> A SQLite or GeoPackage file
-        </label>
-      </fieldset>
-      {pg && (
-        <fieldset>
-          <legend>Connection</legend>
-          <label className="radio">
-            <input type="radio" name="conn-mode" checked={state.connMode === 'fields'} onChange={() => set({ connMode: 'fields', secretEnv: 'DB_PASSWORD' })} /> Host and database
-          </label>
-          <label className="radio">
-            <input type="radio" name="conn-mode" checked={state.connMode === 'dsn'} onChange={() => set({ connMode: 'dsn', secretEnv: 'DB_DSN' })} /> A connection string, kept in an environment variable
-          </label>
-          {state.connMode === 'fields' && (
-            <div className="inline-fields">
-              <label>
-                Host <span aria-hidden="true">*</span>
-                <input id="db-host" value={state.host} placeholder="db.example.org" onChange={(e) => set({ host: e.target.value })} {...described('db-host', errors, showErrors)} />
-              </label>
-              <label>
-                Port
-                <input id="db-port" value={state.port} inputMode="numeric" onChange={(e) => set({ port: e.target.value })} />
-              </label>
-              <label>
-                Database <span aria-hidden="true">*</span>
-                <input id="db-name" value={state.dbname} onChange={(e) => set({ dbname: e.target.value })} {...described('db-name', errors, showErrors)} />
-              </label>
-              <label>
-                User <span aria-hidden="true">*</span>
-                <input id="db-user" value={state.user} autoComplete="off" onChange={(e) => set({ user: e.target.value })} {...described('db-user', errors, showErrors)} />
-              </label>
-            </div>
-          )}
-          <FieldError id="db-host" errors={errors} show={showErrors} />
-          <FieldError id="db-name" errors={errors} show={showErrors} />
-          <FieldError id="db-user" errors={errors} show={showErrors} />
-          <label htmlFor="secret-env">Environment variable for the {state.connMode === 'dsn' ? 'connection string' : 'password'}</label>
-          <p className="muted small" id="secret-env-help">
-            The spec holds <code>${'{'}
-            {state.secretEnv || 'NAME'}
-            {'}'}</code>, never the secret. The pygeoapi server must define this variable.
-          </p>
-          <input id="secret-env" value={state.secretEnv} onChange={(e) => set({ secretEnv: e.target.value.toUpperCase() })} {...described('secret-env', errors, showErrors, 'help')} />
-          <FieldError id="secret-env" errors={errors} show={showErrors} />
-          <label htmlFor="secret-test">{state.connMode === 'dsn' ? 'Connection string' : 'Password'} to test with</label>
-          <p className="muted small" id="secret-test-help">
-            Kept in this page's memory only, and sent to the sandbox by variable name.
-            {state.connMode === 'dsn' && ' For example postgresql://reader:password@db.example.org:5432/gis.'}
-          </p>
-          <input id="secret-test" type="password" autoComplete="off" value={state.testSecret} onChange={(e) => dispatch({ type: 'testSecret', value: e.target.value })} aria-describedby="secret-test-help" />
-          <label htmlFor="search-path">Schemas to search (optional)</label>
-          <p className="muted small" id="search-path-help">
-            Comma-separated, for tables the query names without a schema.
-          </p>
-          <input id="search-path" value={state.searchPath} placeholder="public" onChange={(e) => set({ searchPath: e.target.value })} aria-describedby="search-path-help" />
-          <p className="notice info small">Connect with a role that can only read. The provider runs every query read-only, with a time limit, but a read-only role is the safest.</p>
-        </fieldset>
-      )}
-      {!pg && (
-        <fieldset>
-          <legend>Database file</legend>
-          <label htmlFor="db-path">
-            File <span aria-hidden="true">*</span>
-          </label>
-          <p className="muted small" id="db-path-help">
-            As the pygeoapi server sees it, inside a data root.
-          </p>
-          <div className="inline-fields">
-            <input id="db-path" value={state.path} placeholder="/data/wells.gpkg" onChange={(e) => set({ path: e.target.value })} {...described('db-path', errors, showErrors, 'help')} />
-            <button type="button" onClick={() => setBrowsing(true)}>
-              Browse…
-            </button>
-          </div>
-          <FieldError id="db-path" errors={errors} show={showErrors} />
-          <FileBrowser open={browsing} start="/" extensions={DB_EXTENSIONS} onPick={(path) => (set({ path }), setBrowsing(false))} onClose={() => setBrowsing(false)} />
-        </fieldset>
-      )}
+      <SqlConnectionFields
+        value={connectionOf(state)}
+        onChange={({ testSecret, ...patch }) => {
+          if (testSecret !== undefined) dispatch({ type: 'testSecret', value: testSecret })
+          if (Object.keys(patch).length) set(patch)
+        }}
+        errors={errors}
+        showErrors={showErrors}
+      />
       <label htmlFor="sql-query">
         SQL query <span aria-hidden="true">*</span>
       </label>

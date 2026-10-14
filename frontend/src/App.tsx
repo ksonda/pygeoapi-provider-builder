@@ -9,6 +9,8 @@ import { SqlProvider } from './create/sql/state'
 import { SqlWizard } from './create/sql/SqlWizard'
 import { CreateProvider } from './create/state'
 import { TemplatePicker } from './create/TemplatePicker'
+import { TsProvider } from './create/timeseries/state'
+import { TimeseriesWizard } from './create/timeseries/TimeseriesWizard'
 import { WizardProvider } from './wizard/state'
 import { Wizard, type WizardLoad } from './wizard/Wizard'
 
@@ -122,7 +124,7 @@ export function App() {
 
   const inWizard = hash.startsWith('#/configure')
   const inCreate = hash.startsWith('#/create')
-  const createRoute = hash.startsWith('#/create/http') ? 'http' : hash.startsWith('#/create/sql') ? 'sql' : 'pick'
+  const createRoute = hash.startsWith('#/create/http') ? 'http' : hash.startsWith('#/create/sql') ? 'sql' : hash.startsWith('#/create/timeseries') ? 'timeseries' : 'pick'
   const inConfigs = hash.startsWith('#/configs')
   const query = new URLSearchParams(hash.split('?')[1] ?? '')
   const descriptor = query.get('descriptor')
@@ -178,6 +180,11 @@ export function App() {
           <SqlProvider key={session}>
             <SqlWizard />
           </SqlProvider>
+        )}
+        {inCreate && createRoute === 'timeseries' && (
+          <TsProvider key={session}>
+            <TimeseriesWizard />
+          </TsProvider>
         )}
         {inWizard && settings && !settings.targets.length && <p className="notice error">No publish targets are configured.</p>}
       </main>
