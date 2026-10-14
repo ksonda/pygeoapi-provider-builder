@@ -942,6 +942,22 @@ plugin, so generated packages run them in CI.
   log creates a new version. Mode A shows which collections use which version
   (ADR-0013).
 
+*As built in Phase 4* (`backend/provider_builder/delivery.py`, ADR-0022):
+- Template-built: `GET /api/workspace/{id}/versions/{v}/package.zip` returns
+  `<id>-spec`, whose spec is a package resource (`data: pkg:<module>/spec.yaml`),
+  with the engine's source in `vendor/`.
+- `POST …/versions/{v}/checks` runs the harness on a version saved without it,
+  and records a pass. `POST …/versions/{v}/image` builds and smoke-tests a test
+  image.
+- Code-built: `GET /api/code/{id}/versions/{v}/package.zip` is the version's
+  tag, and `…/image` builds it the same way.
+- `POST …/push` pushes a branch with its version tags, using the host's Git
+  credentials; for GitHub it links the pull-request page.
+- `GET …/usage` lists the collections in each target's config that use the
+  provider, and which version, plus the publish history.
+- UI: a page per template-built provider (`#/provider/<id>`), and a Deliver
+  section in the code workspace.
+
 ## 8. Sandbox runner
 
 ### 8.1 Phase 1: subprocess worker

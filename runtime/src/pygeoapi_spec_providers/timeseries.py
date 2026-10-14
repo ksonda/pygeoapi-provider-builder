@@ -267,6 +267,24 @@ class SQLObservations:
         return out
 
 
+def parameter_json(p: Mapping[str, Any]) -> dict[str, Any]:
+    """A parameter's CoverageJSON definition, from its spec entry."""
+    observed: dict[str, Any] = {'label': {'en': p['label']}}
+    if p.get('observed_property'):
+        observed['id'] = p['observed_property']
+    if p.get('description'):
+        observed['description'] = {'en': p['description']}
+    unit: dict[str, Any] = {'symbol': p['unit']['symbol']}
+    if p['unit'].get('label'):
+        unit['label'] = {'en': p['unit']['label']}
+    if p.get('unit_uri'):
+        unit['id'] = p['unit_uri']
+    out: dict[str, Any] = {'type': 'Parameter', 'observedProperty': observed, 'unit': unit}
+    if p.get('description'):
+        out['description'] = {'en': p['description']}
+    return out
+
+
 # --- the engine ----------------------------------------------------------------------------
 
 
@@ -328,21 +346,7 @@ class TimeSeriesEngine:
     # --- CoverageJSON
 
     def parameter_json(self, pid: str) -> dict[str, Any]:
-        p = self.parameters[pid]
-        observed: dict[str, Any] = {'label': {'en': p['label']}}
-        if p.get('observed_property'):
-            observed['id'] = p['observed_property']
-        if p.get('description'):
-            observed['description'] = {'en': p['description']}
-        unit: dict[str, Any] = {'symbol': p['unit']['symbol']}
-        if p['unit'].get('label'):
-            unit['label'] = {'en': p['unit']['label']}
-        if p.get('unit_uri'):
-            unit['id'] = p['unit_uri']
-        out: dict[str, Any] = {'type': 'Parameter', 'observedProperty': observed, 'unit': unit}
-        if p.get('description'):
-            out['description'] = {'en': p['description']}
-        return out
+        return parameter_json(self.parameters[pid])
 
     def coverage(
         self, location: Mapping[str, Any], xy: tuple[float, float], pid: str, series: Series

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 from . import __version__
@@ -138,6 +138,11 @@ class CodeVersionRequest(BaseModel):
     version: str
     changes: str = ''
     harness: dict[str, Any] | None = Field(default=None, description='The passing checklist')
+
+
+class PushRequest(BaseModel):
+    remote: str = Field(description='An https://, ssh://, git@ or file:// Git URL (no password)')
+    branch: str = 'main'
 
 
 class CodeImportRequest(BaseModel):
@@ -452,6 +457,67 @@ def create_app(
     @app.post('/api/workspace', tags=['mode-b'])
     def workspace_save(req: SaveRequest) -> dict[str, Any]:
         return svc.workspace_save(req.spec, req.version, req.changes, req.harness)
+
+    # ------------------------------------------------------------ mode B: J6
+
+    def zip_response(name: str, data: bytes) -> Response:
+        return Response(
+            data,
+            media_type='application/zip',
+            headers={'Content-Disposition': f'attachment; filename="{name}"'},
+        )
+
+    @app.post(
+        '/api/workspace/{provider_id}/versions/{version}/checks', status_code=202, tags=['mode-b']
+    )
+    def workspace_checks(provider_id: str, version: str, req: TestSecrets) -> JobCreated:
+        """Run the contract checks on a saved version; a pass is recorded with it."""
+        svc.workspace.spec_text(provider_id, version)
+        job = svc.jobs.submit(
+            'spec-checks', lambda: svc.spec_checks(provider_id, version, req.test_secrets)
+        )
+        return JobCreated(job_id=job.id)
+
+    @app.get('/api/workspace/{provider_id}/versions/{version}/package.zip', tags=['mode-b'])
+    def workspace_package(provider_id: str, version: str) -> Response:
+        """The version as a pip package (data: pkg:...), with the spec engine in vendor/."""
+        return zip_response(*svc.spec_package_zip(provider_id, version))
+
+    @app.post(
+        '/api/workspace/{provider_id}/versions/{version}/image', status_code=202, tags=['mode-b']
+    )
+    def workspace_image(provider_id: str, version: str) -> JobCreated:
+        """Build a test image FROM geopython/pygeoapi with the version's package installed."""
+        svc._passing_harness(provider_id, version)
+        job = svc.jobs.submit('spec-image', lambda: svc.spec_image(provider_id, version))
+        return JobCreated(job_id=job.id)
+
+    @app.post('/api/workspace/{provider_id}/push', tags=['mode-b'])
+    def workspace_push(provider_id: str, req: PushRequest) -> dict[str, Any]:
+        return svc.push('spec', provider_id, req.remote, req.branch)
+
+    @app.get('/api/workspace/{provider_id}/usage', tags=['mode-b'])
+    def workspace_usage(provider_id: str) -> dict[str, Any]:
+        return svc.usage('spec', provider_id)
+
+    @app.get('/api/code/{provider_id}/versions/{version}/package.zip', tags=['mode-b'])
+    def code_package(provider_id: str, version: str) -> Response:
+        """The version's tag as a zip (git archive)."""
+        return zip_response(*svc.code_package_zip(provider_id, version))
+
+    @app.post('/api/code/{provider_id}/versions/{version}/image', status_code=202, tags=['mode-b'])
+    def code_image(provider_id: str, version: str) -> JobCreated:
+        svc._code_version(provider_id, version)
+        job = svc.jobs.submit('code-image', lambda: svc.code_image(provider_id, version))
+        return JobCreated(job_id=job.id)
+
+    @app.post('/api/code/{provider_id}/push', tags=['mode-b'])
+    def code_push(provider_id: str, req: PushRequest) -> dict[str, Any]:
+        return svc.push('code', provider_id, req.remote, req.branch)
+
+    @app.get('/api/code/{provider_id}/usage', tags=['mode-b'])
+    def code_usage(provider_id: str) -> dict[str, Any]:
+        return svc.usage('code', provider_id)
 
     @app.post('/api/workspace/{provider_id}/eject', tags=['mode-b'])
     def workspace_eject(provider_id: str, req: EjectRequest) -> dict[str, Any]:

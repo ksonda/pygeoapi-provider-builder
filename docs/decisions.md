@@ -623,3 +623,38 @@ are copied as they are, only the ones a spec needs.
   schemes, and the README says to run it where the network is restricted.
 - The spec stays as it was, and `ejected.json` records where it went. The
   package doesn't go back into the wizard.
+
+## ADR-0022: Deliver versions as pip packages; the gate is a recorded checklist
+
+**Context.** PLAN.md §7.8: a version that passed the contract checks is
+delivered as a zip, a Git push or PR, or a test image. Template-built
+providers have no package of their own, and the spec engine isn't on PyPI.
+
+**Decision.**
+- A template-built version becomes `<id>-spec`, a package whose spec is a
+  resource, so a config says `data: pkg:<module>/spec.yaml` (ADR-0005) and the
+  installed package pins the version. The zip carries the engine's source under
+  `vendor/`, so it installs offline from PyPI's point of view, apart from the
+  engine's own dependencies.
+- A code-built version is its Git tag (`git archive`), so later edits in the
+  workspace don't leak in.
+- Zips are reproducible: sorted names and fixed timestamps.
+- The gate: delivery needs a passing checklist recorded with the version.
+  Code-built versions can't be saved without one. A template-built version
+  saved without one can be checked later. The server runs the harness in the
+  sandbox and records only a pass, next to the unchanged spec.
+- Git delivery pushes the provider's repository (a branch and its version
+  tags) with the host's own Git credentials. A URL with a password is refused,
+  and for GitHub the result links to the page that opens the pull request.
+  Opening PRs through a hosting API is left to Q12.
+- A test image is `docker build` of the package's `Dockerfile.test`, with no
+  secrets and no build arguments. It's then smoke-tested with no network, read
+  only and as an unprivileged user: the provider module imports, and a packaged
+  spec loads, with stand-in values for its `${VAR}`s.
+
+**Consequences.** `tests/test_compose_integration.py` serves a packaged spec
+from its own test image. Usage (which collections use which version) is read
+from each target's current config: a versioned spec path, a package reference
+or a plugin name. The publish log adds the history (ADR-0013). A package
+reference doesn't say which version is installed, so the UI says "the
+installed package".

@@ -711,3 +711,64 @@ def test_stock_pygeoapi_serves_ejected_providers(
     assert one.json()['coverages'][0]['ranges']['water_level']['shape'] == [241]
     far = httpx.get(f'{url}/position?coords=POINT(-100 40)&f=json&{day}', timeout=60)
     assert far.status_code == 204
+
+
+# --- J6: test images (PLAN.md §7.8) -------------------------------------------------------
+
+
+def test_a_packaged_spec_runs_from_its_test_image(
+    service: Service, serve: callable, workdir: Path
+) -> None:
+    """The package carries its spec as a resource: data: pkg:<module>/spec.yaml."""
+    import yaml
+    from provider_builder.delivery import module_name
+    from pygeoapi_provider_harness import coveragejson
+
+    service.workspace_save(coops_spec_text(), None, '', None)
+    assert service.spec_checks('coops-water-levels', '1.0.0', {})['result']['ok']
+    built = service.spec_image('coops-water-levels', '1.0.0')
+    assert built['ok'], (built['stage'], built.get('smoke'), built['log'][-2000:])
+    assert built['smoke'].split() == ['coops-water-levels', 'timeseries-edr']
+    assert built['tag'] == 'provider-builder/spec-coops-water-levels:1.0.0'
+
+    config = yaml.safe_load((workdir / 'config' / 'pygeoapi.config.yml').read_text())
+    config['resources']['coops-packaged'] = {
+        'type': 'collection',
+        'title': 'CO-OPS water levels (packaged)',
+        'description': 'The spec, installed as a package',
+        'keywords': ['water level'],
+        'extents': {'spatial': {'bbox': [-160, 20, -70, 50]}},
+        'providers': [
+            {
+                'type': 'edr',
+                'name': 'pygeoapi_spec_providers.timeseries.TimeSeriesEDRProvider',
+                'data': f'pkg:{module_name("coops-water-levels")}/spec.yaml',
+            }
+        ],
+    }
+    base = serve(
+        yaml.safe_dump(config, sort_keys=False),
+        {'PYGEOAPI_SPEC_PRIVATE_HOSTS': 'mockapi'},
+        image=built['tag'],
+    )
+    url = f'{base}/collections/coops-packaged'
+    assert len(httpx.get(f'{url}/locations?f=json', timeout=60).json()['features']) == 6
+    day = 'datetime=2026-10-01T00:00:00Z/2026-10-02T00:00:00Z'
+    one = httpx.get(f'{url}/locations/9414290?f=json&{day}', timeout=60)
+    assert one.status_code == 200, one.text
+    assert coveragejson.problems(one.json()) == []
+
+
+def test_a_code_version_builds_a_test_image(service: Service) -> None:
+    implemented_code_provider(service)
+    checks = service.code_harness('demo-items', {}, ['L1', 'L2'])
+    assert checks['result']['ok'], checks
+    service.code_save('demo-items', '1.0.0', 'First.', checks['result'])
+    built = service.code_image('demo-items', '1.0.0')
+    assert built['ok'], (built['stage'], built.get('smoke'), built['log'][-2000:])
+    assert built['smoke'].strip() == 'demo_items_provider.provider'
+    labels = subprocess.run(
+        ['docker', 'image', 'inspect', '--format', '{{json .Config.Labels}}', built['tag']],
+        capture_output=True, text=True, check=True, timeout=30,
+    )  # fmt: skip
+    assert json.loads(labels.stdout)['io.provider-builder.version'] == '1.0.0'

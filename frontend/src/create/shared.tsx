@@ -305,8 +305,8 @@ export function SavePanel({ spec, harness, meta, onMeta, saved, onSaved, errors,
             <a className="button primary" href={`#/configure/new?descriptor=${encodeURIComponent(saved.descriptor)}`}>
               Publish a collection with this provider →
             </a>{' '}
-            <a className="button" href={`#/eject/${encodeURIComponent(saved.id)}`}>
-              Eject to code…
+            <a className="button" href={`#/provider/${encodeURIComponent(saved.id)}`}>
+              Deliver it…
             </a>
           </p>
         </div>

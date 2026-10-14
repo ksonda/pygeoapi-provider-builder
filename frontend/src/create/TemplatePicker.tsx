@@ -84,7 +84,7 @@ export function TemplatePicker() {
           <ul>
             {specs.map((p) => (
               <li key={p.id}>
-                <a href={`#/configure/new?descriptor=${encodeURIComponent(p.descriptor)}`}>{p.title ?? p.id}</a>
+                <a href={`#/provider/${encodeURIComponent(p.id)}`}>{p.title ?? p.id}</a>
                 <span className="muted small">
                   {' '}
                   · {names[p.template] ?? p.template} · version {p.versions[0]} ·{' '}

@@ -36,7 +36,6 @@ import math
 import re
 import sys
 import textwrap
-import types
 from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -63,7 +62,7 @@ from pygeoapi_spec_providers.timeseries import (
     SOURCE_KEYS,
     TOKENS,
     URL_TOKENS,
-    TimeSeriesEngine,
+    parameter_json,
     parse_duration,
     sub_spec,
 )
@@ -896,8 +895,7 @@ def timeseries_context(
     obs = data['observations']
     paths = Paths()
     params = {p['id']: p for p in data['parameters']}
-    engine = types.SimpleNamespace(parameters=params)
-    coverage_params = {pid: TimeSeriesEngine.parameter_json(engine, pid) for pid in params}  # type: ignore[arg-type]
+    coverage_params = {pid: parameter_json(p) for pid, p in params.items()}
     c: dict[str, Any] = {
         'class_name': ident(class_name),
         'docstring': docstring(module_doc),

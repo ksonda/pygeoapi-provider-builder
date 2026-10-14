@@ -7,6 +7,7 @@ import { api, unwrap } from '../../api/client'
 import type { CodeDetail, Diagnostic, HarnessData, ModeBResult } from '../../api/types'
 import { CodeEditor, type CodeLanguage } from '../../components/CodeEditor'
 import { Spinner } from '../../components/common'
+import { GitPanel, ImagePanel, UsagePanel, ZipLink } from '../delivery'
 import { HarnessPanel, SEMVER } from '../shared'
 
 function languageOf(path: string): CodeLanguage {
@@ -33,6 +34,7 @@ export function CodeWorkspace({ id }: { id: string }) {
   const [newFile, setNewFile] = useState('')
   const [version, setVersion] = useState('1.0.0')
   const [changes, setChanges] = useState('')
+  const [chosen, setChosen] = useState('')
   const heading = useRef<HTMLHeadingElement>(null)
   const dirty = content !== saved
 
@@ -154,6 +156,17 @@ export function CodeWorkspace({ id }: { id: string }) {
   }
 
   const passed = Boolean(harness?.ok && harness.result?.ok)
+  const deliverVersion = chosen || detail?.versions[0] || ''
+  const startImage = useCallback(
+    async () =>
+      unwrap(await api.POST('/api/code/{provider_id}/versions/{version}/image', { params: { path: { provider_id: id, version: deliverVersion } } })),
+    [id, deliverVersion],
+  )
+  const push = useCallback(
+    (remote: string, branch: string) => api.POST('/api/code/{provider_id}/push', { params: { path: { provider_id: id } }, body: { remote, branch } }),
+    [id],
+  )
+  const usage = useCallback(() => api.GET('/api/code/{provider_id}/usage', { params: { path: { provider_id: id } } }), [id])
   return (
     <div className="code-workspace">
       <h1 ref={heading} tabIndex={-1}>
@@ -292,6 +305,34 @@ export function CodeWorkspace({ id }: { id: string }) {
             </a>
           </p>
         )}
+      </section>
+
+      {detail && detail.versions.length > 0 && (
+        <section aria-labelledby="deliver-heading">
+          <h2 id="deliver-heading">Deliver a version</h2>
+          <label htmlFor="deliver-version">Version</label>
+          <select id="deliver-version" value={deliverVersion} onChange={(e) => setChosen(e.target.value)}>
+            {detail.versions.map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+          <h3>A package</h3>
+          <p className="muted small">The version's Git tag, as a zip: what pip installs.</p>
+          <p>
+            <ZipLink href={`/api/code/${encodeURIComponent(id)}/versions/${encodeURIComponent(deliverVersion)}/package.zip`} version={deliverVersion} />
+          </p>
+          <h3>A test image</h3>
+          <ImagePanel key={deliverVersion} start={startImage} version={deliverVersion} />
+          <h3>Git</h3>
+          <GitPanel push={push} idPrefix="code-git" />
+        </section>
+      )}
+
+      <section aria-labelledby="code-usage-heading">
+        <h2 id="code-usage-heading">Used by</h2>
+        <UsagePanel load={usage} />
       </section>
     </div>
   )

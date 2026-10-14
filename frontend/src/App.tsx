@@ -11,6 +11,7 @@ import { CreateProvider } from './create/state'
 import { TemplatePicker } from './create/TemplatePicker'
 import { CodeWorkspace } from './create/code/CodeWorkspace'
 import { EjectPage } from './create/EjectPage'
+import { SpecProviderPage } from './create/SpecProviderPage'
 import { NewCodeProvider } from './create/code/NewCodeProvider'
 import { TsProvider } from './create/timeseries/state'
 import { TimeseriesWizard } from './create/timeseries/TimeseriesWizard'
@@ -138,6 +139,7 @@ export function App() {
           : 'pick'
   const codeId = hash.startsWith('#/code/') ? decodeURIComponent(hash.slice('#/code/'.length).split('?')[0] ?? '') : null
   const ejectId = hash.startsWith('#/eject/') ? decodeURIComponent(hash.slice('#/eject/'.length).split('?')[0] ?? '') : null
+  const specId = hash.startsWith('#/provider/') ? decodeURIComponent(hash.slice('#/provider/'.length).split('?')[0] ?? '') : null
   const inConfigs = hash.startsWith('#/configs')
   const query = new URLSearchParams(hash.split('?')[1] ?? '')
   const descriptor = query.get('descriptor')
@@ -165,7 +167,7 @@ export function App() {
       <main id="main">
         {error && <p className="notice error">{error}</p>}
         {inConfigs && <Configs initialTarget={query.get('target')} />}
-        {!inWizard && !inCreate && !inConfigs && !codeId && !ejectId && (
+        {!inWizard && !inCreate && !inConfigs && !codeId && !ejectId && !specId && (
           <Home
             health={health}
             settings={settings}
@@ -202,6 +204,7 @@ export function App() {
         {inCreate && createRoute === 'code' && <NewCodeProvider />}
         {codeId && <CodeWorkspace key={codeId} id={codeId} />}
         {ejectId && <EjectPage key={ejectId} id={ejectId} />}
+        {specId && <SpecProviderPage key={specId} id={specId} />}
         {inWizard && settings && !settings.targets.length && <p className="notice error">No publish targets are configured.</p>}
       </main>
     </>

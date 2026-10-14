@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 import threading
 from collections import OrderedDict
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
@@ -512,6 +513,40 @@ class TargetOps:
             entry.message = v.message
         self.log.append(entry)
         return entry
+
+    def usage(self, match: Callable[[dict[str, Any]], dict[str, Any] | None]) -> dict[str, Any]:
+        r"""The collections, in each target's current config, whose provider ``match``\ es.
+
+        ``match`` returns what it knows of the provider's version, or None for other
+        providers. The publish log adds the history (ADR-0013).
+        """
+        found: list[dict[str, Any]] = []
+        errors: list[dict[str, str]] = []
+        for target in self.settings.targets:
+            try:
+                text, _tag = self.read(target)
+            except TargetError as err:
+                errors.append({'target': target.id, 'error': str(err)})
+                continue
+            for rid, res in ce.resources(ce.load(text) or {}).items():
+                if not isinstance(res, dict):
+                    continue
+                title = res.get('title')
+                if isinstance(title, dict):
+                    title = title.get('en') or next(iter(title.values()), '')
+                for pdef in res.get('providers') or []:
+                    hit = match(pdef) if isinstance(pdef, dict) else None
+                    if hit is not None:
+                        found.append(
+                            {
+                                'target': target.id,
+                                'target_title': target.title,
+                                'resource_id': str(rid),
+                                'title': str(title or ''),
+                                **hit,
+                            }
+                        )
+        return {'collections': found, 'errors': errors}
 
     def provider_refs(self, res: dict[str, Any] | None) -> list[str]:
         out = []

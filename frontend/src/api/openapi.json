@@ -1031,6 +1031,25 @@
         "title": "PublishRequest",
         "type": "object"
       },
+      "PushRequest": {
+        "properties": {
+          "branch": {
+            "default": "main",
+            "title": "Branch",
+            "type": "string"
+          },
+          "remote": {
+            "description": "An https://, ssh://, git@ or file:// Git URL (no password)",
+            "title": "Remote",
+            "type": "string"
+          }
+        },
+        "required": [
+          "remote"
+        ],
+        "title": "PushRequest",
+        "type": "object"
+      },
       "RenderRequest": {
         "properties": {
           "form": {
@@ -1562,6 +1581,22 @@
           }
         },
         "title": "Temporal",
+        "type": "object"
+      },
+      "TestSecrets": {
+        "description": "Secret values for one test run. Kept in memory for that request only.",
+        "properties": {
+          "test_secrets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "description": "ENV_NAME -> value",
+            "title": "Test Secrets",
+            "type": "object"
+          }
+        },
+        "title": "TestSecrets",
         "type": "object"
       },
       "ValidateRequest": {
@@ -2257,6 +2292,104 @@
         ]
       }
     },
+    "/api/code/{provider_id}/push": {
+      "post": {
+        "operationId": "code_push_api_code__provider_id__push_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Code Push Api Code  Provider Id  Push Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Code Push",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/code/{provider_id}/usage": {
+      "get": {
+        "operationId": "code_usage_api_code__provider_id__usage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Code Usage Api Code  Provider Id  Usage Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Code Usage",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
     "/api/code/{provider_id}/versions": {
       "post": {
         "operationId": "code_version_api_code__provider_id__versions_post",
@@ -2306,6 +2439,107 @@
           }
         },
         "summary": "Code Version",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/code/{provider_id}/versions/{version}/image": {
+      "post": {
+        "operationId": "code_image_api_code__provider_id__versions__version__image_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Code Image",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/code/{provider_id}/versions/{version}/package.zip": {
+      "get": {
+        "description": "The version's tag as a zip (git archive).",
+        "operationId": "code_package_api_code__provider_id__versions__version__package_zip_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Code Package",
         "tags": [
           "mode-b"
         ]
@@ -3692,6 +3926,268 @@
           }
         },
         "summary": "Workspace Eject",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/workspace/{provider_id}/push": {
+      "post": {
+        "operationId": "workspace_push_api_workspace__provider_id__push_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Workspace Push Api Workspace  Provider Id  Push Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Workspace Push",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/workspace/{provider_id}/usage": {
+      "get": {
+        "operationId": "workspace_usage_api_workspace__provider_id__usage_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Workspace Usage Api Workspace  Provider Id  Usage Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Workspace Usage",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/workspace/{provider_id}/versions/{version}/checks": {
+      "post": {
+        "description": "Run the contract checks on a saved version; a pass is recorded with it.",
+        "operationId": "workspace_checks_api_workspace__provider_id__versions__version__checks_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestSecrets"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Workspace Checks",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/workspace/{provider_id}/versions/{version}/image": {
+      "post": {
+        "description": "Build a test image FROM geopython/pygeoapi with the version's package installed.",
+        "operationId": "workspace_image_api_workspace__provider_id__versions__version__image_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Workspace Image",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/workspace/{provider_id}/versions/{version}/package.zip": {
+      "get": {
+        "description": "The version as a pip package (data: pkg:...), with the spec engine in vendor/.",
+        "operationId": "workspace_package_api_workspace__provider_id__versions__version__package_zip_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "version",
+            "required": true,
+            "schema": {
+              "title": "Version",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Workspace Package",
         "tags": [
           "mode-b"
         ]

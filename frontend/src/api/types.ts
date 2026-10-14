@@ -639,3 +639,36 @@ export interface Diagnostic {
   end_line: number | null
   fixable: boolean
 }
+
+/** A test image build (J6): docker build, then an offline smoke test in the image. */
+export interface ImageResult {
+  ok: boolean
+  tag: string
+  id?: string
+  size?: number | null
+  stage: 'build' | 'smoke' | 'done'
+  smoke?: string
+  log: string
+  run?: string
+}
+
+export interface PushResult {
+  remote: string
+  branch: string
+  commit: string
+  tags: string[]
+  compare_url: string | null
+}
+
+export interface UsageResult {
+  collections: {
+    target: string
+    target_title: string
+    resource_id: string
+    title: string
+    version: string | null
+    via: 'spec path' | 'package'
+  }[]
+  errors: { target: string; error: string }[]
+  history: { id: string; time: string; target: string; action: string; resource_id: string; providers: string[]; status: string; rolled_back_by?: string | null }[]
+}

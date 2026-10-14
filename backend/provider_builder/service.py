@@ -784,6 +784,156 @@ class Service:
         self.reload_catalog()
         return detail
 
+    # --- J6: package, deliver, version (PLAN.md §7.8)
+
+    def _passing_harness(self, pid: str, version: str) -> dict[str, Any]:
+        from .delivery import DeliveryError
+
+        harness = self.workspace.harness(pid, version)
+        if not harness or not harness.get('ok'):
+            raise DeliveryError(
+                f'{pid} {version} has no passing contract checks yet: '
+                'run them on this version first.'
+            )
+        return harness
+
+    def _spec_package(self, pid: str, version: str) -> tuple[dict[str, str], dict[str, Any]]:
+        from .delivery import spec_package_files
+
+        harness = self._passing_harness(pid, version)
+        text = self.workspace.spec_text(pid, version)
+        changelog = self.workspace.detail(pid)['changelog']
+        files = spec_package_files(
+            pid,
+            version,
+            text,
+            changelog=changelog,
+            harness=harness,
+            server_path=self.settings.workspace.server_path,
+        )
+        return files, yaml.safe_load(text)
+
+    def spec_checks(self, pid: str, version: str, test_secrets: dict[str, str]) -> dict[str, Any]:
+        """Run the contract checks on a saved version; a pass is recorded with it."""
+        out = self.spec_harness(self.workspace.spec_text(pid, version), test_secrets)
+        result = out.get('result') or {}
+        if out.get('ok') and result.get('ok'):
+            self.workspace.record_harness(pid, version, result)
+        return out
+
+    def spec_package_zip(self, pid: str, version: str) -> tuple[str, bytes]:
+        from .delivery import dist_name, spec_package_tree, zip_bytes
+
+        files, _doc = self._spec_package(pid, version)
+        name = f'{dist_name(pid)}-{version}'
+        return f'{name}.zip', zip_bytes(spec_package_tree(files), name)
+
+    def spec_image(self, pid: str, version: str) -> dict[str, Any]:
+        from .delivery import (
+            build_image,
+            image_tag,
+            module_name,
+            run_command,
+            spec_package_tree,
+        )
+
+        files, doc = self._spec_package(pid, version)
+        module = module_name(pid)
+        tag = image_tag('spec', pid, version)
+        smoke = (
+            'from pygeoapi_spec_providers.spec import load_spec; '
+            f"spec = load_spec('pkg:{module}/spec.yaml'); print(spec.id, spec.data['template'])"
+        )
+        env_names = spec_env(doc)
+        out = build_image(
+            spec_package_tree(files),
+            tag,
+            {'io.provider-builder.provider': pid, 'io.provider-builder.version': version},
+            smoke=smoke,
+            env={name: 'smoke-test' for name in env_names},  # stand-ins, not secrets
+        )
+        out['run'] = run_command(tag, pid, env_names)
+        return out
+
+    def _code_version(self, pid: str, version: str) -> dict[str, bytes]:
+        from .delivery import DeliveryError, git_files
+
+        if version not in self.code.versions(pid):
+            raise DeliveryError(f'{pid} has no saved version {version}.')
+        files = git_files(self.code.folder(pid), f'v{version}')
+        harness = json.loads(files.get('harness.json', b'{}') or b'{}')
+        if not harness.get('ok'):
+            raise DeliveryError(f'{pid} {version} was saved without passing contract checks.')
+        return files
+
+    def code_package_zip(self, pid: str, version: str) -> tuple[str, bytes]:
+        from .delivery import zip_bytes
+
+        files = self._code_version(pid, version)
+        name = f'{self.code.package(pid).replace("_", "-")}-{version}'
+        return f'{name}.zip', zip_bytes(dict(files), name)
+
+    def code_image(self, pid: str, version: str) -> dict[str, Any]:
+        from .delivery import build_image, env_in, image_tag, run_command
+
+        files = self._code_version(pid, version)
+        package = self.code.package(pid)
+        tag = image_tag('code', pid, version)
+        out = build_image(
+            dict(files),
+            tag,
+            {'io.provider-builder.provider': pid, 'io.provider-builder.version': version},
+            smoke=f'import {package}.provider; print({package}.provider.__name__)',
+        )
+        example = files.get('examples/pygeoapi-config.snippet.yml', b'').decode()
+        out['run'] = run_command(tag, pid, env_in(example))
+        return out
+
+    def push(self, kind: str, pid: str, remote: str, branch: str) -> dict[str, Any]:
+        from .delivery import push
+
+        folder = self.code.folder(pid) if kind == 'code' else self.workspace._dir(pid)
+        if kind != 'code' and not self.workspace.versions(pid):
+            raise WorkspaceError(f'No provider {pid!r} in the workspace')
+        return push(folder, remote, branch)
+
+    def usage(self, kind: str, pid: str) -> dict[str, Any]:
+        """Which collections use a created provider, and which version (ADR-0013)."""
+        from .delivery import module_name
+
+        prefix = f'{self.settings.workspace.server_path.rstrip("/")}/{pid}/'
+        if kind == 'code':
+            package = self.code.package(pid)
+
+            def match(pdef: dict[str, Any]) -> dict[str, Any] | None:
+                name = str(pdef.get('name') or '')
+                if name.startswith(f'{package}.'):
+                    return {'version': None, 'via': 'package'}
+                return None
+        else:
+            ref = f'pkg:{module_name(pid)}/spec.yaml'
+
+            def match(pdef: dict[str, Any]) -> dict[str, Any] | None:
+                data = pdef.get('data')
+                if (
+                    isinstance(data, str)
+                    and data.startswith(prefix)
+                    and data.endswith('/spec.yaml')
+                ):
+                    return {'version': data[len(prefix) :].split('/')[0], 'via': 'spec path'}
+                if data == ref:
+                    return {'version': None, 'via': 'package'}
+                return None
+
+        out = self.targets.usage(match)
+        refs = (f'{pid}@',) if kind != 'code' else (f'{self.code.package(pid)}.',)
+        out['history'] = [
+            e.model_dump()
+            for e in self.targets.log.entries()
+            if any(r.startswith(refs) for r in e.providers)
+        ][-20:]
+        return out
+
     def eject(self, pid: str, req: Any) -> dict[str, Any]:
         """Eject a saved spec version to a code-built provider; the spec stays as it was."""
         versions = [v for v, _ in self.workspace.versions(pid)]

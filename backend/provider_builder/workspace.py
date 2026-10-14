@@ -305,6 +305,25 @@ class ProviderWorkspace:
             raise WorkspaceError(f'{pid} has no version {version}')
         return path.read_text(encoding='utf-8')
 
+    def harness(self, pid: str, version: str) -> dict[str, Any] | None:
+        """The contract checklist saved with a version, or recorded for it later."""
+        self.spec_text(pid, version)  # the version exists
+        path = self._dir(pid) / version / 'harness.json'
+        if not path.is_file():
+            return None
+        data = json.loads(path.read_text(encoding='utf-8'))
+        return data if isinstance(data, dict) else None
+
+    def record_harness(self, pid: str, version: str, result: dict[str, Any]) -> None:
+        """Keep a passing checklist for a version saved without one (the spec stays as it was)."""
+        if not result.get('ok'):
+            raise WorkspaceError('Only a passing checklist is recorded.')
+        folder = self._dir(pid)
+        (folder / version / 'harness.json').write_text(
+            json.dumps(result, indent=2) + '\n', encoding='utf-8'
+        )
+        self._commit(folder, f'Record the contract checks for {pid} {version}', None)
+
     def ejections(self, pid: str) -> list[dict[str, Any]]:
         """The code-built providers made from this provider's specs (PLAN.md §7.6)."""
         path = self._dir(pid) / 'ejected.json'
