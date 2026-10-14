@@ -784,6 +784,18 @@ class Service:
         self.reload_catalog()
         return detail
 
+    def eject(self, pid: str, req: Any) -> dict[str, Any]:
+        """Eject a saved spec version to a code-built provider; the spec stays as it was."""
+        versions = [v for v, _ in self.workspace.versions(pid)]
+        if not versions:
+            raise WorkspaceError(f'No provider {pid!r} in the workspace')
+        version = req.version or versions[0]
+        text = self.workspace.spec_text(pid, version)
+        detail = self.code.eject(text, version, req)
+        self.workspace.record_ejection(pid, version, req.id)
+        self.reload_catalog()
+        return detail
+
     def code_harness(
         self, pid: str, test_secrets: dict[str, str], levels: list[str] | None = None
     ) -> dict[str, Any]:

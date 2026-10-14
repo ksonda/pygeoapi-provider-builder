@@ -118,6 +118,66 @@
         "title": "CodeVersionRequest",
         "type": "object"
       },
+      "EjectRequest": {
+        "properties": {
+          "class_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Name"
+          },
+          "id": {
+            "description": "The new code-built provider id (a slug)",
+            "title": "Id",
+            "type": "string"
+          },
+          "package": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Python package name",
+            "title": "Package"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The saved spec version to eject (the newest by default)",
+            "title": "Version"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "EjectRequest",
+        "type": "object"
+      },
       "EnvVar": {
         "properties": {
           "name": {
@@ -3577,6 +3637,61 @@
           }
         },
         "summary": "Workspace Detail",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/workspace/{provider_id}/eject": {
+      "post": {
+        "description": "Eject a spec version to a code-built provider (one-way; PLAN.md \u00a77.6).",
+        "operationId": "workspace_eject_api_workspace__provider_id__eject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EjectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Workspace Eject Api Workspace  Provider Id  Eject Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Workspace Eject",
         "tags": [
           "mode-b"
         ]

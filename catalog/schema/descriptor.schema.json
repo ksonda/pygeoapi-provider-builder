@@ -116,7 +116,12 @@
       "properties": {
         "kind": {"enum": ["sql", "spec", "hosts"]},
         "default_port": {"type": "integer", "minimum": 1, "maximum": 65535},
-        "hosts": {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z0-9.-]+:[0-9]{1,5}$"}}
+        "hosts": {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z0-9.-]+:[0-9]{1,5}$"}},
+        "sql_keys": {
+          "description": "With kind hosts: config keys whose value is a database connection (a mapping or a URL), such as data; the sandbox may reach its host and port",
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"}
+        }
       }
     },
     "drift_ignore": {

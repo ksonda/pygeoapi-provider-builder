@@ -23,6 +23,8 @@ from typing import Any
 
 import yaml
 
+from .eject import EjectError, EjectRequest, eject_files
+from .eject import write as write_ejected
 from .scaffold import ScaffoldError, ScaffoldRequest, ruff, write
 from .settings import Workspace
 from .workspace import SEMVER, WorkspaceError, version_key
@@ -225,6 +227,21 @@ class CodeWorkspace:
         except ScaffoldError as err:
             raise WorkspaceError(str(err)) from err
         commit(folder, f'Scaffold {req.id} (pygeoapi Provider Builder)')
+        return self.detail(req.id)
+
+    def eject(self, spec_text: str, version: str, req: EjectRequest) -> dict[str, Any]:
+        """A template-built provider's spec, ejected into a code-built package (PLAN.md §7.6)."""
+        folder = self.root / req.id
+        if folder.exists():
+            raise WorkspaceError(f'{req.id} already exists in the workspace')
+        try:
+            write_ejected(eject_files(spec_text, version, req), folder)
+        except (EjectError, ScaffoldError) as err:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise WorkspaceError(str(err), getattr(err, 'problems', None)) from err
+        commit(
+            folder, f'Eject {req.id} from a spec, version {version} (pygeoapi Provider Builder)'
+        )
         return self.detail(req.id)
 
     def example_resource(self, pid: str) -> str:

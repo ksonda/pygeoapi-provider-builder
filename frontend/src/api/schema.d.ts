@@ -721,6 +721,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workspace/{provider_id}/eject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Workspace Eject
+         * @description Eject a spec version to a code-built provider (one-way; PLAN.md §7.6).
+         */
+        post: operations["workspace_eject_api_workspace__provider_id__eject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -780,6 +800,28 @@ export interface components {
             } | null;
             /** Version */
             version: string;
+        };
+        /** EjectRequest */
+        EjectRequest: {
+            /** Class Name */
+            class_name?: string | null;
+            /**
+             * Id
+             * @description The new code-built provider id (a slug)
+             */
+            id: string;
+            /**
+             * Package
+             * @description The Python package name
+             */
+            package?: string | null;
+            /** Title */
+            title?: string | null;
+            /**
+             * Version
+             * @description The saved spec version to eject (the newest by default)
+             */
+            version?: string | null;
         };
         /** EnvVar */
         EnvVar: {
@@ -2929,6 +2971,43 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workspace_eject_api_workspace__provider_id__eject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EjectRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

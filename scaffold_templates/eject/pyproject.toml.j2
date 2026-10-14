@@ -1,0 +1,42 @@
+[project]
+name = {{ c.dist }}
+version = "0.1.0"
+description = {{ c.description }}
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+{% for dependency in c.dependencies %}
+    {{ dependency }},
+{% endfor %}
+]
+
+[project.optional-dependencies]
+{% if c.postgresql %}
+# The official pygeoapi image ships psycopg2; elsewhere, install with this extra.
+postgresql = ["psycopg2-binary>=2.9"]
+{% endif %}
+# The contract checks the Provider Builder runs (the harness's pytest plugin).
+test = ["pytest>=8", "pygeoapi-provider-harness"]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/{{ c.pkg }}"]
+
+[tool.ruff]
+line-length = 99
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# URLs and SQL from the spec are string literals, which can't be wrapped.
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

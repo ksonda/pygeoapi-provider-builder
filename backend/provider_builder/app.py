@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from . import __version__
 from .catalog import CatalogError
+from .eject import EjectRequest
 from .fs import PathError
 from .render import FormState, ProviderState, RenderResult
 from .scaffold import ScaffoldRequest
@@ -451,6 +452,11 @@ def create_app(
     @app.post('/api/workspace', tags=['mode-b'])
     def workspace_save(req: SaveRequest) -> dict[str, Any]:
         return svc.workspace_save(req.spec, req.version, req.changes, req.harness)
+
+    @app.post('/api/workspace/{provider_id}/eject', tags=['mode-b'])
+    def workspace_eject(provider_id: str, req: EjectRequest) -> dict[str, Any]:
+        """Eject a spec version to a code-built provider (one-way; PLAN.md §7.6)."""
+        return svc.eject(provider_id, req)
 
     # ------------------------------------------------------------ mode B: code (J5)
 

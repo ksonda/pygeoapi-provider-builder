@@ -1,0 +1,57 @@
+# {{ c.title }}
+
+A pygeoapi {{ c.pygeoapi_version }} {{ c.type }} provider, ejected by pygeoapi Provider
+Builder from the {{ c.template }} spec `{{ c.spec_id }}`, version {{ c.spec_version }},
+on {{ c.date }}.
+
+It runs without the Provider Builder and its spec engine. The spec's settings
+are constants at the top of `src/{{ c.pkg }}/provider.py`, and the code does
+what the engine did with them. Change anything: nothing reads the spec any more
+(`docs/` keeps a copy for reference).
+
+```yaml
+{{ c.provider_yaml }}
+```
+
+`examples/pygeoapi-config.snippet.yml` has a whole resource to add under
+`resources:` in your pygeoapi config.
+{% if c.env_names %}
+Set {{ c.env_names }} on the pygeoapi server: the config reads them as
+`${…}`, the way pygeoapi substitutes environment variables.
+{% endif %}
+
+## What's where
+
+{% for line in c.files %}
+- {{ line }}
+{% endfor %}
+
+## What the spec engine did that this code doesn't
+
+{% for line in c.left_out %}
+- {{ line }}
+{% endfor %}
+
+## Develop
+
+`tests/test_contract.py` runs the contract checks the Provider Builder runs
+(the `provider_contract` fixture from `pygeoapi-provider-harness`) against the
+example config, so against the real source.
+
+```bash
+pip install -e '.[test]'
+pytest
+ruff check . && ruff format --check .
+```
+
+`pygeoapi-provider-harness` isn't on PyPI yet: install it from the Provider
+Builder's repository (`pip install path/to/provider-builder/harness`).
+
+## Deploy
+
+Install the package into the pygeoapi server's environment, as the official
+image expects (`Dockerfile.test` builds a test image that way):
+
+```bash
+/venv/bin/python3 -m pip install .
+```

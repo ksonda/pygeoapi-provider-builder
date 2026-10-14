@@ -7,7 +7,8 @@ connection string kept in a secret still yields its host.
 
 A descriptor opts in with an ``egress`` rule: ``{kind: sql, default_port: 5432}``,
 ``{kind: spec}``, or ``{kind: hosts, hosts: [api.example.gov:443]}`` (code-built
-providers declare what they reach). Providers without one get no network at all.
+providers declare what they reach; ``sql_keys`` names config keys holding a database
+connection, such as ``data``). Providers without one get no network at all.
 """
 
 from __future__ import annotations
@@ -119,6 +120,13 @@ def spec(doc: Mapping[str, Any]) -> set[HostPort]:
     return urls([source.get('url'), item.get('url')])
 
 
+def _dotted(pdef: Mapping[str, Any], key: str) -> Any:
+    node: Any = pdef
+    for part in key.split('.'):
+        node = node.get(part) if isinstance(node, Mapping) else None
+    return node
+
+
 def for_provider(
     pdef: Mapping[str, Any],
     rule: Mapping[str, Any] | None,
@@ -137,5 +145,9 @@ def for_provider(
         for entry in rule.get('hosts') or []:
             host, _, port = str(entry).rpartition(':')
             found |= _hostport(host, port)
+        for key in rule.get('sql_keys') or []:  # config values that hold a database connection
+            found |= sql(
+                fill(_dotted(pdef, str(key)), secrets), int(rule.get('default_port', 5432))
+            )
         return found
     return set()

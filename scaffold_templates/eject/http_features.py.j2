@@ -1,0 +1,510 @@
+{{ c.docstring }}
+
+from __future__ import annotations
+
+import functools
+import json
+from collections.abc import Iterator, Mapping, Sequence
+from typing import Any, NamedTuple
+from urllib.parse import quote, urljoin, urlsplit
+
+from pygeoapi.crs import crs_transform, get_crs
+from pygeoapi.provider.base import (
+    BaseProvider,
+    ProviderInvalidQueryError,
+    ProviderItemNotFoundError,
+)
+
+{% if c.path_constants %}
+from . import jsonpaths
+{% endif %}
+from .http_client import (
+    Client,
+    SourceError,
+    limiter_for,
+    link_header_next,
+    provider_error,
+    status_error,
+)
+from .support import (
+    LocalFilters,
+    bounds,
+    coerce,
+    dig,
+    format_moment,
+    geometry_from,
+    option,
+    parse_interval,
+    point,
+    records_at,
+    shape_output,
+    sort_features,
+    split_terms,
+    text,
+)
+
+#: The source API; ``data`` in the provider config sets it.
+SOURCE_URL = {{ c.source_url }}
+#: The hosts the provider may connect to, redirects and next links included (``data``'s too).
+HOSTS = {{ c.hosts }}
+{% if c.query %}
+#: Query parameters sent with every request.
+QUERY = {{ c.query }}
+{% endif %}
+{% if c.headers %}
+HEADERS = {{ c.headers }}
+{% endif %}
+#: Seconds to wait for the source; retries after a failure or one of RETRY_ON, backing off
+#: exponentially from BACKOFF_S.
+TIMEOUT_S = {{ c.timeout_s }}
+RETRIES = {{ c.retries }}
+BACKOFF_S = {{ c.backoff_s }}
+RETRY_ON = {{ c.retry_on }}
+#: The largest response accepted, in bytes after decompression.
+MAX_RESPONSE_BYTES = {{ c.max_bytes }}
+{% if c.cache_ttl_s %}
+#: Seconds a successful response is reused for.
+CACHE_TTL_S = {{ c.cache_ttl_s }}
+{% endif %}
+{% if c.rate_limit %}
+#: At most this many requests per this many seconds, per process.
+RATE_LIMIT = {{ c.rate_limit }}
+{% endif %}
+
+#: The largest page the source serves, and how far one request may read.
+PAGE_SIZE = {{ c.page_size }}
+MAX_PAGES = {{ c.max_pages }}
+MAX_RECORDS_SCANNED = {{ c.max_scanned }}
+
+#: pygeoapi's definitions of the properties (``get_fields()``).
+FIELDS = {{ c.fields }}
+#: The properties that hold the item id, the title and the time; the config may override them.
+ID_PROPERTY = {{ c.id_property }}
+TITLE_FIELD = {{ c.title_field }}
+TIME_FIELD = {{ c.time_field }}
+{% if c.storage_crs %}
+#: The CRS of the source's coordinates.
+STORAGE_CRS = {{ c.storage_crs }}
+{% endif %}
+{% if c.property_params %}
+#: Property filters the source applies itself: the property, and its query parameter.
+PROPERTY_PARAMS = {{ c.property_params }}
+{% endif %}
+{% if c.sort %}
+#: Properties the source sorts by itself: the property, and the source's name for it.
+SORT_FIELDS = {{ c.sort.fields }}
+#: The source's words for ascending and descending, where they differ.
+SORT_ORDERS = {{ c.sort.orders }}
+{% endif %}
+{% if c.path_constants %}
+
+#: JSONPaths that need more than keys and indexes (python-jsonpath, strict RFC 9535).
+{% for name, path in c.path_constants %}
+{{ name }} = jsonpaths.compile_path({{ path }})
+{% endfor %}
+{% endif %}
+
+
+class Page(NamedTuple):
+    """One response: its records, the whole document, its URL and its headers."""
+
+    records: list[Mapping[str, Any]]
+    doc: Any
+    url: str
+    headers: Mapping[str, str]
+
+
+def dropped(page: Page, count: int) -> Page:
+    """The page without its first ``count`` records."""
+    return page._replace(records=page.records[count:]) if count else page
+{% if c.error_expr %}
+
+
+def check_error(doc: Any) -> None:
+    """A response that reports an error in its body (with HTTP 200) is a failure."""
+    error = {{ c.error_expr }}
+    if error in (None, '', [], {}, False):
+        return
+    if isinstance(error, Mapping):
+        error = error.get('message') or error.get('details') or json.dumps(error)[:200]
+    raise SourceError(f'The source API reported an error: {str(error)[:200]}', kind='api_error')
+{% endif %}
+
+
+@functools.lru_cache(maxsize=8)
+def client_for(url: str{% for o in c.auth_options %}, {{ o.var }}: str{% endfor %}) -> Client:
+    """One client per source and process: pygeoapi creates a provider per request."""
+    host = urlsplit(url).hostname or ''
+    return Client(
+        HOSTS | {host},
+{% for name, value in c.client_args %}
+        {{ name }}={{ value }},
+{% endfor %}
+    )
+
+
+class Pages:
+    """The source's pages from record ``skip`` on ({{ c.style_doc }}).
+
+    ``truncated`` is set when MAX_PAGES stopped the listing early.
+    """
+
+    def __init__(
+        self, provider: {{ c.class_name }}, params: dict[str, str], *, skip: int, page_size: int
+    ):
+        self.provider = provider
+        self.params = params
+        self.skip = skip
+        self.page_size = page_size
+        self.truncated = False
+
+    def __iter__(self) -> Iterator[Page]:
+        fetch, url = self.provider.fetch, self.provider.url
+{% if c.style == 'none' %}
+        yield dropped(fetch(url, self.params), self.skip)
+{% elif c.style == 'offset' %}
+        offset = self.skip
+        for _ in range(MAX_PAGES):
+            page = fetch(
+                url,
+                {
+                    **self.params,
+                    {{ c.offset_param }}: str(offset),
+                    {{ c.limit_param }}: str(self.page_size),
+                },
+            )
+            yield page
+            got = len(page.records)
+{% if c.total_expr %}
+            total = self.provider.total(page.doc)
+            if got == 0 or got < self.page_size or (total is not None and offset + got >= total):
+                return
+{% else %}
+            if got == 0 or got < self.page_size:
+                return
+{% endif %}
+            offset += got
+        self.truncated = True
+{% elif c.style == 'page' %}
+        number = {{ c.page_start }}
+{% if c.size_param %}
+        number += self.skip // self.page_size
+        drop = self.skip % self.page_size
+{% else %}
+        drop = self.skip
+{% endif %}
+        for _ in range(MAX_PAGES):
+{% if c.size_param %}
+            query = {
+                **self.params,
+                {{ c.page_param }}: str(number),
+                {{ c.size_param }}: str(self.page_size),
+            }
+{% else %}
+            query = {**self.params, {{ c.page_param }}: str(number)}
+{% endif %}
+            page = fetch(url, query)
+            got = len(page.records)
+            yield dropped(page, drop)
+            drop = max(0, drop - got)
+{% if c.size_param %}
+            if got == 0 or got < self.page_size:
+{% else %}
+            if got == 0:
+{% endif %}
+                return
+            number += 1
+        self.truncated = True
+{% elif c.style == 'next_link' %}
+        target, query, static = url, self.params, True
+        drop = self.skip
+        for _ in range(MAX_PAGES):
+            page = fetch(target, query, static=static)
+            got = len(page.records)
+            yield dropped(page, drop)
+            drop = max(0, drop - got)
+{% if c.next_header %}
+            nxt = link_header_next(page.headers.get('link'))
+{% else %}
+            found = {{ c.next_expr }}
+            nxt = found if isinstance(found, str) and found else None
+{% endif %}
+            if not nxt:
+                return
+            target, query, static = urljoin(page.url, nxt), {}, False
+        self.truncated = True
+{% elif c.style == 'cursor' %}
+        cursor: Any = None
+        seen: set[str] = set()
+        drop = self.skip
+        for _ in range(MAX_PAGES):
+            query = dict(self.params)
+            if cursor is not None:
+                query[{{ c.cursor_param }}] = str(cursor)
+            page = fetch(url, query)
+            got = len(page.records)
+            yield dropped(page, drop)
+            drop = max(0, drop - got)
+            cursor = {{ c.cursor_expr }}
+            if cursor in (None, '', False) or str(cursor) in seen:
+                return
+            seen.add(str(cursor))
+        self.truncated = True
+{% endif %}
+
+
+class {{ c.class_name }}(BaseProvider):
+    {{ c.class_doc }}
+
+    def __init__(self, provider_def: dict[str, Any]):
+        super().__init__(provider_def)
+        self.url = str(self.data)
+        self.client = client_for(
+            self.url,
+{% for o in c.auth_options %}
+            option(self.options, {{ o.key }}),
+{% endfor %}
+        )
+        self._fields = {name: dict(f) for name, f in FIELDS.items()}  # pygeoapi reads p.fields
+        self.id_field = provider_def.get('id_field') or ID_PROPERTY
+        self.title_field = provider_def.get('title_field') or TITLE_FIELD
+        self.time_field = provider_def.get('time_field') or TIME_FIELD
+{% if c.storage_crs %}
+        if 'storage_crs' not in provider_def:
+            self.storage_crs = get_crs(STORAGE_CRS)
+{% endif %}
+
+    def get_fields(self) -> dict[str, dict[str, Any]]:
+        return self._fields
+
+    @crs_transform
+    def query(
+        self,
+        offset: int = 0,
+        limit: int = 10,
+        resulttype: str = 'results',
+        bbox: Sequence[float] | None = None,
+        datetime_: str | None = None,
+        properties: Sequence[tuple[str, str]] | None = None,
+        sortby: Sequence[dict[str, str]] | None = None,
+        select_properties: Sequence[str] | None = None,
+        skip_geometry: bool = False,
+        q: str | None = None,
+        filterq: Any = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Features from the source: filters it applies itself go in the request, the rest here."""
+        if filterq is not None:
+            raise ProviderInvalidQueryError(user_msg='This collection does not support CQL filters.')
+        try:
+            params, local = self.plan(bbox, datetime_, properties or [], sortby or [], q)
+            features, matched = self.run(
+                offset=max(0, int(offset)),
+                limit=max(0, int(limit)),
+                hits=resulttype == 'hits',
+                params=params,
+                local=local,
+            )
+        except SourceError as err:
+            raise provider_error(err) from err
+        features = [shape_output(f, select_properties, skip_geometry) for f in features]
+        result: dict[str, Any] = {
+            'type': 'FeatureCollection',
+            'features': features,
+            'numberReturned': len(features),
+        }
+        if matched is not None and (self.count or resulttype == 'hits'):
+            result['numberMatched'] = matched
+        return result
+
+    def plan(
+        self,
+        bbox: Sequence[float] | None,
+        datetime_: str | None,
+        properties: Sequence[tuple[str, str]],
+        sortby: Sequence[dict[str, str]],
+        q: str | None,
+    ) -> tuple[dict[str, str], LocalFilters]:
+        """The request parameters for what the source filters itself, and the filters left."""
+        params: dict[str, str] = {}
+        local = LocalFilters(time_field=TIME_FIELD)
+        if bbox:
+{% if c.bbox_expr %}
+            minx, miny, maxx, maxy = bounds(bbox)
+            params[{{ c.bbox_param }}] = {{ c.bbox_expr }}
+{% else %}
+            local.bbox = bbox
+{% endif %}
+{% if c.time_field_name %}
+        if datetime_:
+            start, end = parse_interval(datetime_)
+{% if c.datetime and c.datetime.param %}
+            values = [format_moment(m, {{ c.datetime.format }}) if m else '..' for m in (start, end)]
+            params[{{ c.datetime.param }}] = values[0] if start == end else '/'.join(values)
+{% elif c.datetime %}
+            if start:
+                params[{{ c.datetime.start_param }}] = format_moment(start, {{ c.datetime.format }})
+            if end:
+                params[{{ c.datetime.end_param }}] = format_moment(end, {{ c.datetime.format }})
+{% else %}
+            local.interval = (start, end)
+{% endif %}
+{% endif %}
+        for name, value in properties:
+{% if c.property_params %}
+            upstream = PROPERTY_PARAMS.get(name)
+            if upstream:
+                params[upstream] = str(value)
+            else:
+                local.properties.append((name, str(value)))
+{% else %}
+            local.properties.append((name, str(value)))
+{% endif %}
+        if sortby:
+{% if c.sort %}
+            key = sortby[0]
+            if len(sortby) == 1 and key['property'] in SORT_FIELDS:
+                upstream = SORT_FIELDS[key['property']]
+                order = 'desc' if key.get('order') == '-' else 'asc'
+                order = SORT_ORDERS.get(order, order)
+                params[{{ c.sort.param }}] = {{ c.sort.expr }}
+            else:
+                local.sortby = list(sortby)
+{% else %}
+            local.sortby = list(sortby)
+{% endif %}
+        if q:
+{% if c.q_param %}
+            params[{{ c.q_param }}] = q
+{% else %}
+            local.terms = split_terms(q)
+{% endif %}
+        return params, local
+
+    def run(
+        self, *, offset: int, limit: int, hits: bool, params: dict[str, str], local: LocalFilters
+    ) -> tuple[list[dict[str, Any]], int | None]:
+        """The features of one request, and how many match (None when that isn't known)."""
+        if not local.any():
+            # Nothing to apply here: read only the window the request asks for.
+{% if c.total_expr %}
+            if hits:
+                for page in Pages(self, params, skip=0, page_size=1):
+                    return [], self.total(page.doc)
+{% endif %}
+            if not hits:
+                features: list[dict[str, Any]] = []
+                matched, scanned = None, 0
+                pages = Pages(self, params, skip=offset, page_size=max(1, min(PAGE_SIZE, limit)))
+                for page in pages:
+{% if c.total_expr %}
+                    if matched is None and self.count:
+                        matched = self.total(page.doc)
+{% endif %}
+                    for record in page.records:
+                        scanned += 1
+                        feature = self.feature(record)
+                        if feature is not None:
+                            features.append(feature)
+                            if len(features) >= limit:
+                                break
+                    if len(features) >= limit or scanned >= MAX_RECORDS_SCANNED:
+                        break
+                return features[:limit], matched
+        # Read within the limits, apply what the source couldn't, then take the window.
+        matching: list[dict[str, Any]] = []
+        scanned, complete = 0, True
+        pages = Pages(self, params, skip=0, page_size=PAGE_SIZE)
+        for page in pages:
+            for record in page.records:
+                scanned += 1
+                feature = self.feature(record)
+                if feature is not None and local.matches(feature):
+                    matching.append(feature)
+            if scanned >= MAX_RECORDS_SCANNED:
+                complete = False
+                break
+        complete = complete and not pages.truncated
+        if local.sortby:
+            sort_features(matching, local.sortby)
+        total = len(matching) if complete else None
+        return ([] if hits else matching[offset : offset + limit]), total
+
+    def fetch(self, url: str, params: Mapping[str, str], *, static: bool = True) -> Page:
+        """One page from the source; ``static`` adds QUERY to the request."""
+        response = self.client.get(url, params, static=static)
+        if not 200 <= response.status < 300:
+            raise status_error(response)
+        doc = response.json()
+{% if c.error_expr %}
+        check_error(doc)
+{% endif %}
+        return Page({{ c.records_expr }}, doc, response.url, response.headers)
+{% if c.total_expr %}
+
+    def total(self, doc: Any) -> int | None:
+        """The number of records the source reports, if it does."""
+        value = {{ c.total_expr }}
+        try:
+            return int(value) if value is not None and not isinstance(value, bool) else None
+        except (TypeError, ValueError):
+            return None
+{% endif %}
+
+    @crs_transform
+    def get(self, identifier: Any, **kwargs: Any) -> dict[str, Any]:
+        """One feature by its id."""
+        try:
+            return self.find(identifier)
+        except SourceError as err:
+            raise provider_error(err) from err
+
+    def find(self, identifier: Any) -> dict[str, Any]:
+        not_found = ProviderItemNotFoundError(user_msg='item not found')
+{% if c.item %}
+        response = self.client.get({{ c.item.url }})
+        if response.status in (404, 410):
+            raise not_found
+        if not 200 <= response.status < 300:
+            raise status_error(response)
+        doc = response.json()
+{% if c.error_expr %}
+        check_error(doc)
+{% endif %}
+        record = {{ c.item.record }}
+        feature = self.feature(record) if isinstance(record, Mapping) else None
+        if feature is None:
+            raise not_found
+        return feature
+{% else %}
+        # The source has no item URL: read the listing until the id turns up.
+        scanned = 0
+        for page in Pages(self, {}, skip=0, page_size=PAGE_SIZE):
+            for record in page.records:
+                scanned += 1
+                feature = self.feature(record)
+                if feature is not None and str(feature['id']) == str(identifier):
+                    return feature
+            if scanned >= MAX_RECORDS_SCANNED:
+                break
+        raise not_found
+{% endif %}
+
+    def feature(self, record: Mapping[str, Any]) -> dict[str, Any] | None:
+        """One record as a GeoJSON feature; None without an id. Bad values become null."""
+        ident = {{ c.id_expr }}
+        if ident is None or ident == '' or isinstance(ident, list | dict):
+            return None
+        return {
+            'type': 'Feature',
+            'id': ident,
+            'geometry': {{ c.geometry_expr }},
+            'properties': {
+{% for name, expr in c.property_exprs %}
+                {{ name }}: {{ expr }},
+{% endfor %}
+            },
+        }
+
+    def __repr__(self) -> str:
+        return f'<{{ c.class_name }}> {self.url}'

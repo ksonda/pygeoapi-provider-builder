@@ -114,8 +114,13 @@ def denied(name: str) -> bool:
 
 
 @functools.lru_cache(maxsize=256)
-def check(query: str, dialect: str, allowed: Iterable[str] = ()) -> Checked:
-    """Check ``query``; ``allowed`` names the ``:placeholders`` it may use (none by default)."""
+def check(
+    query: str, dialect: str, allowed: Iterable[str] = (), *, pretty: bool = False
+) -> Checked:
+    """Check ``query``; ``allowed`` names the ``:placeholders`` it may use (none by default).
+
+    ``pretty`` regenerates it on several indented lines (for ejected code to show).
+    """
     if dialect not in DIALECTS:
         raise SQLGuardError(f'Unknown SQL dialect {dialect!r}')
     allowed = frozenset(allowed)
@@ -159,7 +164,7 @@ def check(query: str, dialect: str, allowed: Iterable[str] = ()) -> Checked:
             raise SQLGuardError('Parameters such as @name or $1 are not allowed.')
     for node in list(root.find_all(exp.Placeholder)):
         node.replace(exp.Var(this=PLACEHOLDER_MARK.format(node.name)))
-    sql = root.sql(dialect=DIALECTS[dialect], comments=False)
+    sql = root.sql(dialect=DIALECTS[dialect], comments=False, pretty=pretty)
     if dialect == 'postgresql':
         sql = MARK.sub(lambda m: f'%({m.group(1)})s', sql.replace('%', '%%'))
     else:

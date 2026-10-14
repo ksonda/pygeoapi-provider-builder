@@ -1,0 +1,333 @@
+{{ c.docstring }}
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from typing import Any
+
+from pygeoapi.crs import crs_transform, get_crs
+from pygeoapi.provider.base import (
+    BaseProvider,
+    ProviderInvalidQueryError,
+    ProviderItemNotFoundError,
+)
+
+from .database import (
+    DatabaseError,
+    database_for,
+    decode_geometry,
+    escape_like,
+    json_id,
+    provider_error,
+    quote_name,
+    rows,
+)
+from .support import (
+    LocalFilters,
+    bounds,
+    coerce,
+    parse_interval,
+    point,
+    shape_output,
+    sort_features,
+    split_terms,
+)
+
+#: The query as the Provider Builder checked it, one read-only SELECT ({{ c.dialect_doc }}).
+QUERY = {{ c.query }}
+#: The query columns the provider reads: the item id, the geometry, then the properties.
+COLUMNS = {{ c.columns }}
+ID_COLUMN = {{ c.id_column }}
+#: How ``get()`` compares ids: as integers, numbers or strings (None: as text).
+ID_TYPE = {{ c.id_type }}
+#: Each property: its column, its type, and how a datetime is written (ISO 8601 otherwise).
+PROPERTIES = {{ c.properties }}
+#: The string columns ``q`` searches.
+TEXT_COLUMNS = {{ c.text_columns }}
+
+#: pygeoapi's definitions of the properties (``get_fields()``).
+FIELDS = {{ c.fields }}
+#: The properties that hold the item id, the title and the time; the config may override them.
+ID_PROPERTY = {{ c.id_property }}
+TITLE_FIELD = {{ c.title_field }}
+TIME_FIELD = {{ c.time_field }}
+{% if c.storage_crs %}
+#: The CRS of the geometries.
+STORAGE_CRS = {{ c.storage_crs }}
+{% endif %}
+
+#: At most this many rows are read for a request whose filters or sorting apply here.
+MAX_ROWS = {{ c.max_rows }}
+CONNECT_TIMEOUT_S = {{ c.connect_timeout_s }}
+STATEMENT_TIMEOUT_S = {{ c.statement_timeout_s }}
+{% if c.search_path %}
+#: The schemas unqualified table names resolve in.
+SEARCH_PATH = {{ c.search_path }}
+{% endif %}
+
+#: Every request reads the query as a subquery, ``src``.
+SELECT = {{ c.select }}
+FROM = ' FROM (' + QUERY + ') AS src'
+
+
+def marker(name: str) -> str:
+    """The placeholder of a bound parameter ({{ c.driver }} style)."""
+{% if c.dialect == 'postgresql' %}
+    return f'%({name})s'
+{% else %}
+    return f':{name}'
+{% endif %}
+
+
+@dataclass
+class Plan:
+    """A request's WHERE conditions and bound values, its ORDER BY, and the filters left."""
+
+    where: list[str] = field(default_factory=list)
+    params: dict[str, Any] = field(default_factory=dict)
+    order: list[str] = field(default_factory=list)
+    local: LocalFilters = field(default_factory=LocalFilters)
+
+    def bind(self, value: Any) -> str:
+        """Bind a value: the placeholder that refers to it."""
+        name = f'p{len(self.params)}'
+        self.params[name] = value
+        return marker(name)
+
+
+class {{ c.class_name }}(BaseProvider):
+    {{ c.class_doc }}
+
+    def __init__(self, provider_def: dict[str, Any]):
+        super().__init__(provider_def)
+        try:
+            self.database = database_for(
+                self.data,
+                dialect={{ c.dialect_literal }},
+{% if c.search_path %}
+                search_path=SEARCH_PATH,
+{% endif %}
+                connect_timeout_s=CONNECT_TIMEOUT_S,
+                statement_timeout_s=STATEMENT_TIMEOUT_S,
+            )
+        except DatabaseError as err:
+            raise provider_error(err) from err
+        self._fields = {name: dict(f) for name, f in FIELDS.items()}  # pygeoapi reads p.fields
+        self.id_field = provider_def.get('id_field') or ID_PROPERTY
+        self.title_field = provider_def.get('title_field') or TITLE_FIELD
+        self.time_field = provider_def.get('time_field') or TIME_FIELD
+{% if c.storage_crs %}
+        if 'storage_crs' not in provider_def:
+            self.storage_crs = get_crs(STORAGE_CRS)
+{% endif %}
+
+    def get_fields(self) -> dict[str, dict[str, Any]]:
+        return self._fields
+
+    @crs_transform
+    def query(
+        self,
+        offset: int = 0,
+        limit: int = 10,
+        resulttype: str = 'results',
+        bbox: Sequence[float] | None = None,
+        datetime_: str | None = None,
+        properties: Sequence[tuple[str, str]] | None = None,
+        sortby: Sequence[dict[str, str]] | None = None,
+        select_properties: Sequence[str] | None = None,
+        skip_geometry: bool = False,
+        q: str | None = None,
+        filterq: Any = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Features from the query: filters are bound SQL where the database can apply them."""
+        if filterq is not None:
+            raise ProviderInvalidQueryError(user_msg='This collection does not support CQL filters.')
+        try:
+            plan = self.plan(bbox, datetime_, properties or [], sortby or [], q)
+            features, matched = self.run(
+                offset=max(0, int(offset)),
+                limit=max(0, int(limit)),
+                hits=resulttype == 'hits',
+                plan=plan,
+            )
+        except DatabaseError as err:
+            raise provider_error(err) from err
+        features = [shape_output(f, select_properties, skip_geometry) for f in features]
+        result: dict[str, Any] = {
+            'type': 'FeatureCollection',
+            'features': features,
+            'numberReturned': len(features),
+        }
+        if matched is not None and (self.count or resulttype == 'hits'):
+            result['numberMatched'] = matched
+        return result
+
+    def plan(
+        self,
+        bbox: Sequence[float] | None,
+        datetime_: str | None,
+        properties: Sequence[tuple[str, str]],
+        sortby: Sequence[dict[str, str]],
+        q: str | None,
+    ) -> Plan:
+        plan = Plan(local=LocalFilters(time_field=TIME_FIELD))
+        if bbox:
+{% if c.bbox and c.bbox.kind == 'xy' %}
+            minx, miny, maxx, maxy = bounds(bbox)
+            low, high = plan.bind(float(minx)), plan.bind(float(maxx))
+            plan.where.append({{ c.bbox.x_between }} + low + ' AND ' + high)
+            low, high = plan.bind(float(miny)), plan.bind(float(maxy))
+            plan.where.append({{ c.bbox.y_between }} + low + ' AND ' + high)
+{% elif c.bbox %}
+            envelope = ', '.join(plan.bind(float(v)) for v in bounds(bbox))
+            srid = plan.bind({{ c.bbox.srid }})
+            plan.where.append({{ c.bbox.intersects }} + envelope + ', ' + srid + '))')
+{% else %}
+            plan.local.bbox = bbox
+{% endif %}
+{% if c.time_field_name %}
+        if datetime_:
+            start, end = parse_interval(datetime_)
+{% if c.time %}
+            if start is not None:
+                plan.where.append({{ c.time.ge }} + plan.bind(start))
+            if end is not None:
+                plan.where.append({{ c.time.le }} + plan.bind(end))
+            if start is None and end is None:
+                plan.where.append({{ c.time.not_null }})
+{% else %}
+            plan.local.interval = (start, end)  # compared after reading: text or epoch values
+{% endif %}
+{% endif %}
+        for name, value in properties:
+            self.plan_property(plan, name, value)
+        if q:
+{% if c.text_columns_present %}
+            terms = split_terms(q)
+            if terms:
+                ors = []
+                for term in terms:
+                    pattern = plan.bind('%' + escape_like(term) + '%')
+                    for column in TEXT_COLUMNS:
+                        text = 'CAST(src.' + quote_name(column) + ' AS TEXT)'
+                        ors.append(text + ' {{ c.like }} ' + pattern + " ESCAPE '\\'")
+                plan.where.append('(' + ' OR '.join(ors) + ')')
+{% else %}
+            plan.local.terms = split_terms(q)
+{% endif %}
+        self.plan_sort(plan, sortby)
+        return plan
+
+    def plan_property(self, plan: Plan, name: str, value: str) -> None:
+        prop = PROPERTIES.get(name)
+        if prop is None or prop['type'] == 'datetime':
+            plan.local.properties.append((name, str(value)))
+            return
+        typed = coerce(value, prop['type'])
+        if typed is None:
+            plan.where.append('1 = 0')  # e.g. depth=abc: nothing can match
+            return
+{% if c.dialect == 'sqlite' %}
+        if prop['type'] == 'boolean':
+            typed = int(typed)
+{% endif %}
+        plan.where.append('src.' + quote_name(prop['column']) + ' = ' + plan.bind(typed))
+
+    def plan_sort(self, plan: Plan, sortby: Sequence[dict[str, str]]) -> None:
+        here = plan.local.filters() or any(
+            PROPERTIES.get(key['property'], {}).get('format') for key in sortby
+        )
+        if sortby and here:
+            plan.local.sortby = list(sortby)
+        else:
+            for key in sortby:
+                prop = PROPERTIES.get(key['property'])
+                if prop is None:
+                    continue
+                direction = 'DESC' if key.get('order') == '-' else 'ASC'
+                column = 'src.' + quote_name(prop['column'])
+                plan.order.append(column + ' ' + direction + ' NULLS LAST')
+        plan.order.append({{ c.id_order }})  # the id last, so pages are stable
+
+    def run(
+        self, *, offset: int, limit: int, hits: bool, plan: Plan
+    ) -> tuple[list[dict[str, Any]], int | None]:
+        """The features of one request, and how many match (None when that isn't known)."""
+        limit = min(limit, MAX_ROWS)
+        where = (' WHERE ' + ' AND '.join(plan.where)) if plan.where else ''
+        order = ' ORDER BY ' + ', '.join(plan.order)
+        with self.database.connect() as conn:
+            if not plan.local.any():
+                matched = None
+                if self.count or hits:
+                    sql = 'SELECT count(*)' + FROM + where
+                    matched = int(conn.exec_driver_sql(sql, dict(plan.params)).scalar() or 0)
+                if hits:
+                    return [], matched
+                params = {**plan.params, 'pb_limit': limit, 'pb_offset': offset}
+                window = ' LIMIT ' + marker('pb_limit') + ' OFFSET ' + marker('pb_offset')
+                _columns, found = rows(conn, SELECT + FROM + where + order + window, params)
+                return [f for f in map(self.feature, found) if f is not None], matched
+            # Read up to MAX_ROWS, apply what the database couldn't, then take the window.
+            params = {**plan.params, 'pb_limit': MAX_ROWS + 1}
+            sql = SELECT + FROM + where + order + ' LIMIT ' + marker('pb_limit')
+            _columns, found = rows(conn, sql, params)
+        complete = len(found) <= MAX_ROWS
+        matching = [
+            f
+            for f in map(self.feature, found[:MAX_ROWS])
+            if f is not None and plan.local.matches(f)
+        ]
+        if plan.local.sortby:
+            sort_features(matching, plan.local.sortby)
+        total = len(matching) if complete else None
+        return ([] if hits else matching[offset : offset + limit]), total
+
+    @crs_transform
+    def get(self, identifier: Any, **kwargs: Any) -> dict[str, Any]:
+        """One feature by its id."""
+        try:
+            return self.find(identifier)
+        except DatabaseError as err:
+            raise provider_error(err) from err
+
+    def find(self, identifier: Any) -> dict[str, Any]:
+        not_found = ProviderItemNotFoundError(user_msg='item not found')
+        plan = Plan()
+{% if c.id_type_name in ('integer', 'number') %}
+        typed = coerce(identifier, ID_TYPE)
+        if typed is None:
+            raise not_found
+        condition = {{ c.id_eq }} + plan.bind(typed)
+{% elif c.id_type_name == 'string' %}
+        condition = {{ c.id_eq }} + plan.bind(str(identifier))
+{% else %}
+        condition = {{ c.id_text_eq }} + plan.bind(str(identifier))  # any column type, unindexed
+{% endif %}
+        with self.database.connect() as conn:
+            _columns, found = rows(conn, SELECT + FROM + ' WHERE ' + condition + ' LIMIT 2', plan.params)
+        features = [f for f in map(self.feature, found) if f is not None]
+        if not features:
+            raise not_found
+        return features[0]
+
+    def feature(self, row: Sequence[Any]) -> dict[str, Any] | None:
+        """One row as a GeoJSON feature; None without an id. Bad values become null."""
+        record = dict(zip(COLUMNS, row, strict=True))
+        ident = record[ID_COLUMN]
+        if ident is None or ident == '':
+            return None
+        return {
+            'type': 'Feature',
+            'id': json_id(ident),
+            'geometry': {{ c.geometry_expr }},
+            'properties': {
+                name: coerce(record[p['column']], p['type'], p.get('format'))
+                for name, p in PROPERTIES.items()
+            },
+        }
+
+    def __repr__(self) -> str:
+        return '<{{ c.class_name }}>'

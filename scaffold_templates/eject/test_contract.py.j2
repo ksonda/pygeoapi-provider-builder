@@ -1,0 +1,36 @@
+"""The pygeoapi {{ c.pygeoapi_version }} provider contract, as the Provider Builder checks it.
+
+The provider config is the example in ``examples/pygeoapi-config.snippet.yml``,
+read the way pygeoapi reads its config, so ``${VAR}`` values come from the
+environment. The checks call the real data source.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Any
+
+import pytest
+from pygeoapi.util import yaml_load
+
+SNIPPET = Path(__file__).resolve().parents[1] / 'examples' / 'pygeoapi-config.snippet.yml'
+#: The environment variables the example config reads.
+ENV = {{ c.env }}
+#: What the provider does, which the checks hold it to.
+CAPABILITIES = {{ c.capabilities }}
+
+
+def example() -> dict[str, Any]:
+    with SNIPPET.open(encoding='utf-8') as fh:
+        (resource,) = yaml_load(fh).values()
+    return dict(resource)
+
+
+@pytest.mark.skipif(
+    any(name not in os.environ for name in ENV), reason='set ' + ', '.join(ENV) + ' first'
+)
+def test_contract(provider_contract) -> None:
+    resource = example()
+    provider = resource.pop('providers')[0]
+    provider_contract(provider, capabilities=CAPABILITIES, resource=resource)

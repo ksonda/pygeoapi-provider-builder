@@ -282,6 +282,8 @@ class ProviderWorkspace:
         return {
             'id': pid,
             'descriptor': f'created/{pid}',
+            'template': versions[0][1].get('template', 'http-features'),
+            'ejected': self.ejections(pid),
             'changelog': changelog.read_text(encoding='utf-8') if changelog.is_file() else '',
             'versions': [
                 {
@@ -293,6 +295,40 @@ class ProviderWorkspace:
                 for v, _ in versions
             ],
         }
+
+    def spec_text(self, pid: str, version: str) -> str:
+        """A saved version's spec, as written (placeholders and all)."""
+        if not SEMVER.match(version):
+            raise WorkspaceError(f'{version!r} is not a version')
+        path = self._dir(pid) / version / 'spec.yaml'
+        if not path.is_file():
+            raise WorkspaceError(f'{pid} has no version {version}')
+        return path.read_text(encoding='utf-8')
+
+    def ejections(self, pid: str) -> list[dict[str, Any]]:
+        """The code-built providers made from this provider's specs (PLAN.md §7.6)."""
+        path = self._dir(pid) / 'ejected.json'
+        if not path.is_file():
+            return []
+        data = json.loads(path.read_text(encoding='utf-8'))
+        return [e for e in data if isinstance(e, dict)] if isinstance(data, list) else []
+
+    def record_ejection(self, pid: str, version: str, code_id: str) -> None:
+        """Note that a version was ejected; the spec itself stays as it was."""
+        folder = self._dir(pid)
+        entries = self.ejections(pid)
+        entries.append(
+            {
+                'version': version,
+                'code_id': code_id,
+                'descriptor': f'created/{code_id}',
+                'date': datetime.now(UTC).strftime('%Y-%m-%d'),
+            }
+        )
+        (folder / 'ejected.json').write_text(
+            json.dumps(entries, indent=2) + '\n', encoding='utf-8'
+        )
+        self._commit(folder, f'Eject {pid} {version} to {code_id}', None)
 
     @staticmethod
     def _harness_summary(path: Path) -> dict[str, Any] | None:

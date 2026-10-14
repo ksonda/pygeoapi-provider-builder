@@ -1,0 +1,496 @@
+{{ c.docstring }}
+
+from __future__ import annotations
+
+import copy
+import functools
+import math
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
+from typing import Any
+from urllib.parse import quote
+
+from pygeoapi.provider.base import (
+    ProviderInvalidQueryError,
+    ProviderItemNotFoundError,
+    ProviderNoDataError,
+)
+from pygeoapi.provider.base_edr import BaseEDRProvider
+from shapely.geometry import Point, box, shape
+
+{% if c.path_constants %}
+from . import jsonpaths
+{% endif %}
+{% if c.obs_http %}
+from .http_client import Client, SourceError, limiter_for, status_error
+from .http_client import provider_error as source_error
+{% else %}
+from .database import Database, DatabaseError, database_for, rows
+from .database import provider_error as database_error
+{% endif %}
+from .locations import Locations
+from .support import (
+    bounds,
+    coerce,
+    dig,
+    option,
+    parse_datetime,
+    parse_interval,
+    records_at,
+    setting,
+    text,
+    to_iso,
+)
+
+#: The parameters, as pygeoapi field definitions (``get_parameters()`` needs ``x-ogc-unit``).
+FIELDS = {{ c.fields }}
+#: Each parameter's CoverageJSON definition.
+PARAMETERS = {{ c.parameters }}
+#: What the observations source calls each parameter.
+UPSTREAM = {{ c.upstream }}
+#: The observations a request without ``datetime`` gets (up to now), and the most it may ask for.
+DEFAULT_WINDOW = {{ c.default_window }}
+MAX_WINDOW = {{ c.max_window }}
+MAX_WINDOW_TEXT = {{ c.max_window_text }}
+#: The most locations one request reads, and observations per time series.
+MAX_LOCATIONS = {{ c.max_locations }}
+MAX_OBSERVATIONS = {{ c.max_observations }}
+#: ``position`` answers with the nearest location within this distance.
+SNAP_RADIUS_KM = {{ c.snap_km }}
+EARTH_KM = 6371.0088
+
+GEOGRAPHIC_CRS = {
+    'coordinates': ['x', 'y'],
+    'system': {'type': 'GeographicCRS', 'id': 'http://www.opengis.net/def/crs/OGC/1.3/CRS84'},
+}
+TEMPORAL_RS = {'coordinates': ['t'], 'system': {'type': 'TemporalRS', 'calendar': 'Gregorian'}}
+{% if c.obs_http %}
+
+#: The observations API's hosts.
+OBSERVATIONS_HOSTS = {{ c.obs.hosts }}
+{% if c.obs.headers %}
+OBSERVATIONS_HEADERS = {{ c.obs.headers }}
+{% endif %}
+#: Seconds to wait for the observations API; retries after a failure or one of RETRY_ON,
+#: backing off exponentially from BACKOFF_S.
+TIMEOUT_S = {{ c.obs.timeout_s }}
+RETRIES = {{ c.obs.retries }}
+BACKOFF_S = {{ c.obs.backoff_s }}
+RETRY_ON = {{ c.obs.retry_on }}
+#: The largest response accepted, in bytes after decompression.
+MAX_RESPONSE_BYTES = {{ c.obs.max_bytes }}
+{% if c.obs.cache_ttl_s %}
+#: Seconds a successful response is reused for.
+CACHE_TTL_S = {{ c.obs.cache_ttl_s }}
+{% endif %}
+{% if c.obs.rate_limit %}
+#: At most this many requests per this many seconds, per process.
+RATE_LIMIT = {{ c.obs.rate_limit }}
+{% endif %}
+#: How the observations' times are written.
+TIME_FORMAT = {{ c.obs.time_format }}
+{% else %}
+
+#: The observations query as the Provider Builder checked it ({{ c.obs.dialect_doc }}).
+OBSERVATIONS_QUERY = {{ c.obs.query }}
+#: The query's columns for each observation's time and value{% if c.obs.parameter_column %}, and its parameter{% endif %}.
+TIME_COLUMN = {{ c.obs.time_column }}
+VALUE_COLUMN = {{ c.obs.value_column }}
+{% if c.obs.parameter_column %}
+PARAMETER_COLUMN = {{ c.obs.parameter_column }}
+{% endif %}
+#: How the observations' times are written.
+TIME_FORMAT = {{ c.obs.time_format }}
+CONNECT_TIMEOUT_S = {{ c.obs.connect_timeout_s }}
+STATEMENT_TIMEOUT_S = {{ c.obs.statement_timeout_s }}
+{% if c.obs.search_path %}
+SEARCH_PATH = {{ c.obs.search_path }}
+{% endif %}
+{% endif %}
+{% if c.path_constants %}
+
+#: JSONPaths that need more than keys and indexes (python-jsonpath, strict RFC 9535).
+{% for name, path in c.path_constants %}
+{{ name }} = jsonpaths.compile_path({{ path }})
+{% endfor %}
+{% endif %}
+
+Series = list[tuple[datetime, Any]]
+
+
+def haversine_km(a: tuple[float, float], b: tuple[float, float]) -> float:
+    lon1, lat1, lon2, lat2 = map(math.radians, (a[0], a[1], b[0], b[1]))
+    h = (
+        math.sin((lat2 - lat1) / 2) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
+    )
+    return 2 * EARTH_KM * math.asin(math.sqrt(h))
+
+
+def point_of(feature: Mapping[str, Any]) -> tuple[float, float] | None:
+    """A location's longitude and latitude (a point inside, for other geometries)."""
+    geometry = feature.get('geometry')
+    if not geometry:
+        return None
+    try:
+        geom = shape(geometry)
+    except (ValueError, TypeError, AttributeError):
+        return None
+    if geom.is_empty:
+        return None
+    inside = geom if geom.geom_type == 'Point' else geom.representative_point()
+    return float(inside.x), float(inside.y)
+
+
+def window(datetime_: str | None, now: datetime | None = None) -> tuple[datetime, datetime]:
+    """The interval a request asks for: its ``datetime``, filled in with DEFAULT_WINDOW."""
+    now = now or datetime.now(UTC)
+    start, end = parse_interval(datetime_) if datetime_ else (None, None)
+    if start is None and end is None:
+        start, end = now - DEFAULT_WINDOW, now
+    elif end is None:
+        end = start + DEFAULT_WINDOW
+    elif start is None:
+        start = end - DEFAULT_WINDOW
+    if end < start:
+        raise ProviderInvalidQueryError(user_msg='The datetime interval ends before it starts.')
+    if end - start > MAX_WINDOW:
+        raise ProviderInvalidQueryError(
+            user_msg=f'Ask for at most {MAX_WINDOW_TEXT} of observations at a time.'
+        )
+    return start, end
+
+
+def parameter_ids(select: Sequence[str] | None) -> list[str]:
+    """The parameters a request asks for (``parameter-name``), or all of them."""
+    if not select:
+        return list(FIELDS)
+    unknown = [p for p in select if p not in FIELDS]
+    if unknown:
+        raise ProviderInvalidQueryError(user_msg=f'Unknown parameter-name {unknown[0]}')
+    return list(dict.fromkeys(select))
+
+
+def cap(limit: int | None) -> int:
+    return max(1, min(int(limit or MAX_LOCATIONS), MAX_LOCATIONS))
+
+
+def coverage(
+    location: Mapping[str, Any], xy: tuple[float, float], pid: str, series: Series
+) -> dict[str, Any]:
+    """One location's time series of one parameter, as a CoverageJSON PointSeries."""
+    series = sorted(series, key=lambda s: s[0])[:MAX_OBSERVATIONS]
+    return {
+        'type': 'Coverage',
+        'id': f'{location["id"]}-{pid}',
+        'domain': {
+            'type': 'Domain',
+            'domainType': 'PointSeries',
+            'axes': {
+                'x': {'values': [xy[0]]},
+                'y': {'values': [xy[1]]},
+                't': {'values': [to_iso(t) for t, _ in series]},
+            },
+            'referencing': [copy.deepcopy(GEOGRAPHIC_CRS), copy.deepcopy(TEMPORAL_RS)],
+        },
+        'ranges': {
+            pid: {
+                'type': 'NdArray',
+                'dataType': 'float',
+                'axisNames': ['t'],
+                'shape': [len(series)],
+                'values': [v for _, v in series],
+            }
+        },
+    }
+
+
+@contextmanager
+def errors() -> Iterator[None]:
+    """Failures reading observations as pygeoapi errors, with a ``user_msg``."""
+    try:
+        yield
+{% if c.obs_http %}
+    except SourceError as err:
+        raise source_error(err) from err
+{% else %}
+    except DatabaseError as err:
+        raise database_error(err) from err
+{% endif %}
+{% if c.obs_http %}
+
+
+def observations_url(location_id: Any, upstream: Any) -> str:
+    """The observations URL of one location and parameter (each value percent-encoded)."""
+    return {{ c.obs.url }}
+
+
+def observations_query(
+    location_id: Any, upstream: Any, start: datetime, end: datetime
+) -> dict[str, str]:
+    """The query parameters of one observations request."""
+    return {
+{% for name, expr in c.obs.query %}
+        {{ name }}: {{ expr }},
+{% endfor %}
+    }
+
+
+class Observations:
+    """Time series from the observations API, one location and parameter at a time."""
+
+    def __init__(self, client: Client):
+        self.client = client
+
+    def fetch(self, location_id: Any, upstream: Any, start: datetime, end: datetime) -> Series:
+        response = self.client.get(
+            observations_url(location_id, upstream),
+            observations_query(location_id, upstream, start, end),
+            static=False,
+        )
+        if response.status in (404, 204):
+            return []
+        if not 200 <= response.status < 300:
+            raise status_error(response)
+        doc = response.json()
+{% if c.obs.error_expr %}
+        problem = {{ c.obs.error_expr }}
+        if problem not in (None, '', [], {}, False):
+            return []  # "no data", from an API that answers HTTP 200 with an error body
+{% endif %}
+        series: Series = []
+        for record in {{ c.obs.records_expr }}:
+{% if c.obs.parameter_expr %}
+            if str({{ c.obs.parameter_expr }}) != str(upstream):
+                continue
+{% endif %}
+            moment = parse_datetime({{ c.obs.time_expr }}, TIME_FORMAT)
+            if moment is None:
+                continue
+            series.append((moment, coerce({{ c.obs.value_expr }}, 'number')))
+        return series
+
+
+@functools.lru_cache(maxsize=8)
+def observations_for({% for o in c.obs.auth_options %}{{ o.var }}: str{% if not loop.last %}, {% endif %}{% endfor %}) -> Observations:
+    """One client per process: pygeoapi creates a provider per request."""
+{% if c.obs.rate_limit %}
+    host = next(iter(OBSERVATIONS_HOSTS))
+{% endif %}
+    return Observations(
+        Client(
+            OBSERVATIONS_HOSTS,
+{% for name, value in c.obs.client_args %}
+            {{ name }}={{ value }},
+{% endfor %}
+        )
+    )
+{% else %}
+
+
+class Observations:
+    """Time series from the observations query, one location and parameter at a time."""
+
+    def __init__(self, database: Database):
+        self.database = database
+
+    def fetch(self, location_id: Any, upstream: Any, start: datetime, end: datetime) -> Series:
+        params = {
+{% for name, expr in c.obs.params %}
+            {{ name }}: {{ expr }},
+{% endfor %}
+        }
+        with self.database.connect() as conn:
+            columns, found = rows(conn, OBSERVATIONS_QUERY, params)
+        index = {name: i for i, name in enumerate(columns)}
+        t_col, v_col = index.get(TIME_COLUMN), index.get(VALUE_COLUMN)
+        if t_col is None or v_col is None:
+            missing = [c for c in (TIME_COLUMN, VALUE_COLUMN) if c not in index]
+            raise DatabaseError(f'The query has no column {missing[0]!r}', kind='query')
+{% if c.obs.parameter_column %}
+        p_col = index.get(PARAMETER_COLUMN)
+{% endif %}
+        series: Series = []
+        for row in found:
+{% if c.obs.parameter_column %}
+            if p_col is not None and str(row[p_col]) != str(upstream):
+                continue
+{% endif %}
+            moment = parse_datetime(row[t_col], TIME_FORMAT)
+            if moment is not None:
+                series.append((moment, coerce(row[v_col], 'number')))
+        return series
+{% endif %}
+
+
+class {{ c.class_name }}(BaseEDRProvider):
+    {{ c.class_doc }}
+
+    def __init__(self, provider_def: dict[str, Any]):
+        super().__init__(provider_def)
+        self.sites = Locations(
+            {
+                'name': {{ c.locations_plugin }},
+                'type': 'feature',
+                'data': self.data,
+                'options': self.options,
+                'count': False,
+            }
+        )
+{% if c.obs_http %}
+        self.observations = observations_for(
+{% for o in c.obs.auth_options %}
+            option(self.options, {{ o.key }}),
+{% endfor %}
+        )
+{% else %}
+        self.observations = Observations(
+            database_for(
+                {{ c.obs.data_expr }},
+                dialect={{ c.obs.dialect_literal }},
+{% if c.obs.search_path %}
+                search_path=SEARCH_PATH,
+{% endif %}
+                connect_timeout_s=CONNECT_TIMEOUT_S,
+                statement_timeout_s=STATEMENT_TIMEOUT_S,
+            )
+        )
+{% endif %}
+        self._fields = {name: dict(f) for name, f in FIELDS.items()}
+
+    def get_fields(self) -> dict[str, dict[str, Any]]:
+        return self._fields
+{% for query_type in c.query_types %}
+{% if query_type == 'locations' %}
+
+    def locations(
+        self,
+        location_id: str | None = None,
+        bbox: Sequence[float] | None = None,
+        datetime_: str | None = None,
+        select_properties: Sequence[str] | None = None,
+        limit: int | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Without ``location_id``, the monitoring locations (GeoJSON); with one, its series."""
+        with errors():
+            if not location_id:
+                features = self.find(bbox, cap(limit))
+                return {
+                    'type': 'FeatureCollection',
+                    'features': features,
+                    'numberReturned': len(features),
+                }
+            try:
+                location = self.sites.get(location_id)
+            except ProviderItemNotFoundError as err:
+                raise ProviderItemNotFoundError(user_msg='Unknown location id.') from err
+            return self.collection([location], select_properties, datetime_)
+{% elif query_type == 'position' %}
+
+    def position(
+        self,
+        wkt: Any = None,
+        datetime_: str | None = None,
+        select_properties: Sequence[str] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """The series of the location nearest ``coords=POINT(x y)``, within SNAP_RADIUS_KM."""
+        if wkt is None or getattr(wkt, 'geom_type', None) != 'Point':
+            raise ProviderInvalidQueryError(user_msg='position needs coords=POINT(x y).')
+        with errors():
+            location = self.nearest(wkt)
+            return self.collection([location], select_properties, datetime_)
+{% elif query_type == 'area' %}
+
+    def area(
+        self,
+        wkt: Any = None,
+        datetime_: str | None = None,
+        select_properties: Sequence[str] | None = None,
+        limit: int | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """The series of the locations inside ``coords=POLYGON((…))``."""
+        if wkt is None or getattr(wkt, 'geom_type', None) not in ('Polygon', 'MultiPolygon'):
+            raise ProviderInvalidQueryError(user_msg='area needs coords=POLYGON((…)).')
+        with errors():
+            candidates = self.find(list(wkt.bounds), 10_000)
+            inside = [f for f in candidates if (xy := point_of(f)) and wkt.intersects(Point(xy))]
+            return self.collection(inside[: cap(limit)], select_properties, datetime_)
+{% elif query_type == 'cube' %}
+
+    def cube(
+        self,
+        bbox: Sequence[float] | None = None,
+        datetime_: str | None = None,
+        select_properties: Sequence[str] | None = None,
+        limit: int | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """The series of the locations inside ``bbox``."""
+        if not bbox:
+            raise ProviderInvalidQueryError(user_msg='cube needs a bbox.')
+        with errors():
+            area = box(*bounds(bbox))
+            candidates = self.find(list(area.bounds), 10_000)
+            inside = [f for f in candidates if (xy := point_of(f)) and area.intersects(Point(xy))]
+            return self.collection(inside[: cap(limit)], select_properties, datetime_)
+{% endif %}
+{% endfor %}
+
+    def find(self, bbox: Sequence[float] | None, limit: int) -> list[dict[str, Any]]:
+        """Monitoring locations, inside ``bbox`` when there is one."""
+        return list(self.sites.query(offset=0, limit=limit, bbox=bbox or None)['features'])
+
+    def nearest(self, point: Any) -> dict[str, Any]:
+        """The location nearest a point, within SNAP_RADIUS_KM."""
+        x, y = float(point.x), float(point.y)
+        dlat = SNAP_RADIUS_KM / 111.0
+        dlon = SNAP_RADIUS_KM / max(1e-6, 111.32 * math.cos(math.radians(y)))
+        candidates = self.find([x - dlon, y - dlat, x + dlon, y + dlat], 10_000)
+        best: tuple[float, dict[str, Any]] | None = None
+        for feature in candidates:
+            xy = point_of(feature)
+            if xy is None:
+                continue
+            km = haversine_km((x, y), xy)
+            if km <= SNAP_RADIUS_KM and (best is None or km < best[0]):
+                best = (km, feature)
+        if best is None:
+            raise ProviderNoDataError(
+                user_msg=f'No monitoring location within {SNAP_RADIUS_KM:g} km of that point.'
+            )
+        return best[1]
+
+    def collection(
+        self,
+        locations: Sequence[dict[str, Any]],
+        select: Sequence[str] | None,
+        datetime_: str | None,
+    ) -> dict[str, Any]:
+        """A CoverageCollection: one PointSeries per location and parameter with observations."""
+        pids = parameter_ids(select)
+        start, end = window(datetime_)
+        coverages, used = [], set()
+        for location in locations:
+            xy = point_of(location)
+            if xy is None:
+                continue
+            for pid in pids:
+                series = self.observations.fetch(location['id'], UPSTREAM[pid], start, end)
+                if series:
+                    coverages.append(coverage(location, xy, pid, series))
+                    used.add(pid)
+        if not coverages:
+            raise ProviderNoDataError(user_msg='No observations match this query.')
+        return {
+            'type': 'CoverageCollection',
+            'domainType': 'PointSeries',
+            'parameters': {pid: copy.deepcopy(PARAMETERS[pid]) for pid in pids if pid in used},
+            'coverages': coverages,
+        }
+
+    def __repr__(self) -> str:
+        return '<{{ c.class_name }}>'
