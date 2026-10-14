@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { api } from '../../api/client'
 import type { CodeDetail, CodeProviderType } from '../../api/types'
 import { ErrorSummary } from '../../components/common'
-import { FieldError, ID_RE, described, slugify } from '../shared'
+import { FieldError, ID_RE, defaultClassName as camel, defaultPackageName as pkg, described, slugify } from '../shared'
 
 const TYPES: [CodeProviderType, string][] = [
   ['feature', 'Features (OGC API - Features)'],
@@ -21,22 +21,6 @@ const STYLES: [string, string][] = [
   ['sql', 'A database'],
   ['files', 'Files'],
 ]
-
-function camel(id: string): string {
-  const name = id
-    .split(/[^A-Za-z0-9]+/)
-    .filter(Boolean)
-    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
-    .join('')
-  const safe = /^[A-Za-z]/.test(name) ? name : `P${name}`
-  return safe.endsWith('Provider') ? safe : `${safe}Provider`
-}
-
-function pkg(id: string): string {
-  const name = id.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
-  const safe = /^[a-z_]/.test(name) ? name : `p_${name}`
-  return safe.endsWith('provider') ? safe : `${safe}_provider`
-}
 
 export function NewCodeProvider() {
   const [type, setType] = useState<CodeProviderType>('feature')

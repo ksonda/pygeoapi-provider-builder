@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 
 import { api } from '../api/client'
-import type { CodeSummary } from '../api/types'
+import type { CodeSummary, SpecProviderSummary } from '../api/types'
 
 export interface TemplateCard {
   id: string
@@ -38,12 +38,18 @@ export const TEMPLATES: TemplateCard[] = [
 
 export function TemplatePicker() {
   const [code, setCode] = useState<CodeSummary[]>([])
+  const [specs, setSpecs] = useState<SpecProviderSummary[]>([])
   useEffect(() => {
     api
       .GET('/api/code')
       .then((r) => setCode((r.data as unknown as CodeSummary[]) ?? []))
       .catch(() => undefined)
+    api
+      .GET('/api/workspace')
+      .then((r) => setSpecs((r.data as unknown as SpecProviderSummary[]) ?? []))
+      .catch(() => undefined)
   }, [])
+  const names = Object.fromEntries(TEMPLATES.map((t) => [t.id, t.title]))
   return (
     <div className="home">
       <h1>Create a provider</h1>
@@ -72,6 +78,25 @@ export function TemplatePicker() {
           </p>
         </li>
       </ul>
+      {specs.length > 0 && (
+        <section aria-labelledby="specs-heading">
+          <h2 id="specs-heading">Your template-built providers</h2>
+          <ul>
+            {specs.map((p) => (
+              <li key={p.id}>
+                <a href={`#/configure/new?descriptor=${encodeURIComponent(p.descriptor)}`}>{p.title ?? p.id}</a>
+                <span className="muted small">
+                  {' '}
+                  · {names[p.template] ?? p.template} · version {p.versions[0]} ·{' '}
+                </span>
+                <a className="small" href={`#/eject/${encodeURIComponent(p.id)}`} aria-label={`Eject ${p.title ?? p.id} to code`}>
+                  Eject to code…
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       {code.length > 0 && (
         <section aria-labelledby="code-heading">
           <h2 id="code-heading">Your code-built providers</h2>

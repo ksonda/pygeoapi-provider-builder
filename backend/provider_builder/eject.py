@@ -1,4 +1,4 @@
-"""Eject: a template-built provider as standalone Python (PLAN.md §7.6, ADR-0019).
+"""Eject: a template-built provider as standalone Python (PLAN.md §7.6, ADR-0021).
 
 Eject turns one saved version of a spec into a code-built provider package in
 the J5 code workspace. Its module subclasses pygeoapi's base classes directly
@@ -811,7 +811,6 @@ def sql_context(
         'class_doc': docstring(class_doc),
         'dialect': dialect,
         'dialect_literal': literal(dialect),
-        'dialect_doc': Code('PostgreSQL, psycopg2 style: % is written %%' if pg else 'SQLite'),
         'driver': Code('psycopg2' if pg else 'sqlite3'),
         'like': Code('ILIKE' if pg else 'LIKE'),
         'query': text_block(checked.sql),
@@ -974,11 +973,7 @@ def timeseries_context(
         o = {
             'query': text_block(checked.sql),
             'dialect_literal': literal(dialect),
-            'dialect_doc': Code(
-                'PostgreSQL, psycopg2 style: % is written %%'
-                if dialect == 'postgresql'
-                else 'SQLite'
-            ),
+            'dialect': dialect,
             'params': [
                 (literal(name), Code(bound[name]))
                 for name in TOKENS

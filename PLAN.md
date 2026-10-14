@@ -873,6 +873,30 @@ limits: {max_locations: 50, max_observations: 10000}
   engine return identical results on the fixtures (the mock API, SQLite and
   PostGIS).
 
+*As built in Phase 4* (`backend/provider_builder/eject.py`, `scaffold_templates/eject/`,
+ADR-0021):
+- The code is specialised, not the engine copied in. Constants hold the spec's
+  settings, and only the code paths the spec uses are kept.
+- Plain helper modules are copied in as needed: support, an HTTP client on
+  requests, read-only SQLAlchemy connections, JSONPath.
+- A time-series spec's locations become their own features provider
+  (`locations.py`).
+- `data` and secrets live in the pygeoapi config: the source, and `options`
+  holding `${VAR}`. A placeholder that would end up in code is refused, with
+  its pointer.
+- `POST /api/workspace/{id}/eject` writes a code-built package, and the spec
+  records where it went (`ejected.json`). The UI is `#/eject/<id>`: a one-way
+  warning, then a confirmation.
+- Equivalence: `backend/tests/test_eject.py` compares outcomes call by call:
+  results, or the error class and its user message. It covers every
+  pagination style (local and pushed down), item URLs, auth, failures, SQLite
+  geometries, CO-OPS and SQL time series.
+- `tests/test_compose_integration.py` adds PostGIS, and a stock
+  `geopython/pygeoapi:0.24.0` serving the ejected join and CO-OPS EDR without
+  the runtime package.
+- Not carried over: the engine's address vetting (ADR-0018). The ejected
+  client checks hosts and schemes only.
+
 ### 7.7 Contract harness
 Package `pygeoapi-provider-harness`. It runs inside the sandbox, and its checks
 are pure functions over a loaded provider or an in-process `API`.

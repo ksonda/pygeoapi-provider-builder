@@ -167,6 +167,12 @@ export function CodeWorkspace({ id }: { id: string }) {
           {detail.remote ? ` · Git remote ${detail.remote}` : ''}
         </p>
       )}
+      {detail?.ejected_from && (
+        <p className="notice info">
+          Ejected from the spec <code>{detail.ejected_from.spec}</code>, version {detail.ejected_from.version}, on {detail.ejected_from.date}. The spec's settings are
+          the constants at the top of <code>provider.py</code>; nothing reads the spec any more.
+        </p>
+      )}
       {message && (
         <p className={`notice ${message.kind}`} role={message.kind === 'error' ? 'alert' : 'status'}>
           {message.text}

@@ -92,7 +92,10 @@ RATE_LIMIT = {{ c.obs.rate_limit }}
 TIME_FORMAT = {{ c.obs.time_format }}
 {% else %}
 
-#: The observations query as the Provider Builder checked it ({{ c.obs.dialect_doc }}).
+#: The observations query as the Provider Builder checked it: one read-only SELECT.
+{% if c.obs.dialect == 'postgresql' %}
+#: It's written for psycopg2, so a literal % is %%.
+{% endif %}
 OBSERVATIONS_QUERY = {{ c.obs.query }}
 #: The query's columns for each observation's time and value{% if c.obs.parameter_column %}, and its parameter{% endif %}.
 TIME_COLUMN = {{ c.obs.time_column }}

@@ -153,6 +153,7 @@ class CodeWorkspace:
             'versions': self.versions(pid),
             'remote': git(folder, 'remote', 'get-url', 'origin').stdout.strip() or None,
             'env': self._env_or_empty(pid),
+            'ejected_from': answers.get('ejected_from'),
         }
 
     def _env_or_empty(self, pid: str) -> list[str]:

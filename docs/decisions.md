@@ -584,3 +584,42 @@ copy (`backend/tests/fixtures/pygeoapi.config.yml`).
 
 **Consequences.** An existing checkout keeps its current config as the live
 one. Backups and the publish log live in `.provider-builder/` (gitignored).
+
+## ADR-0021: Eject generates specialised code from the engine's rules
+
+**Context.** PLAN.md §7.6: eject turns a spec into readable Python with no
+dependency on the runtime package, and the result must return what the spec
+returns. Two shapes were possible: copy the engine into the package and feed it
+the spec as constants, or generate code shaped like the spec.
+
+**Decision.** Generate specialised code. One Jinja2 template per spec template
+(`scaffold_templates/eject/`) produces a module whose constants are the spec's
+settings and whose methods keep only the code paths the spec uses: one
+pagination style, the filters it pushes down. Plain helper modules (values and
+filters, an HTTP client on requests, read-only database connections, JSONPath)
+are copied as they are, only the ones a spec needs.
+- A JSONPath of names and indexes compiles to indexing; any other keeps
+  python-jsonpath in strict mode, compiled once at import.
+- SQL runs as the guard regenerated it (ADR-0007), pretty-printed.
+- `data` and secrets go into the pygeoapi config: the source, and `options`
+  holding `${VAR}`. A placeholder anywhere else is refused, since the code
+  would bake it in.
+- Spec values reach the code only as literals proven by `ast.literal_eval`. The
+  template environment's `finalize` refuses any output that isn't marked as
+  built by the generator, so a raw spec value can't slip in. Expressions are
+  concatenations of literals, never f-strings over spec text.
+- A time-series spec's locations become their own features provider
+  (`locations.py`), which the EDR provider calls.
+
+**Consequences.**
+- The output is readable: one file to change, with no dead branches. The cost
+  is that eject has to track the engine. `backend/tests/test_eject.py`
+  compares the two call by call: results, or the error class and its user
+  message. That covers every pagination style, pushed-down and local filters,
+  auth, failures, SQLite geometries, CO-OPS EDR and SQL time series.
+  `tests/test_compose_integration.py` adds PostGIS, and a stock
+  `geopython/pygeoapi:0.24.0` serving ejected packages without the runtime.
+- Ejected code doesn't vet resolved addresses (ADR-0018): it checks hosts and
+  schemes, and the README says to run it where the network is restricted.
+- The spec stays as it was, and `ejected.json` records where it went. The
+  package doesn't go back into the wizard.

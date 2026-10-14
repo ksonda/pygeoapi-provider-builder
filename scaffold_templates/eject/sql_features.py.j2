@@ -34,7 +34,10 @@ from .support import (
     split_terms,
 )
 
-#: The query as the Provider Builder checked it, one read-only SELECT ({{ c.dialect_doc }}).
+#: The query as the Provider Builder checked it: one read-only SELECT.
+{% if c.dialect == 'postgresql' %}
+#: It's written for psycopg2, so a literal % is %%.
+{% endif %}
 QUERY = {{ c.query }}
 #: The query columns the provider reads: the item id, the geometry, then the properties.
 COLUMNS = {{ c.columns }}

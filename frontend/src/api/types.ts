@@ -602,6 +602,33 @@ export interface CodeDetail {
   versions: string[]
   remote: string | null
   env: string[]
+  /** Set when the package was ejected from a template-built provider's spec. */
+  ejected_from: { spec: string; version: string; template: string; date: string } | null
+}
+
+/** A template-built provider (a spec in the workspace), as GET /api/workspace lists it. */
+export interface SpecProviderSummary {
+  id: string
+  title: string | null
+  template: string
+  versions: string[]
+  descriptor: string
+}
+
+export interface Ejection {
+  version: string
+  code_id: string
+  descriptor: string
+  date: string
+}
+
+export interface SpecProviderDetail {
+  id: string
+  descriptor: string
+  template: string
+  ejected: Ejection[]
+  changelog: string
+  versions: { version: string; data: string; spec: string; harness: { ok?: boolean } | null }[]
 }
 
 export interface Diagnostic {

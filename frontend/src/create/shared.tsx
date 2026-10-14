@@ -23,6 +23,24 @@ export interface Meta {
   changes: string
 }
 
+/** The Python class a provider id gets by default (the backend's scaffold.default_class). */
+export function defaultClassName(id: string): string {
+  const name = id
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join('')
+  const safe = /^[A-Za-z]/.test(name) ? name : `P${name}`
+  return safe.endsWith('Provider') ? safe : `${safe}Provider`
+}
+
+/** The Python package a provider id gets by default (the backend's scaffold.default_package). */
+export function defaultPackageName(id: string): string {
+  const name = id.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+  const safe = /^[a-z_]/.test(name) ? name : `p_${name}`
+  return safe.endsWith('provider') ? safe : `${safe}_provider`
+}
+
 export function slugify(text: string): string {
   return text
     .toLowerCase()
@@ -286,6 +304,9 @@ export function SavePanel({ spec, harness, meta, onMeta, saved, onSaved, errors,
           <p>
             <a className="button primary" href={`#/configure/new?descriptor=${encodeURIComponent(saved.descriptor)}`}>
               Publish a collection with this provider →
+            </a>{' '}
+            <a className="button" href={`#/eject/${encodeURIComponent(saved.id)}`}>
+              Eject to code…
             </a>
           </p>
         </div>

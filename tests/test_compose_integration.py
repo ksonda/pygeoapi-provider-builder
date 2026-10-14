@@ -566,3 +566,148 @@ def test_pygeoapi_serves_a_code_built_provider(
         httpx.get(f'{base}/collections/demo-things/items/nope?f=json', timeout=60).status_code
         == 404
     )
+
+
+# --- Mode B: eject (PLAN.md §7.6; PROMPT.md: "Ejected code runs in stock pygeoapi without
+# the runtime package and returns the same results as its spec") --------------------------
+
+
+def test_the_ejected_sql_join_matches_the_engine_on_postgis(
+    demo_sql: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """From the host: native-geometry bbox, timestamps, ILIKE and sorting run in PostGIS."""
+    sys.path.insert(0, str(REPO / 'backend' / 'tests'))
+    from ejecthelp import differences, eject
+    from pygeoapi_spec_providers.sql import SQLFeatureProvider
+
+    text = SQL_SPEC.replace('host: postgis\n    port: 5432', 'host: 127.0.0.1\n    port: 55432')
+    monkeypatch.setenv('PB_READER_PASSWORD', READER['PB_READER_PASSWORD'])
+    spec_file = tmp_path / 'spec.yaml'
+    spec_file.write_text(text, encoding='utf-8')
+    engine = SQLFeatureProvider({'name': 'x', 'type': 'feature', 'data': str(spec_file)})
+    ejected = eject(tmp_path / 'ejected', text, 'pg-join').provider()
+    first = engine.query(limit=1)['features'][0]['id']
+    march = '2026-03-01T00:00:00Z/2026-03-31T00:00:00Z'
+    calls = [
+        ('query', {}),
+        ('query', {'offset': 100, 'limit': 7}),
+        ('query', {'resulttype': 'hits'}),
+        ('query', {'limit': 50, 'bbox': [29.3, -3.5, 29.5, -3.3]}),
+        ('query', {'limit': 50, 'datetime_': march}),
+        ('query', {'limit': 50, 'datetime_': '../2026-01-15T00:00:00Z'}),
+        ('query', {'limit': 50, 'properties': [('waterway', 'river')]}),
+        ('query', {'limit': 50, 'properties': [('natural_channel', 'true')]}),
+        ('query', {'limit': 50, 'properties': [('osm_id', 'abc')]}),
+        ('query', {'limit': 50, 'q': 'muha'}),
+        ('query', {'limit': 50, 'sortby': [{'property': 'name', 'order': '-'}]}),
+        (
+            'query',
+            {
+                'limit': 20,
+                'sortby': [{'property': 'reviewed_at', 'order': '+'}],
+                'properties': [('waterway', 'canal')],
+            },
+        ),
+        ('query', {'limit': 3, 'select_properties': ['name'], 'skip_geometry': True}),
+        ('get', {'identifier': str(first)}),
+        ('get', {'identifier': 'abc'}),
+        ('get', {'identifier': '999999999999'}),
+    ]
+    assert differences(engine, ejected, calls) == []
+
+
+def test_stock_pygeoapi_serves_ejected_providers(
+    service: Service, serve: callable, workdir: Path, demo_sql: None
+) -> None:
+    """geopython/pygeoapi:0.24.0 as published: no runtime package, just the ejected src."""
+    from provider_builder.eject import EjectRequest
+    from pygeoapi_provider_harness import coveragejson
+
+    stock = subprocess.run(
+        ['docker', 'run', '--rm', '--entrypoint', '/venv/bin/python3', IMAGE, '-c',
+         'import pygeoapi_spec_providers'],
+        capture_output=True, text=True, timeout=120,
+    )  # fmt: skip
+    assert stock.returncode != 0 and 'ModuleNotFoundError' in stock.stderr
+
+    service.workspace_save(SQL_SPEC, None, '', None)
+    service.workspace_save(coops_spec_text(), None, '', None)
+    sql = service.eject('bdi-waterways', EjectRequest(id='bdi-waterways-code'))
+    edr = service.eject('coops-water-levels', EjectRequest(id='coops-code'))
+    assert sql['ejected_from']['spec'] == 'bdi-waterways'
+    forms = [
+        {
+            'resource_id': 'waterways-ejected',
+            'resource': {
+                'title': 'Waterways with classes (ejected)',
+                'description': 'The SQL join, as standalone code',
+                'keywords': ['waterways'],
+                'extents': {'spatial': {'bbox': [29.0, -4.5, 30.9, -2.3]}},
+            },
+            'providers': [
+                {
+                    'descriptor': 'created/bdi-waterways-code',
+                    'values': {
+                        'data.host': 'postgis',
+                        'data.port': 5432,
+                        'data.dbname': 'test',
+                        'data.user': 'pb_reader',
+                    },
+                    'secrets': {'data.password': {'env': 'PB_READER_PASSWORD'}},
+                }
+            ],
+        },
+        {
+            'resource_id': 'coops-ejected',
+            'resource': {
+                'title': 'CO-OPS water levels (ejected)',
+                'description': 'The time series, as standalone code',
+                'keywords': ['water level'],
+                'extents': {'spatial': {'bbox': [-160, 20, -70, 50]}},
+            },
+            'providers': [
+                {
+                    'descriptor': 'created/coops-code',
+                    'values': {
+                        'data': 'http://mockapi:8000/coops/mdapi/prod/webapi/stations.json'
+                    },
+                }
+            ],
+        },
+    ]
+    config = workdir / 'config' / 'pygeoapi.config.yml'
+    for raw in forms:
+        form = FormState.model_validate(raw)
+        probe = service.probe(form, 0, READER)  # in the sandbox, with the descriptor's egress
+        assert probe['ok'], probe.get('explanation')
+        exported = service.export(form, 't')
+        assert not exported.validation.blocking, exported.validation.findings
+        config.write_text(exported.merged_yaml, encoding='utf-8')
+    paths = ':'.join(f'/specs/{d["id"]}/src' for d in (sql, edr))
+    base = serve(
+        config.read_text(encoding='utf-8'),
+        {'PYTHONPATH': paths, **READER},
+        volumes=(f'{workdir / "providers"}:/specs:ro',),
+    )
+    url = f'{base}/collections/waterways-ejected/items'
+    items = httpx.get(f'{url}?f=json&limit=2', timeout=60).json()
+    assert items['numberMatched'] == 14768 and len(items['features']) == 2
+    rivers = httpx.get(f'{url}?f=json&waterway=river&limit=1', timeout=60).json()
+    assert rivers['numberMatched'] == 436
+    march = httpx.get(
+        f'{url}?f=json&datetime=2026-03-01T00:00:00Z/2026-03-31T00:00:00Z', timeout=60
+    )
+    assert march.json()['numberMatched'] == 88 + 157
+    assert httpx.get(f'{url}/{items["features"][0]["id"]}?f=json', timeout=60).status_code == 200
+
+    url = f'{base}/collections/coops-ejected'
+    collection = httpx.get(f'{url}?f=json', timeout=60).json()
+    assert set(collection['data_queries']) == {'locations', 'position', 'area', 'cube'}
+    assert len(httpx.get(f'{url}/locations?f=json', timeout=60).json()['features']) == 6
+    day = 'datetime=2026-10-01T00:00:00Z/2026-10-02T00:00:00Z'
+    one = httpx.get(f'{url}/locations/9414290?f=json&{day}&parameter-name=water_level', timeout=60)
+    assert one.status_code == 200, one.text
+    assert coveragejson.problems(one.json()) == []
+    assert one.json()['coverages'][0]['ranges']['water_level']['shape'] == [241]
+    far = httpx.get(f'{url}/position?coords=POINT(-100 40)&f=json&{day}', timeout=60)
+    assert far.status_code == 204
