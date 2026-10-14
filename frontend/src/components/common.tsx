@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 
 import type { Finding } from '../api/client'
 import type { Explanation, FeatureCollection } from '../api/types'
+import { accessibleHighlight } from './highlight'
 
 function usePrefersDark(): boolean {
   const query = '(prefers-color-scheme: dark)'
@@ -23,7 +24,7 @@ export function YamlView({ text, label }: { text: string; label: string }) {
     <div className="yaml-view">
       <CodeMirror
         value={text}
-        extensions={[yaml(), EditorView.lineWrapping, EditorView.contentAttributes.of({ 'aria-label': label, 'aria-readonly': 'true' })]}
+        extensions={[yaml(), accessibleHighlight(dark), EditorView.lineWrapping, EditorView.contentAttributes.of({ 'aria-label': label, 'aria-readonly': 'true' })]}
         theme={dark ? 'dark' : 'light'}
         editable={false}
         readOnly

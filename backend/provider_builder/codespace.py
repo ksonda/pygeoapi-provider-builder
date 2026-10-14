@@ -150,7 +150,14 @@ class CodeWorkspace:
             'changed': sorted({line[3:].strip() for line in status if len(line) > 3}),
             'versions': self.versions(pid),
             'remote': git(folder, 'remote', 'get-url', 'origin').stdout.strip() or None,
+            'env': self._env_or_empty(pid),
         }
+
+    def _env_or_empty(self, pid: str) -> list[str]:
+        try:
+            return self.env_names(pid)
+        except WorkspaceError:
+            return []
 
     # --- files
 

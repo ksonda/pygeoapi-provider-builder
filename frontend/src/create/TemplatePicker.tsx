@@ -1,4 +1,9 @@
-// Mode B's first choice (PLAN.md §7): which template to build a provider from.
+// Mode B's first choice (PLAN.md §7): which template to build a provider from, or Python.
+import { useEffect, useState } from 'react'
+
+import { api } from '../api/client'
+import type { CodeSummary } from '../api/types'
+
 export interface TemplateCard {
   id: string
   href: string
@@ -32,6 +37,13 @@ export const TEMPLATES: TemplateCard[] = [
 ]
 
 export function TemplatePicker() {
+  const [code, setCode] = useState<CodeSummary[]>([])
+  useEffect(() => {
+    api
+      .GET('/api/code')
+      .then((r) => setCode((r.data as unknown as CodeSummary[]) ?? []))
+      .catch(() => undefined)
+  }, [])
   return (
     <div className="home">
       <h1>Create a provider</h1>
@@ -49,7 +61,33 @@ export function TemplatePicker() {
             </p>
           </li>
         ))}
+        <li className="card">
+          <h2 className="h4">Write Python</h2>
+          <p className="muted small">→ any OGC API pygeoapi serves</p>
+          <p>A package with every method pygeoapi calls, for features, records, coverages, EDR, tiles or maps, and the contract checks the builder runs.</p>
+          <p className="card-foot">
+            <a className="button" href="#/create/code" aria-label="Start a provider in Python">
+              Start
+            </a>
+          </p>
+        </li>
       </ul>
+      {code.length > 0 && (
+        <section aria-labelledby="code-heading">
+          <h2 id="code-heading">Your code-built providers</h2>
+          <ul>
+            {code.map((c) => (
+              <li key={c.id}>
+                <a href={`#/code/${encodeURIComponent(c.id)}`}>{c.title ?? c.id}</a>
+                <span className="muted small">
+                  {' '}
+                  · {c.provider_type} · {c.versions.length ? `version ${c.versions[0]}` : 'no version yet'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   )
 }

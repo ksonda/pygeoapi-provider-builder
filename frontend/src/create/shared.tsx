@@ -94,34 +94,40 @@ const LEVELS: [string, string][] = [
 ]
 
 interface HarnessProps extends CreateStepProps {
-  spec: object
-  secrets: Record<string, string>
+  /** A spec to check (the templates), or ``start`` for another kind of job (code-built providers). */
+  spec?: object
+  secrets?: Record<string, string>
+  start?: () => Promise<{ job_id: string }>
+  /** Run the checks as soon as the panel shows (the template wizards' Check step). */
+  auto?: boolean
   result: ModeBResult<HarnessData> | null
   onResult: (r: ModeBResult<HarnessData> | null) => void
 }
 
-export function HarnessPanel({ spec, secrets, result, onResult, errors, showErrors }: HarnessProps) {
+export function HarnessPanel({ spec, secrets, start, auto = true, result, onResult, errors, showErrors }: HarnessProps) {
   const [busy, setBusy] = useState(false)
-  const specKey = JSON.stringify(spec)
-  const secretsKey = JSON.stringify(secrets)
+  const specKey = JSON.stringify(spec ?? null)
+  const secretsKey = JSON.stringify(secrets ?? {})
   const run = useCallback(async () => {
     setBusy(true)
     try {
-      const job = unwrap(
-        await api.POST('/api/specs/harness', {
-          body: { spec: JSON.parse(specKey) as Record<string, unknown>, test_secrets: JSON.parse(secretsKey) as Record<string, string>, levels: ['L1', 'L2', 'L3'] },
-        }),
-      )
+      const job = start
+        ? await start()
+        : unwrap(
+            await api.POST('/api/specs/harness', {
+              body: { spec: JSON.parse(specKey) as Record<string, unknown>, test_secrets: JSON.parse(secretsKey) as Record<string, string>, levels: ['L1', 'L2', 'L3'] },
+            }),
+          )
       onResult(await waitForJob<ModeBResult<HarnessData>>(job.job_id))
     } catch (e) {
       onResult({ ok: false, explanation: { code: 'client', message: String(e) } })
     } finally {
       setBusy(false)
     }
-  }, [specKey, secretsKey, onResult])
+  }, [specKey, secretsKey, start, onResult])
 
   useEffect(() => {
-    if (result) return
+    if (result || !auto) return
     const t = setTimeout(() => void run(), 0)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -163,8 +169,8 @@ export function HarnessPanel({ spec, secrets, result, onResult, errors, showErro
         </>
       )}
       <p>
-        <button type="button" onClick={() => void run()} disabled={busy}>
-          Run the checks again
+        <button type="button" className={result ? '' : 'primary'} onClick={() => void run()} disabled={busy}>
+          {result ? 'Run the checks again' : 'Run the contract checks'}
         </button>
       </p>
     </>

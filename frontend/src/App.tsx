@@ -9,6 +9,8 @@ import { SqlProvider } from './create/sql/state'
 import { SqlWizard } from './create/sql/SqlWizard'
 import { CreateProvider } from './create/state'
 import { TemplatePicker } from './create/TemplatePicker'
+import { CodeWorkspace } from './create/code/CodeWorkspace'
+import { NewCodeProvider } from './create/code/NewCodeProvider'
 import { TsProvider } from './create/timeseries/state'
 import { TimeseriesWizard } from './create/timeseries/TimeseriesWizard'
 import { WizardProvider } from './wizard/state'
@@ -124,7 +126,16 @@ export function App() {
 
   const inWizard = hash.startsWith('#/configure')
   const inCreate = hash.startsWith('#/create')
-  const createRoute = hash.startsWith('#/create/http') ? 'http' : hash.startsWith('#/create/sql') ? 'sql' : hash.startsWith('#/create/timeseries') ? 'timeseries' : 'pick'
+  const createRoute = hash.startsWith('#/create/http')
+    ? 'http'
+    : hash.startsWith('#/create/sql')
+      ? 'sql'
+      : hash.startsWith('#/create/timeseries')
+        ? 'timeseries'
+        : hash.startsWith('#/create/code')
+          ? 'code'
+          : 'pick'
+  const codeId = hash.startsWith('#/code/') ? decodeURIComponent(hash.slice('#/code/'.length).split('?')[0] ?? '') : null
   const inConfigs = hash.startsWith('#/configs')
   const query = new URLSearchParams(hash.split('?')[1] ?? '')
   const descriptor = query.get('descriptor')
@@ -152,7 +163,7 @@ export function App() {
       <main id="main">
         {error && <p className="notice error">{error}</p>}
         {inConfigs && <Configs initialTarget={query.get('target')} />}
-        {!inWizard && !inCreate && !inConfigs && (
+        {!inWizard && !inCreate && !inConfigs && !codeId && (
           <Home
             health={health}
             settings={settings}
@@ -186,6 +197,8 @@ export function App() {
             <TimeseriesWizard />
           </TsProvider>
         )}
+        {inCreate && createRoute === 'code' && <NewCodeProvider />}
+        {codeId && <CodeWorkspace key={codeId} id={codeId} />}
         {inWizard && settings && !settings.targets.length && <p className="notice error">No publish targets are configured.</p>}
       </main>
     </>

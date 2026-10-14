@@ -575,3 +575,40 @@ export type ObservationSampleResult = Omit<ModeBResult<SampleData & SqlSampleDat
   suggestions?: ObservationSuggestions & Partial<SqlSuggestions>
   request?: { url: string; query: Record<string, string> }
 }
+
+// ------------------------------------------------------------------ Mode B (J5): the code workspace
+
+export type CodeProviderType = 'feature' | 'record' | 'coverage' | 'edr' | 'tile' | 'map'
+
+export interface CodeSummary {
+  id: string
+  title: string | null
+  provider_type: CodeProviderType | null
+  versions: string[]
+  descriptor: string
+}
+
+export interface CodeDetail {
+  id: string
+  title: string | null
+  provider_type: CodeProviderType | null
+  package: string
+  class_name: string
+  plugin: string
+  descriptor: string
+  python_path: string
+  files: string[]
+  changed: string[]
+  versions: string[]
+  remote: string | null
+  env: string[]
+}
+
+export interface Diagnostic {
+  code: string | null
+  message: string
+  line: number | null
+  column: number | null
+  end_line: number | null
+  fixable: boolean
+}

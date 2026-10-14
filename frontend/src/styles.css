@@ -271,3 +271,12 @@ ol.publish-steps > li.error strong { color: var(--err); }
 .code-editor .cm-editor.cm-focused { outline: 2px solid var(--accent); outline-offset: -2px; }
 .query-view { border: 1px solid var(--border); border-radius: var(--radius); padding: 0.6rem 0.8rem; white-space: pre-wrap; max-height: 14rem; overflow: auto; background: var(--surface); }
 .template-cards .card h2 { font-size: 1.05rem; margin: 0 0 0.25rem; }
+
+/* J5: the code workspace */
+.code-layout { display: grid; grid-template-columns: 16rem minmax(0, 1fr); gap: 1rem; align-items: start; }
+.code-files ul { list-style: none; padding: 0; margin: 0; }
+.code-files li { margin: 0.15rem 0; }
+.code-files button.link { text-align: left; font-family: var(--mono); font-size: 0.85rem; word-break: break-all; }
+.code-files button.current { font-weight: 700; text-decoration: underline; }
+.button-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+@media (max-width: 760px) { .code-layout { grid-template-columns: minmax(0, 1fr); } }

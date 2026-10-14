@@ -5,7 +5,9 @@ import { yaml } from '@codemirror/lang-yaml'
 import CodeMirror, { EditorView } from '@uiw/react-codemirror'
 import { useEffect, useMemo, useState } from 'react'
 
-export type CodeLanguage = 'sql-postgresql' | 'sql-sqlite' | 'python' | 'yaml'
+import { accessibleHighlight } from './highlight'
+
+export type CodeLanguage = 'sql-postgresql' | 'sql-sqlite' | 'python' | 'yaml' | 'text'
 
 function usePrefersDark(): boolean {
   const query = '(prefers-color-scheme: dark)'
@@ -35,15 +37,17 @@ export function CodeEditor({ id, value, language, label, onChange, describedBy, 
   const extensions = useMemo(() => {
     const lang =
       language === 'python'
-        ? python()
+        ? [python()]
         : language === 'yaml'
-          ? yaml()
-          : sql({ dialect: language === 'sql-sqlite' ? SQLite : PostgreSQL, upperCaseKeywords: true })
+          ? [yaml()]
+          : language === 'text'
+            ? []
+            : [sql({ dialect: language === 'sql-sqlite' ? SQLite : PostgreSQL, upperCaseKeywords: true })]
     const attrs: Record<string, string> = { id, 'aria-label': label, 'aria-multiline': 'true' }
     if (describedBy) attrs['aria-describedby'] = describedBy
     if (invalid) attrs['aria-invalid'] = 'true'
-    return [lang, EditorView.lineWrapping, EditorView.contentAttributes.of(attrs)]
-  }, [language, id, label, describedBy, invalid])
+    return [...lang, accessibleHighlight(dark), EditorView.lineWrapping, EditorView.contentAttributes.of(attrs)]
+  }, [language, id, label, describedBy, invalid, dark])
   return (
     <div className={`code-editor${invalid ? ' invalid' : ''}`}>
       <CodeMirror value={value} extensions={extensions} theme={dark ? 'dark' : 'light'} onChange={onChange} minHeight={minHeight} basicSetup={{ foldGutter: false }} />
