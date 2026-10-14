@@ -418,7 +418,12 @@ class TargetOps:
         for p in req.form.providers if req.form else []:
             secrets |= self.svc._secrets(p, req.test_secrets)
         out = self.svc.runner.run(
-            {'kind': 'openapi', 'config_yaml': after, 'document': target.openapi is not None},
+            {
+                'kind': 'openapi',
+                'config_yaml': after,
+                'document': target.openapi is not None,
+                'python_path': self.svc.python_path_for_config(after),
+            },
             secrets,
             egress=self.svc.egress_for_config(after, secrets),
             timeout_s=max(self.settings.sandbox.timeout_s, 120),

@@ -18,6 +18,7 @@ from . import __version__
 from .catalog import CatalogError
 from .fs import PathError
 from .render import FormState, ProviderState, RenderResult
+from .scaffold import ScaffoldRequest
 from .security import GuardMiddleware
 from .service import ExportResult, ProbeSummary, Service, ValidateResult
 from .settings import Settings, load_settings
@@ -117,6 +118,31 @@ class SaveRequest(BaseModel):
     version: str | None = None
     changes: str = ''
     harness: dict[str, Any] | None = Field(default=None, description='The checklist to keep')
+
+
+class FileWrite(BaseModel):
+    content: str
+
+
+class CodeText(BaseModel):
+    path: str
+    content: str
+
+
+class CodeHarnessRequest(TestSecrets):
+    levels: list[Literal['L1', 'L2', 'L3']] = ['L1', 'L2', 'L3']
+
+
+class CodeVersionRequest(BaseModel):
+    version: str
+    changes: str = ''
+    harness: dict[str, Any] | None = Field(default=None, description='The passing checklist')
+
+
+class CodeImportRequest(BaseModel):
+    id: str
+    git_url: str | None = None
+    folder: str | None = Field(default=None, description='A package folder on this computer')
 
 
 class ImportRequest(BaseModel):
@@ -425,6 +451,69 @@ def create_app(
     @app.post('/api/workspace', tags=['mode-b'])
     def workspace_save(req: SaveRequest) -> dict[str, Any]:
         return svc.workspace_save(req.spec, req.version, req.changes, req.harness)
+
+    # ------------------------------------------------------------ mode B: code (J5)
+
+    @app.get('/api/code', tags=['mode-b'])
+    def code_list() -> list[dict[str, Any]]:
+        return svc.code.providers()
+
+    @app.post('/api/code', tags=['mode-b'])
+    def code_create(req: ScaffoldRequest) -> dict[str, Any]:
+        return svc.code_create(req)
+
+    @app.post('/api/code/import', tags=['mode-b'])
+    def code_import(req: CodeImportRequest) -> dict[str, Any]:
+        if req.git_url:
+            detail = svc.code.import_git(req.git_url, req.id)
+        elif req.folder:
+            detail = svc.code.import_folder(Path(req.folder), req.id)
+        else:
+            raise HTTPException(400, 'Give a git_url or a folder')
+        svc.reload_catalog()
+        return detail
+
+    @app.get('/api/code/{provider_id}', tags=['mode-b'])
+    def code_detail(provider_id: str) -> dict[str, Any]:
+        return svc.code.detail(provider_id)
+
+    @app.get('/api/code/{provider_id}/files/{path:path}', tags=['mode-b'])
+    def code_read(provider_id: str, path: str) -> dict[str, Any]:
+        return {'path': path, 'content': svc.code.read(provider_id, path)}
+
+    @app.put('/api/code/{provider_id}/files/{path:path}', tags=['mode-b'])
+    def code_write(provider_id: str, path: str, req: FileWrite) -> dict[str, Any]:
+        out = svc.code.write_file(provider_id, path, req.content)
+        if path.endswith('descriptor.yaml'):
+            svc.reload_catalog()
+        return out
+
+    @app.post('/api/code/{provider_id}/lint', tags=['mode-b'])
+    def code_lint(provider_id: str, req: CodeText) -> list[dict[str, Any]]:
+        return svc.code.lint(provider_id, req.path, req.content)
+
+    @app.post('/api/code/{provider_id}/format', tags=['mode-b'])
+    def code_format(provider_id: str, req: CodeText) -> dict[str, Any]:
+        return {'path': req.path, 'content': svc.code.format(provider_id, req.path, req.content)}
+
+    @app.post('/api/code/{provider_id}/harness', status_code=202, tags=['mode-b'])
+    def code_harness(provider_id: str, req: CodeHarnessRequest) -> JobCreated:
+        svc.code.folder(provider_id)
+        job = svc.jobs.submit(
+            'code-harness',
+            lambda: svc.code_harness(provider_id, req.test_secrets, list(req.levels)),
+        )
+        return JobCreated(job_id=job.id)
+
+    @app.post('/api/code/{provider_id}/versions', tags=['mode-b'])
+    def code_version(provider_id: str, req: CodeVersionRequest) -> dict[str, Any]:
+        return svc.code_save(provider_id, req.version, req.changes, req.harness)
+
+    @app.post('/api/code/{provider_id}/pull', tags=['mode-b'])
+    def code_pull(provider_id: str) -> dict[str, Any]:
+        detail = svc.code.pull(provider_id)
+        svc.reload_catalog()
+        return detail
 
     @app.get('/api/jobs/{job_id}', tags=['jobs'])
     def job(job_id: str) -> JobInfo:

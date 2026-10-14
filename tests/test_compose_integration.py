@@ -483,3 +483,86 @@ def test_pygeoapi_serves_coops_water_levels_as_edr(
         timeout=60,
     )
     assert long.status_code == 400 and 'P31D' in long.text
+
+
+# --- Mode B: a code-built provider (J5) -----------------------------------------------------
+
+
+def implemented_code_provider(service: Service) -> str:
+    sys.path.insert(0, str(REPO / 'backend' / 'tests'))
+    from provider_builder.scaffold import ScaffoldRequest
+    from test_codespace import IMPLEMENTED, ITEMS
+
+    service.code_create(
+        ScaffoldRequest(
+            provider_type='feature',
+            id='demo-items',
+            title='Demo items',
+            style='files',
+            class_name='DemoItemsProvider',
+        )
+    )
+    code = service.code
+    code.write_file('demo-items', 'tests/fixtures/items.json', json.dumps(ITEMS))
+    code.write_file('demo-items', 'src/demo_items_provider/provider.py', IMPLEMENTED)
+    snippet = code.read('demo-items', 'examples/pygeoapi-config.snippet.yml').replace(
+        '/data/items.json', '/specs/demo-items/tests/fixtures/items.json'
+    )
+    code.write_file('demo-items', 'examples/pygeoapi-config.snippet.yml', snippet)
+    return '/specs/demo-items/tests/fixtures/items.json'
+
+
+def test_a_code_built_provider_passes_the_harness_in_the_sandbox(service: Service) -> None:
+    implemented_code_provider(service)
+    out = service.code_harness('demo-items', {}, ['L1', 'L2', 'L3'])
+    assert out['ok'], out.get('explanation') or out.get('problems')
+    assert out['egress'] == []  # it declares no hosts, so it gets no network
+    assert out['result']['ok'], [c for c in out['result']['checks'] if c['status'] == 'fail']
+    checks = {c['id']: c['status'] for c in out['result']['checks']}
+    assert checks['L3.server'] == 'pass'
+
+
+def test_pygeoapi_serves_a_code_built_provider(
+    service: Service, serve: callable, workdir: Path
+) -> None:
+    data = implemented_code_provider(service)
+    form = FormState.model_validate(
+        {
+            'resource_id': 'demo-things',
+            'resource': {
+                'title': 'Items',
+                'description': 'A code-built provider',
+                'keywords': ['demo'],
+                'extents': {'spatial': {'bbox': [0, 0, 10, 10]}},
+            },
+            'providers': [{'descriptor': 'created/demo-items', 'values': {'data': data}}],
+        }
+    )
+    probe = service.probe(form, 0, {})
+    assert probe['ok'], probe.get('explanation')
+    exported = service.export(form, 't')
+    assert not exported.validation.blocking, exported.validation.findings
+    # Like the dev stack: the workspace at /specs, and sitecustomize puts each src on the path.
+    base = serve(
+        exported.merged_yaml,
+        {'PYTHONPATH': '/opt/runtime:/opt/devpath'},
+        image=STABLE_TAG,
+        volumes=(
+            f'{REPO / "runtime" / "src"}:/opt/runtime:ro',
+            f'{REPO / "docker" / "pygeoapi" / "devpath"}:/opt/devpath:ro',
+            f'{workdir / "providers"}:/specs:ro',
+        ),
+        args=('--user', 'root', '--entrypoint', '/entrypoint.sh'),
+    )
+    items = httpx.get(f'{base}/collections/demo-things/items?f=json&limit=3', timeout=60).json()
+    assert items['numberMatched'] == 8 and [f['id'] for f in items['features']] == [
+        'i1',
+        'i2',
+        'i3',
+    ]
+    one = httpx.get(f'{base}/collections/demo-things/items/i5?f=json', timeout=60)
+    assert one.status_code == 200 and one.json()['properties']['value'] == 5
+    assert (
+        httpx.get(f'{base}/collections/demo-things/items/nope?f=json', timeout=60).status_code
+        == 404
+    )

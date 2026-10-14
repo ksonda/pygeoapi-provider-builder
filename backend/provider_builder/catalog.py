@@ -86,8 +86,10 @@ class Catalog:
         files: list[Path] = []
         for d in dirs:
             files += sorted(p for p in d.rglob('*.yaml') if 'schema' not in p.parts)
-        if created is not None and created.is_dir():  # workspace/providers/<id>/descriptor.yaml
+        if created is not None and created.is_dir():
+            # Template-built: <id>/descriptor.yaml; code-built: <id>/src/<package>/descriptor.yaml
             files += sorted(created.glob('*/descriptor.yaml'))
+            files += sorted(created.glob('*/src/*/descriptor.yaml'))
         raws = []
         for path in files:
             try:

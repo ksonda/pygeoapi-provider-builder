@@ -24,7 +24,7 @@ services:
       - "127.0.0.1:5080:80"   # not 5000: macOS AirPlay Receiver listens there
     environment:
       PYGEOAPI_CONFIG: /config/pygeoapi.config.yml
-      PYTHONPATH: /opt/runtime
+      PYTHONPATH: /opt/runtime:/opt/devpath   # devpath: code-built providers' src (sitecustomize.py)
       PYGEOAPI_SPEC_PRIVATE_HOSTS: mockapi   # the mock API has a private address
     env_file:
       - ./pygeoapi/pygeoapi.env        # secrets for the dev stack (gitignored; created by make)
@@ -32,6 +32,7 @@ services:
       - ./pygeoapi:/config:ro          # a directory mount, so atomic file replaces are seen
       - ./data:/data                   # writable: pygeoapi's GeoPackage provider writes to .gpkg
       - ../runtime/src:/opt/runtime:ro
+      - ./pygeoapi/devpath:/opt/devpath:ro
       - ../workspace/providers:/specs:ro
     depends_on:
       postgis:

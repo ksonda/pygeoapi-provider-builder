@@ -74,8 +74,11 @@ class ExportResult(BaseModel):
 
 class Service:
     def __init__(self, settings: Settings, runner: Runner | None = None):
+        from .codespace import CodeWorkspace
+
         self.settings = settings
         self.workspace = ProviderWorkspace(settings.workspace)
+        self.code = CodeWorkspace(settings.workspace)
         self.workspace.refresh()  # descriptors are generated: keep them current
         self.catalog = Catalog(settings.catalogs, settings.workspace.host_path)
         self.runner = runner or make_runner(
@@ -190,6 +193,29 @@ class Service:
         spec = self._spec_doc(pdef) if rule and rule.get('kind') == 'spec' else None
         return egress.for_provider(pdef, rule, secrets, spec)
 
+    def python_path_for(self, d: Descriptor | None) -> list[str]:
+        """A code-built provider's src folder (server path), for jobs that load it."""
+        if d is None or d.raw.get('origin') != 'created':
+            return []
+        ws = self.settings.workspace
+        try:
+            rel = d.path.resolve().relative_to(ws.host_path.resolve())
+        except ValueError:
+            return []
+        parts = rel.parts  # <id>/src/<package>/descriptor.yaml for code-built providers
+        if len(parts) == 4 and parts[1] == 'src':
+            return [f'{ws.server_path.rstrip("/")}/{parts[0]}/src']
+        return []
+
+    def python_path_for_config(self, text: str) -> list[str]:
+        config = yaml.safe_load(text) or {}
+        found: list[str] = []
+        for resource in (config.get('resources') or {}).values():
+            for pdef in (resource or {}).get('providers') or []:
+                if isinstance(pdef, dict) and isinstance(pdef.get('name'), str):
+                    found += self.python_path_for(self.catalog.by_plugin(pdef['name']))
+        return list(dict.fromkeys(found))
+
     def egress_for_config(self, text: str, secrets: dict[str, str]) -> set[egress.HostPort]:
         """Every provider in a config: ``openapi generate`` loads them all (notes §6.2)."""
         config = yaml.safe_load(text) or {}
@@ -289,6 +315,7 @@ class Service:
             'provider_index': index,
             'limit': 10,
             'copy_data': bool(probe_spec.get('copy_data')),
+            'python_path': self.python_path_for(d),
         }
         secrets = self._secrets(p, test_secrets)
         out = self.runner.run(job, secrets, egress=self.egress_for(pdef, d, secrets))
@@ -302,7 +329,11 @@ class Service:
         for p in form.providers:
             secrets |= self._secrets(p, test_secrets)
         out = self.runner.run(
-            {'kind': 'openapi', 'config_yaml': merged},
+            {
+                'kind': 'openapi',
+                'config_yaml': merged,
+                'python_path': self.python_path_for_config(merged),
+            },
             secrets,
             egress=self.egress_for_config(merged, secrets),
         )
@@ -743,5 +774,64 @@ class Service:
     ) -> dict[str, Any]:
         text = self.spec_text(spec)
         saved = self.workspace.save(text, version=version, changes=changes, harness=harness)
+        self.reload_catalog()
+        return saved
+
+    # ------------------------------------------------------------ Mode B: code
+
+    def code_create(self, req: Any) -> dict[str, Any]:
+        detail = self.code.create(req)
+        self.reload_catalog()
+        return detail
+
+    def code_harness(
+        self, pid: str, test_secrets: dict[str, str], levels: list[str] | None = None
+    ) -> dict[str, Any]:
+        """The contract checks on a code-built provider, against its example config resource."""
+        text = self.code.example_resource(pid)
+        try:
+            resource = yaml.safe_load(text)
+        except yaml.YAMLError as err:
+            return {
+                'ok': False,
+                'problems': [
+                    vars(Problem('/examples', f"The example config doesn't parse: {err}"))
+                ],
+            }
+        if not isinstance(resource, dict) or len(resource) != 1:
+            return {
+                'ok': False,
+                'problems': [
+                    vars(
+                        Problem('/examples', 'The example config must hold exactly one resource.')
+                    )
+                ],
+            }
+        ((_rid, body),) = resource.items()
+        pdef = (body.get('providers') or [{}])[0]
+        descriptor = self.code.descriptor(pid)
+        capabilities: dict[str, Any] | None = descriptor.get('capabilities')
+        if descriptor.get('provider_type') == 'edr':
+            capabilities = {'query_types': descriptor.get('query_types') or []}
+        names = set(self.code.env_names(pid))
+        secrets = {k: v for k, v in test_secrets.items() if k in names}
+        out = self.runner.run(
+            {
+                'kind': 'harness',
+                'resource_yaml': text,
+                'levels': levels or ['L1', 'L2', 'L3'],
+                'capabilities': capabilities,
+                'python_path': [self.code.python_path(pid)],
+            },
+            secrets,
+            egress=egress.for_provider(pdef, descriptor.get('egress'), secrets),
+            timeout_s=max(self.settings.sandbox.timeout_s, 180),
+        )
+        return self._mode_b_outcome(out)
+
+    def code_save(
+        self, pid: str, version: str, changes: str, harness: dict[str, Any] | None
+    ) -> dict[str, Any]:
+        saved = self.code.save_version(pid, version, changes, harness)
         self.reload_catalog()
         return saved

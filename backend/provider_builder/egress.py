@@ -5,8 +5,9 @@ request: the connection settings of SQL providers, and the URLs a spec
 declares. ``${VAR}`` placeholders are filled from the job's test secrets, so a
 connection string kept in a secret still yields its host.
 
-A descriptor opts in with an ``egress`` rule: ``{kind: sql, default_port: 5432}``
-or ``{kind: spec}``. Providers without one get no network at all.
+A descriptor opts in with an ``egress`` rule: ``{kind: sql, default_port: 5432}``,
+``{kind: spec}``, or ``{kind: hosts, hosts: [api.example.gov:443]}`` (code-built
+providers declare what they reach). Providers without one get no network at all.
 """
 
 from __future__ import annotations
@@ -131,4 +132,10 @@ def for_provider(
         return sql(fill(pdef.get('data'), secrets), int(rule.get('default_port', 5432)))
     if kind == 'spec' and spec_doc is not None:
         return spec(fill(spec_doc, secrets))
+    if kind == 'hosts':  # a code-built provider's declared host:port pairs
+        found: set[HostPort] = set()
+        for entry in rule.get('hosts') or []:
+            host, _, port = str(entry).rpartition(':')
+            found |= _hostport(host, port)
+        return found
     return set()

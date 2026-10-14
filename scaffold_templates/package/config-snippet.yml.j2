@@ -1,0 +1,33 @@
+# Add under resources: in your pygeoapi config.
+{{ id }}:
+  type: collection
+  title: {{ title | json }}
+  description: {{ description | json }}
+  keywords:
+    - {{ type }}
+  extents:
+    spatial:
+      bbox: [-180, -90, 180, 90]
+  providers:
+    - type: {{ type }}
+      name: {{ pkg }}.provider.{{ class_name }}
+      data: {{ data_example | json }}
+{%- if type == 'tile' %}
+      options:
+        zoom:
+          min: 0
+          max: 15
+        schemes:
+          - WebMercatorQuad
+      format:
+        name: pbf
+        mimetype: application/vnd.mapbox-vector-tile
+{%- elif type == 'map' %}
+      format:
+        name: png
+        mimetype: image/png
+{%- elif type == 'coverage' %}
+      format:
+        name: GTiff
+        mimetype: application/tiff
+{%- endif %}

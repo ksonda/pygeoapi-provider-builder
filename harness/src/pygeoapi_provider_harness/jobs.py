@@ -43,12 +43,15 @@ def _materialize(job: dict[str, Any], key: str = 'resource_yaml') -> str:
     """The job's YAML text, with ``@files@`` pointing at the job's own files.
 
     ``job['files']`` maps flat file names to text, for example an unsaved spec
-    (``data: @files@/spec.yaml``) or a provider module under test. They're written
-    to a fresh temporary folder; ``job['python_path']`` entries (``@files@``) are
-    added to ``sys.path``. This runs only inside the sandbox.
+    (``data: @files@/spec.yaml``). They're written to a fresh temporary folder.
+    ``job['python_path']`` entries are added to ``sys.path``: ``@files@`` paths,
+    or a code-built provider's ``src`` folder in the read-only workspace mount
+    (remapped like other server paths for the subprocess runner). This runs only
+    inside the sandbox.
     """
     text = str(job[key])
     files = job.get('files') or {}
+    workdir = None
     if files:
         workdir = job.setdefault('_files_dir', tempfile.mkdtemp(prefix='job-files-'))
         for name, content in files.items():
@@ -56,11 +59,15 @@ def _materialize(job: dict[str, Any], key: str = 'resource_yaml') -> str:
                 raise ValueError(f'Invalid job file name {name!r}')
             Path(workdir, name).write_text(content, encoding='utf-8')
         text = text.replace(FILES_PLACEHOLDER, workdir)
-        # Code that comes with the job (a provider under test) is importable from there.
-        for entry in job.get('python_path') or []:
-            path = str(entry).replace(FILES_PLACEHOLDER, workdir)
-            if path not in sys.path:
-                sys.path.insert(0, path)
+    for entry in job.get('python_path') or []:
+        path = str(entry)
+        if FILES_PLACEHOLDER in path:
+            if workdir is None:
+                continue
+            path = path.replace(FILES_PLACEHOLDER, workdir)
+        path = str(remap_paths(path, job.get('path_map', [])))
+        if path not in sys.path:
+            sys.path.insert(0, path)
     return text
 
 

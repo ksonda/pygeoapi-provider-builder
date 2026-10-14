@@ -1,0 +1,32 @@
+{#- Shared helpers for the backend style; included by every provider template. -#}
+{%- if style == 'rest' %}
+
+
+def fetch_json(url: str, params: dict[str, Any] | None = None, timeout: float = 20) -> Any:
+    """GET JSON from the source API, as a pygeoapi error when it fails.
+
+    Declare the API's host and port in descriptor.yaml (egress.hosts): the
+    Provider Builder's sandbox reaches only declared hosts.
+    """
+    try:
+        response = requests.get(url, params=params, timeout=timeout)
+        response.raise_for_status()
+        return response.json()
+    except requests.Timeout as err:
+        raise ProviderConnectionError(user_msg='The data source timed out.') from err
+    except requests.RequestException as err:
+        raise ProviderConnectionError(user_msg="The data source couldn't be reached.") from err
+    except ValueError as err:
+        raise ProviderQueryError(user_msg="The data source didn't return JSON.") from err
+{%- elif style == 'sql' %}
+
+
+def engine_for(url: str) -> Any:
+    """A pooled SQLAlchemy engine; pygeoapi creates a provider per request, so cache it.
+
+    Connect with a read-only role, and bind every value (``text(...).bindparams``).
+    """
+    from sqlalchemy import create_engine
+
+    return create_engine(url, pool_pre_ping=True)
+{%- endif %}

@@ -1,6 +1,123 @@
 {
   "components": {
     "schemas": {
+      "CodeHarnessRequest": {
+        "properties": {
+          "levels": {
+            "default": [
+              "L1",
+              "L2",
+              "L3"
+            ],
+            "items": {
+              "enum": [
+                "L1",
+                "L2",
+                "L3"
+              ],
+              "type": "string"
+            },
+            "title": "Levels",
+            "type": "array"
+          },
+          "test_secrets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "description": "ENV_NAME -> value",
+            "title": "Test Secrets",
+            "type": "object"
+          }
+        },
+        "title": "CodeHarnessRequest",
+        "type": "object"
+      },
+      "CodeImportRequest": {
+        "properties": {
+          "folder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A package folder on this computer",
+            "title": "Folder"
+          },
+          "git_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Git Url"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "CodeImportRequest",
+        "type": "object"
+      },
+      "CodeText": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "title": "CodeText",
+        "type": "object"
+      },
+      "CodeVersionRequest": {
+        "properties": {
+          "changes": {
+            "default": "",
+            "title": "Changes",
+            "type": "string"
+          },
+          "harness": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The passing checklist",
+            "title": "Harness"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "CodeVersionRequest",
+        "type": "object"
+      },
       "EnvVar": {
         "properties": {
           "name": {
@@ -128,6 +245,19 @@
           }
         },
         "title": "Extents",
+        "type": "object"
+      },
+      "FileWrite": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "title": "FileWrite",
         "type": "object"
       },
       "Finding": {
@@ -1089,6 +1219,97 @@
         "title": "SaveRequest",
         "type": "object"
       },
+      "ScaffoldRequest": {
+        "properties": {
+          "class_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Name"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "description": "The provider id (a slug): the workspace folder and catalog entry",
+            "title": "Id",
+            "type": "string"
+          },
+          "package": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The Python package name",
+            "title": "Package"
+          },
+          "provider_type": {
+            "enum": [
+              "feature",
+              "record",
+              "coverage",
+              "edr",
+              "tile",
+              "map"
+            ],
+            "title": "Provider Type",
+            "type": "string"
+          },
+          "query_types": {
+            "default": [
+              "position"
+            ],
+            "description": "EDR only",
+            "items": {
+              "enum": [
+                "position",
+                "radius",
+                "area",
+                "cube",
+                "trajectory",
+                "corridor",
+                "locations"
+              ],
+              "type": "string"
+            },
+            "title": "Query Types",
+            "type": "array"
+          },
+          "style": {
+            "default": "rest",
+            "description": "Where the data comes from",
+            "enum": [
+              "rest",
+              "sql",
+              "files"
+            ],
+            "title": "Style",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider_type",
+          "id",
+          "title"
+        ],
+        "title": "ScaffoldRequest",
+        "type": "object"
+      },
       "SecretRef": {
         "properties": {
           "env": {
@@ -1498,6 +1719,535 @@
         "summary": "Catalog Detail",
         "tags": [
           "catalog"
+        ]
+      }
+    },
+    "/api/code": {
+      "get": {
+        "operationId": "code_list_api_code_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Code List Api Code Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Code List",
+        "tags": [
+          "mode-b"
+        ]
+      },
+      "post": {
+        "operationId": "code_create_api_code_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScaffoldRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Code Create Api Code Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Code Create",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/code/import": {
+      "post": {
+        "operationId": "code_import_api_code_import_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Code Import Api Code Import Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Code Import",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/code/{provider_id}": {
+      "get": {
+        "operationId": "code_detail_api_code__provider_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Code Detail Api Code  Provider Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Code Detail",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/code/{provider_id}/files/{path}": {
+      "get": {
+        "operationId": "code_read_api_code__provider_id__files__path__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Code Read Api Code  Provider Id  Files  Path  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Code Read",
+        "tags": [
+          "mode-b"
+        ]
+      },
+      "put": {
+        "operationId": "code_write_api_code__provider_id__files__path__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Code Write Api Code  Provider Id  Files  Path  Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Code Write",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/code/{provider_id}/format": {
+      "post": {
+        "operationId": "code_format_api_code__provider_id__format_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeText"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Code Format Api Code  Provider Id  Format Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Code Format",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/code/{provider_id}/harness": {
+      "post": {
+        "operationId": "code_harness_api_code__provider_id__harness_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeHarnessRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Code Harness",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/code/{provider_id}/lint": {
+      "post": {
+        "operationId": "code_lint_api_code__provider_id__lint_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeText"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Code Lint Api Code  Provider Id  Lint Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Code Lint",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/code/{provider_id}/pull": {
+      "post": {
+        "operationId": "code_pull_api_code__provider_id__pull_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Code Pull Api Code  Provider Id  Pull Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Code Pull",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/code/{provider_id}/versions": {
+      "post": {
+        "operationId": "code_version_api_code__provider_id__versions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CodeVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Code Version Api Code  Provider Id  Versions Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Code Version",
+        "tags": [
+          "mode-b"
         ]
       }
     },

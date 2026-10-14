@@ -963,10 +963,12 @@ source = { editable = "backend" }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "jinja2" },
     { name = "pygeoapi" },
     { name = "pygeoapi-provider-harness" },
     { name = "pygeoapi-spec-providers" },
     { name = "ruamel-yaml" },
+    { name = "ruff" },
     { name = "uvicorn" },
 ]
 
@@ -974,10 +976,12 @@ dependencies = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.141" },
     { name = "httpx", specifier = ">=0.28" },
+    { name = "jinja2", specifier = ">=3.1" },
     { name = "pygeoapi", specifier = "==0.24.0" },
     { name = "pygeoapi-provider-harness", editable = "harness" },
     { name = "pygeoapi-spec-providers", editable = "runtime" },
     { name = "ruamel-yaml", specifier = ">=0.19" },
+    { name = "ruff", specifier = ">=0.16" },
     { name = "uvicorn", specifier = ">=0.53" },
 ]
 

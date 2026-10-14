@@ -1,0 +1,29 @@
+"""The pygeoapi {{ pygeoapi_version }} provider contract, as the Provider Builder checks it.
+
+``provider_contract`` comes from pygeoapi-provider-harness's pytest plugin. While
+methods still raise NotImplementedError, the test is an expected failure (xfail).
+"""
+
+from __future__ import annotations
+
+PROVIDER = {
+    'type': {{ type | py }},
+    'name': {{ (pkg ~ '.provider.' ~ class_name) | py }},
+    'data': {{ data_example | py }},
+{%- if type == 'tile' %}
+    'options': {'zoom': {'min': 0, 'max': 15}, 'schemes': ['WebMercatorQuad']},
+    'format': {'name': 'pbf', 'mimetype': 'application/vnd.mapbox-vector-tile'},
+{%- elif type == 'map' %}
+    'format': {'name': 'png', 'mimetype': 'image/png'},
+{%- elif type == 'coverage' %}
+    'format': {'name': 'GTiff', 'mimetype': 'application/tiff'},
+{%- endif %}
+}
+
+
+def test_contract(provider_contract) -> None:
+{%- if type == 'edr' %}
+    provider_contract(PROVIDER, capabilities={'query_types': {{ query_types | py }}})
+{%- else %}
+    provider_contract(PROVIDER)
+{%- endif %}

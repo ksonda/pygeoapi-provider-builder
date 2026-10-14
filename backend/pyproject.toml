@@ -12,6 +12,8 @@ dependencies = [
     "uvicorn>=0.53",                  # ASGI server for local use
     "ruamel.yaml>=0.19",              # round-trip YAML: locate nodes, dump fragments (ADR-0003)
     "httpx>=0.28",                    # live endpoint verification; FastAPI TestClient
+    "ruff>=0.16",                     # lint and format code-built providers, over stdin (J5)
+    "jinja2>=3.1",                    # scaffold templates (J5); already a pygeoapi dependency
 ]
 
 [build-system]

@@ -1,0 +1,5 @@
+# A pygeoapi {{ pygeoapi_version }} image with this provider installed, the way the
+# official image expects extra packages (docs/pygeoapi-notes.md §9.2).
+FROM geopython/pygeoapi:{{ pygeoapi_version }}
+COPY . /opt/{{ dist }}
+RUN /venv/bin/python3 -m pip install --no-cache-dir /opt/{{ dist }}

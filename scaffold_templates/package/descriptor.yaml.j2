@@ -1,0 +1,28 @@
+# The Provider Builder's catalog entry for this provider (catalog/schema/descriptor.schema.json).
+# Keep it current: Mode A builds its form from these fields.
+descriptor_version: 1
+id: created/{{ id }}
+plugin: {{ pkg }}.provider.{{ class_name }}
+provider_type: {{ type }}
+origin: created
+title: {{ title | json }}
+summary: {{ description | json }}
+ogc_api: [{{ ogc_api }}]
+version: 0.1.0
+requires: [{{ pkg }}]
+probe: {kind: {{ type }}}
+{%- if type == 'edr' %}
+query_types: [{{ query_types | join(', ') }}]
+{%- endif %}
+# The host:port pairs the provider connects to; the sandbox allows only these.
+egress:
+  kind: hosts
+  hosts: []
+fields:
+  - key: data
+    type: {{ 'url' if style == 'rest' else 'string' }}
+    title: Data
+    help: {{ data_help | json }}
+    required: true
+    suggest: {{ data_example | json }}
+    step: connect

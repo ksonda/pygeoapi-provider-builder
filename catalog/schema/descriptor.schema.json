@@ -109,13 +109,14 @@
       }
     },
     "egress": {
-      "description": "Where the sandbox may connect for this provider (PLAN.md §8.2): sql reads data's host and port; spec reads the URLs of the spec data points at",
+      "description": "Where the sandbox may connect for this provider (PLAN.md §8.2): sql reads data's host and port; spec reads the URLs of the spec data points at; hosts lists the host:port pairs a code-built provider declares",
       "type": "object",
       "required": ["kind"],
       "additionalProperties": false,
       "properties": {
-        "kind": {"enum": ["sql", "spec"]},
-        "default_port": {"type": "integer", "minimum": 1, "maximum": 65535}
+        "kind": {"enum": ["sql", "spec", "hosts"]},
+        "default_port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "hosts": {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z0-9.-]+:[0-9]{1,5}$"}}
       }
     },
     "drift_ignore": {

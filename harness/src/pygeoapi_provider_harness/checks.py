@@ -787,6 +787,167 @@ class EDRContract:
         return ('fail', 'A location that cannot exist returned data.')
 
 
+# --- L1: coverages, maps and tiles ---------------------------------------------------------
+
+PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
+
+
+def png_size(data: bytes) -> tuple[int, int] | None:
+    """The width and height in a PNG's IHDR chunk (no image library needed)."""
+    if len(data) < 24 or not data.startswith(PNG_SIGNATURE) or data[12:16] != b'IHDR':
+        return None
+    return int.from_bytes(data[16:20], 'big'), int.from_bytes(data[20:24], 'big')
+
+
+def _load(pdef: Mapping[str, Any], holder: dict[str, Any], base: str) -> tuple[Any, ...]:
+    import importlib
+
+    from pygeoapi.plugin import load_plugin
+
+    module, _, name = base.rpartition('.')
+    cls = getattr(importlib.import_module(module), name)
+    holder['p'] = load_plugin('provider', dict(pdef))
+    if not isinstance(holder['p'], cls):
+        return (
+            'fail',
+            f'{type(holder["p"]).__name__} is not a pygeoapi {name}.',
+            f'Subclass {base}.',
+        )
+    return ('pass', f'Loaded {type(holder["p"]).__qualname__}.')
+
+
+def coverage_checks(pdef: dict[str, Any], out: Checklist) -> None:
+    holder: dict[str, Any] = {}
+    out.run(
+        'L1.load',
+        'L1',
+        'pygeoapi loads the provider',
+        functools.partial(_load, pdef, holder, 'pygeoapi.provider.base.BaseProvider'),
+    )
+    if 'p' not in holder:
+        return
+
+    def metadata() -> tuple[Any, ...]:
+        p = holder['p']
+        fields = dict(p.get_fields() or {})
+        problems = []
+        if not fields or any(
+            not isinstance(v, Mapping) or 'type' not in v for v in fields.values()
+        ):
+            problems.append('get_fields() must give each band as a dict with a type')
+        if not getattr(p, 'axes', None):
+            problems.append('self.axes is empty')
+        props = getattr(p, '_coverage_properties', None) or {}
+        missing = [k for k in ('width', 'height', 'resx', 'resy') if k not in props]
+        if missing:
+            problems.append(f'_coverage_properties lacks {", ".join(missing)}')
+        if problems:
+            return (
+                'fail',
+                '; '.join(problems) + '. Collection metadata reads them (notes §5.3).',
+            )
+        return ('pass', f'{len(fields)} band(s) on axes {", ".join(p.axes)}.')
+
+    def coveragejson() -> tuple[Any, ...]:
+        from . import coveragejson as covjson
+
+        doc = holder['p'].query(format_='json')
+        problems = covjson.problems(doc)
+        if problems:
+            return ('fail', 'query(format_=json) is not valid CoverageJSON.', None, problems)
+        return ('pass', f'query(format_=json) returned a valid {doc.get("type")}.')
+
+    out.run('L1.coverage_metadata', 'L1', 'Bands, axes and grid', metadata)
+    out.run('L1.coverage_json', 'L1', 'CoverageJSON output', coveragejson)
+
+
+def map_checks(pdef: dict[str, Any], out: Checklist) -> None:
+    holder: dict[str, Any] = {}
+    out.run(
+        'L1.load',
+        'L1',
+        'pygeoapi loads the provider',
+        functools.partial(_load, pdef, holder, 'pygeoapi.provider.base.BaseProvider'),
+    )
+    if 'p' not in holder:
+        return
+
+    def image() -> tuple[Any, ...]:
+        data = holder['p'].query(
+            style=None,
+            bbox=[-180, -90, 180, 90],
+            width=256,
+            height=128,
+            crs='CRS:84',
+            datetime_=None,
+            transparent=True,
+            format_='png',
+            **{'bbox-crs': 'http://www.opengis.net/def/crs/OGC/1.3/CRS84'},
+        )
+        if not isinstance(data, bytes | bytearray):
+            return ('fail', f'query() returned {type(data).__name__}, not image bytes.')
+        size = png_size(bytes(data))
+        if size is None:
+            return ('fail', 'query(format_=png) did not return a PNG.')
+        if size != (256, 128):
+            return ('fail', f'Asked for 256×128 pixels, got {size[0]}×{size[1]}.')
+        return ('pass', 'query(format_=png) returned a 256×128 PNG.')
+
+    out.run('L1.map_image', 'L1', 'A map image of the requested size', image)
+
+
+def tile_checks(pdef: dict[str, Any], out: Checklist) -> None:
+    holder: dict[str, Any] = {}
+    out.run(
+        'L1.load',
+        'L1',
+        'pygeoapi loads the provider',
+        functools.partial(_load, pdef, holder, 'pygeoapi.provider.tile.BaseTileProvider'),
+    )
+    if 'p' not in holder:
+        return
+
+    def schemes() -> tuple[Any, ...]:
+        found = list(holder['p'].get_tiling_schemes() or [])
+        if not found:
+            return ('fail', 'get_tiling_schemes() is empty.', 'Set options.schemes in the config.')
+        holder['scheme'] = found[0]
+        return ('pass', f'{len(found)} tiling scheme(s).')
+
+    def service() -> tuple[Any, ...]:
+        p = holder['p']
+        doc = p.get_tiles_service(
+            baseurl='http://127.0.0.1:5000',
+            servicepath='/collections/contract/tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}?f=mvt',
+            dirpath=None,
+            tile_type=getattr(p, 'tile_type', None),
+        )
+        if not isinstance(doc, Mapping) or not isinstance(doc.get('links'), list):
+            return (
+                'fail',
+                "get_tiles_service() must return a dict with 'links' (pygeoapi reads it).",
+            )
+        return ('pass', f'get_tiles_service() lists {len(doc["links"])} link(s).')
+
+    def tile() -> tuple[Any, ...]:
+        p = holder['p']
+        scheme = holder.get('scheme')
+        tileset = getattr(scheme, 'tileMatrixSet', None) or 'WebMercatorQuad'
+        data = p.get_tiles(
+            layer=p.get_layer(), tileset=tileset, z='0', y='0', x='0', format_='mvt'
+        )
+        if data is None:
+            return ('warn', 'Tile 0/0/0 is empty (pygeoapi answers 204).')
+        if not isinstance(data, bytes | bytearray):
+            return ('fail', f'get_tiles() returned {type(data).__name__}, not bytes.')
+        return ('pass', f'Tile 0/0/0 is {len(data)} bytes.')
+
+    out.run('L1.tile_schemes', 'L1', 'Tiling schemes', schemes)
+    out.run('L1.tile_service', 'L1', 'The tiles service description', service)
+    if 'scheme' in holder:
+        out.run('L1.tile', 'L1', 'One tile', tile)
+
+
 def _square(x: float, y: float, half: float) -> str:
     a, b, c, d = x - half, y - half, x + half, y + half
     return f'POLYGON(({a} {b}, {c} {b}, {c} {d}, {a} {d}, {a} {b}))'
@@ -976,6 +1137,9 @@ def live_server(config: dict[str, Any], port: int) -> Iterator[str]:
     with open(openapi_path, 'w', encoding='utf-8') as fh:
         json.dump(get_oas(config, fail_on_invalid_collection=True), fh)
     env = {**os.environ, 'PYGEOAPI_CONFIG': config_path, 'PYGEOAPI_OPENAPI': openapi_path}
+    # The server imports the provider like this process does: a job's python_path entries
+    # (a code-built provider's src) are on sys.path here, not in the inherited PYTHONPATH.
+    env['PYTHONPATH'] = os.pathsep.join(p for p in sys.path if p and os.path.isdir(p))
     proc = subprocess.Popen(  # noqa: S603 - our own interpreter and arguments
         [
             sys.executable,
@@ -1106,6 +1270,12 @@ def run_contract(
             edr = EDRContract(pdef, capabilities, out)
             edr.run()
             location = edr.location
+        elif kind == 'coverage':
+            coverage_checks(pdef, out)
+        elif kind == 'map':
+            map_checks(pdef, out)
+        elif kind == 'tile':
+            tile_checks(pdef, out)
         else:
             out.add(
                 Check(
@@ -1113,7 +1283,7 @@ def run_contract(
                     'L1',
                     f'{kind} providers',
                     'skip',
-                    f'Contract checks for {kind} providers arrive in Phase 4.',
+                    f'There are no contract checks for {kind} providers.',
                 )
             )
     if not out.ok():

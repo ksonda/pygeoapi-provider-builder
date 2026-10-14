@@ -11,6 +11,8 @@ as the Provider Builder::
         )
 
 Failures fail the test with every failing check, its explanation and a hint.
+When every failure is a method that raises NotImplementedError (a fresh
+scaffold, PLAN.md §7.5), the test is an expected failure (xfail) instead.
 ``levels`` defaults to L1 and L2; L3 starts gunicorn and needs it installed.
 """
 
@@ -44,6 +46,7 @@ def provider_contract() -> ContractFn:
         capabilities: Mapping[str, bool] | None = None,
         levels: tuple[str, ...] = ('L1', 'L2'),
         resource: Mapping[str, Any] | None = None,
+        xfail_unimplemented: bool = True,
     ) -> Checklist:
         body = {
             'type': 'collection',
@@ -56,6 +59,10 @@ def provider_contract() -> ContractFn:
         }
         out = run_contract(collection, body, 0, capabilities, levels)
         if not out.ok():
+            failures = [c for c in out.results if c.status == 'fail']
+            if xfail_unimplemented and all('NotImplementedError' in c.message for c in failures):
+                todo = sorted({c.message.rsplit(':', 1)[-1].strip() for c in failures})
+                pytest.xfail(f'Not implemented yet: {", ".join(todo)}')
             pytest.fail(describe_failures(out), pytrace=False)
         return out
 

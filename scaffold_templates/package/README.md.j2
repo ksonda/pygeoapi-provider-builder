@@ -1,0 +1,43 @@
+# {{ title }}
+
+A pygeoapi {{ pygeoapi_version }} {{ type }} provider, scaffolded by pygeoapi
+Provider Builder. Its methods raise `NotImplementedError` until you write them.
+
+```yaml
+providers:
+  - type: {{ type }}
+    name: {{ pkg }}.provider.{{ class_name }}
+    data: {{ data_example }}
+```
+
+`examples/pygeoapi-config.snippet.yml` has a whole resource to add under
+`resources:` in your pygeoapi config.
+
+## Develop
+
+- `src/{{ pkg }}/provider.py` is the provider. Every method's docstring states
+  what pygeoapi passes and expects.
+- `src/{{ pkg }}/descriptor.yaml` is how the Provider Builder's catalog shows the
+  provider: its config fields and the hosts it may reach (`egress.hosts`). Keep
+  it current when the provider reads a new config key.
+- `tests/test_contract.py` runs the contract checks the Provider Builder runs
+  (the `provider_contract` fixture from `pygeoapi-provider-harness`). They're
+  expected to fail (xfail) while methods are unimplemented.
+
+```bash
+pip install -e '.[test]'
+pytest
+ruff check . && ruff format --check .
+```
+
+`pygeoapi-provider-harness` isn't on PyPI yet: install it from the Provider
+Builder's repository (`pip install path/to/provider-builder/harness`).
+
+## Deploy
+
+Install the package into the pygeoapi server's environment, as the official
+image expects (`Dockerfile.test` builds a test image that way):
+
+```bash
+/venv/bin/python3 -m pip install .
+```
