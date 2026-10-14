@@ -18,7 +18,7 @@ from forms import CASES
 from provider_builder.render import FormState
 from provider_builder.runner import DockerRunner
 from provider_builder.service import Service
-from provider_builder.settings import DataRoot, SandboxSettings, Settings, Target
+from provider_builder.settings import DataRoot, SandboxSettings, Settings, Target, Workspace
 
 pytestmark = pytest.mark.docker
 
@@ -47,8 +47,11 @@ def service(workdir: Path) -> Service:
         ],
         catalogs=[REPO / 'catalog'],
         sandbox=SandboxSettings(runner='docker'),
+        workspace=Workspace(host_path=workdir / 'providers', server_path='/specs'),
     )
-    return Service(settings, runner=DockerRunner(settings.sandbox, settings.data_roots))
+    return Service(
+        settings, runner=DockerRunner(settings.sandbox, settings.data_roots, settings.workspace)
+    )
 
 
 def pygeoapi_cli(workdir: Path, *args: str) -> subprocess.CompletedProcess[str]:

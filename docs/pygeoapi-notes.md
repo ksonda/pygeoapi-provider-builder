@@ -336,6 +336,12 @@ Read from the `Dockerfile` in Phase 0, then checked with `docker run` in Phase 1
 - Versions: Python 3.12.3, GDAL 3.8.4, SpatiaLite 5.1.0 and SQLite 3.45.1.
   psycopg2, GeoAlchemy2, rasterio, xarray and requests are installed; httpx
   isn't.
+- Library versions, for ejected code and test images (executed 2026-10-14):
+  requests 2.31.0, SQLAlchemy 2.0.51, psycopg2 2.9.9, shapely 2.0.3 and
+  pyproj 3.6.1. httpx, python-jsonpath, sqlglot and hatchling are missing, and
+  so is every MySQL driver (MySQLdb, PyMySQL, mysql-connector). So a package
+  build fetches hatchling from PyPI, and the SQL template defers MySQL
+  (ADR-0007).
 - Base and Python:
   - `FROM ubuntu:noble` (`Dockerfile:37`), with GDAL, rasterio, Fiona, psycopg2, xarray and more from apt and the ubuntugis-unstable PPA.
   - A venv at `/venv` with `--system-site-packages` (`Dockerfile:133`). Extra packages go in with `/venv/bin/python3 -m pip install`.

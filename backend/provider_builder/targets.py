@@ -418,6 +418,7 @@ class TargetOps:
         secrets: dict[str, str] = {}
         for p in req.form.providers if req.form else []:
             secrets |= self.svc._secrets(p, req.test_secrets)
+        secrets = self.svc.gate_secrets(after, secrets)
         out = self.svc.runner.run(
             {
                 'kind': 'openapi',

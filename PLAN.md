@@ -1191,6 +1191,34 @@ diff and a byte-identical no-op save. Break a publish and roll it back.
 **Exit:** a multi-table join is published and passes the harness. CO-OPS water
 levels are served as EDR. A scaffolded provider of each type installs and
 passes `ruff`.
+*Met (2026-10-14):*
+- **The join.** A PostGIS join of two tables (`osm.hotosm_bdi_waterways` with
+  `osm.waterway_classes`, as the read-only role `pb_reader`) passes the harness
+  in the sandbox, L1 to L3. pygeoapi serves it, with 14,768 items and bbox,
+  datetime, property and text filters running in PostGIS
+  (`tests/test_compose_integration.py`). It was also published from the UI to
+  the dev stack, which serves 14,768 items, 436 rivers and 245 reviewed in
+  March.
+- **CO-OPS as EDR.** The mock look-alike is served as EDR with valid
+  CoverageJSON (241 points a day for a station; position, area and cube; 204
+  and 400 where they belong). A spec for the real NOAA APIs passed all 20
+  checks from its provider page and was published from the UI. The dev stack
+  served live San Francisco water levels from it: 61 six-minute points as valid
+  CoverageJSON.
+- **Found in the demo:** publishing a second collection failed the OpenAPI gate
+  because the first one's spec read `${PB_READER_PASSWORD}`, which the page
+  doesn't hold. The gate now gives created providers' spec variables stand-in
+  values (their providers don't connect when they load). There's a regression
+  test in `backend/tests/test_targets.py`.
+- **Every scaffold type** (feature, record, coverage, EDR, tile, map) passes
+  `ruff check` and `ruff format --check` with its own config
+  (`backend/tests/test_codespace.py`). All six pip-install into stock
+  `geopython/pygeoapi:0.24.0` and import (`tests/test_compose_integration.py`).
+- **Beyond the exit criteria:**
+  - Eject: equivalence tests on the mock API, SQLite and PostGIS, plus a stock
+    image serving ejected code without the runtime package.
+  - J6: zips, test images, Git delivery and usage. A packaged spec is served
+    from its own test image.
 
 **Phase 5: catalog breadth**
 - Tier 1 complete with integration tests; Tier 2 descriptors

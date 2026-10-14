@@ -63,6 +63,10 @@ class ValidateResult(BaseModel):
     env: list[EnvVar]
 
 
+#: The value the OpenAPI gate uses for variables the page has no test value for.
+GATE_STAND_IN = 'provider-builder-gate-stand-in'
+
+
 class ExportResult(BaseModel):
     fragment_yaml: str
     merged_yaml: str
@@ -137,10 +141,13 @@ class Service:
     def _card(self, d: Descriptor) -> dict[str, Any]:
         c = card(d)
         requires = c['requires']
+        # A code-built provider's own package is its src folder, which every sandbox
+        # job puts on the path; the image provides the rest of what it requires.
+        own = str(d.raw.get('plugin', '')).split('.')[0] if self.python_path_for(d) else None
         if self.availability is None:
             c['availability'] = {'status': 'unknown', 'missing': []}
         else:
-            missing = [m for m in requires if not self.availability.get(m, False)]
+            missing = [m for m in requires if m != own and not self.availability.get(m, False)]
             c['availability'] = {'status': 'missing' if missing else 'ready', 'missing': missing}
         return c
 
@@ -215,6 +222,25 @@ class Service:
                 if isinstance(pdef, dict) and isinstance(pdef.get('name'), str):
                     found += self.python_path_for(self.catalog.by_plugin(pdef['name']))
         return list(dict.fromkeys(found))
+
+    def gate_secrets(self, text: str, given: dict[str, str]) -> dict[str, str]:
+        """Environment for loading a whole config in the OpenAPI gate.
+
+        The page holds test values only for the collection being edited. The
+        variables other created providers' specs read get a stand-in, so pygeoapi
+        loads those collections too: the spec engine's providers don't connect when
+        they load. A stand-in never reaches a server; only the gate's sandbox sees
+        it. A placeholder in the config itself gets none, so pygeoapi still says
+        which variable is missing.
+        """
+        names: set[str] = set()
+        config = yaml.safe_load(text) or {}
+        for resource in (config.get('resources') or {}).values():
+            for pdef in (resource or {}).get('providers') or []:
+                doc = self._spec_doc(pdef) if isinstance(pdef, dict) else None
+                if doc is not None:
+                    names |= set(spec_env(doc))
+        return {**{name: GATE_STAND_IN for name in sorted(names)}, **given}
 
     def egress_for_config(self, text: str, secrets: dict[str, str]) -> set[egress.HostPort]:
         """Every provider in a config: ``openapi generate`` loads them all (notes §6.2)."""
@@ -328,6 +354,7 @@ class Service:
         secrets: dict[str, str] = {}
         for p in form.providers:
             secrets |= self._secrets(p, test_secrets)
+        secrets = self.gate_secrets(merged, secrets)
         out = self.runner.run(
             {
                 'kind': 'openapi',

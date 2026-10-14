@@ -548,3 +548,61 @@ def test_service_without_targets(settings: Settings) -> None:
     )
     client = TestClient(app, base_url='http://localhost', headers={'X-Provider-Builder': '1'})
     assert client.get('/api/targets/nope/config').status_code == 400
+
+
+def test_the_gate_loads_other_collections_without_their_secrets(
+    ops_client: TestClient, settings: Settings
+) -> None:
+    """A created provider whose spec reads ${MOCK_KEY} is already in the config. Publishing
+    another collection, with no value for MOCK_KEY, still passes the OpenAPI gate: the gate
+    gives the spec a stand-in, and the spec engine doesn't connect when it loads."""
+    from forms import csv_form
+
+    spec = """spec_version: 1
+template: http-features
+id: secure-wells
+title: Secure wells
+source:
+  url: https://api.example.org/wells
+  auth:
+    type: header
+    name: X-API-Key
+    value: ${MOCK_KEY}
+records: $.items
+item_id:
+  from: id
+geometry:
+  type: point
+  x: lon
+  y: lat
+properties:
+  - name: id
+    type: string
+"""
+    saved = ops_client.post('/api/workspace', json={'spec': spec})
+    assert saved.status_code == 200, saved.text
+    config = settings.targets[0].base_config
+    doc = yaml.safe_load(config.read_text())
+    doc['resources']['secure-wells'] = {
+        'type': 'collection',
+        'title': 'Secure wells',
+        'description': 'A spec that reads a secret',
+        'keywords': ['wells'],
+        'extents': {'spatial': {'bbox': [-180, -90, 180, 90]}},
+        'providers': [
+            {
+                'type': 'feature',
+                'name': 'pygeoapi_spec_providers.http.HTTPFeatureProvider',
+                'data': saved.json()['data'],
+            }
+        ],
+    }
+    config.write_text(yaml.safe_dump(doc, sort_keys=False))
+    etag = ops_client.get('/api/targets/file/config').json()['etag']
+    form = csv_form()
+    form['resource_id'] = 'obs-again'
+    result = publish(
+        ops_client, target='file', action='add', resource_id='obs-again', form=form, etag=etag
+    )
+    gate = next(s for s in result['steps'] if s['name'] == 'openapi')
+    assert gate['ok'], gate

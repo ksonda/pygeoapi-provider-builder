@@ -264,3 +264,14 @@ def test_import_from_git(client: TestClient, settings: Any, tmp_path: Any) -> No
     not_ours.mkdir()
     refused = client.post('/api/code/import', json={'id': 'plain', 'folder': str(not_ours)})
     assert refused.status_code == 400
+
+
+def test_a_code_built_package_counts_as_available(client: TestClient, service: Any) -> None:
+    """Its own package is its src folder, which every sandbox job puts on the path."""
+    create(client, id='avail-demo')
+    service.availability = {}  # the image has none of the requirements...
+    card = {c['id']: c for c in service.cards()}['created/avail-demo']
+    assert card['availability'] == {'status': 'ready', 'missing': []}  # ...and needs none
+    service.availability = {'demo_items_provider': False}
+    other = {c['id']: c for c in service.cards()}['created/avail-demo']
+    assert other['availability']['status'] == 'ready'

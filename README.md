@@ -15,19 +15,35 @@ Target: **pygeoapi 0.24.0** (pinned).
 
 ## Status
 
-**Phase 3: publishing and editing.** Both modes work end to end, and the
-builder edits a server's config in place.
+**Phase 4: Mode B breadth.** Both modes work end to end. Create now builds
+providers from an HTTP API, a SQL query or a time series, or from Python, and
+delivers them.
 
 - **Configure** (Phase 1): a wizard for CSV, GeoJSON, GeoPackage/SQLite,
   PostgreSQL/PostGIS and providers made in Create. It covers connecting, a probe
   in the sandbox, field mapping, metadata, review with every validation layer
   and OpenAPI generation, and an export of the merged config.
-- **Create** (Phase 2): the HTTP JSON API template. The wizard fetches a sample in
-  the sandbox and suggests a mapping. You pick the records, id, geometry and
-  properties, preview them, set paging and filters, then run the contract
-  harness, from the provider itself to a live pygeoapi in the sandbox. Each saved
-  version goes to `workspace/providers/<id>/` (a Git repository) and shows up in
-  Configure's catalog.
+- **Create without code** (Phases 2 and 4). Three templates, each a wizard that
+  samples the source in the sandbox and suggests a mapping:
+  - an HTTP JSON API → OGC API - Features
+  - a SQL query (a join, a view, computed columns) over PostgreSQL/PostGIS or
+    SQLite → Features, checked by a SQL guard and run read-only with a timeout
+  - time series at monitoring locations → OGC API - EDR, as CoverageJSON. The
+    NOAA CO-OPS API works as is.
+
+  The contract harness checks each one, from the provider itself to a live
+  pygeoapi in the sandbox. Each saved version goes to
+  `workspace/providers/<id>/` (a Git repository) and shows up in Configure's
+  catalog.
+- **Create in Python** (Phase 4). Scaffolds for every provider type (features,
+  records, coverages, EDR, tiles, maps) come from pygeoapi's own signatures. You
+  edit them in the browser with ruff, then run the same contract checks and
+  save versions as Git tags. Any template-built provider can be **ejected** to
+  equivalent, readable Python that doesn't need the spec engine.
+- **Deliver** (Phase 4). A version that passed its checks downloads as a pip
+  package (a spec becomes `data: pkg:…`), builds into a test image `FROM
+  geopython/pygeoapi:0.24.0`, or is pushed to a Git remote for review. Each
+  provider shows which collections use which version.
 - **Sandbox:** every probe, sample and check runs in a locked-down container.
   Network access goes only to declared hosts, through an egress gateway.
 - **Publish and edit** (Phase 3): a *file* target edits the server's config in
@@ -39,8 +55,7 @@ builder edits a server's config in place.
   publishes, and lets you edit a collection, add a provider (J3), duplicate,
   delete or import YAML. An optional *Admin API* target is guarded (ADR-0015).
 
-The SQL and time-series templates and the code workspace (Phase 4) come next;
-see [PLAN.md §13](PLAN.md#13-milestones).
+Catalog breadth (Phase 5) comes next; see [PLAN.md §13](PLAN.md#13-milestones).
 
 Background reading, in order:
 1. [PLAN.md](PLAN.md): architecture, schemas, API, sandbox, milestones and risks

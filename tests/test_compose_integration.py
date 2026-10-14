@@ -772,3 +772,33 @@ def test_a_code_version_builds_a_test_image(service: Service) -> None:
         capture_output=True, text=True, check=True, timeout=30,
     )  # fmt: skip
     assert json.loads(labels.stdout)['io.provider-builder.version'] == '1.0.0'
+
+
+def test_a_scaffold_of_each_type_installs(service: Service, workdir: Path) -> None:
+    """Phase 4 exit: "a scaffolded provider of each type installs and passes ruff" (the
+    ruff half is backend/tests/test_codespace.py). pip installs all six into stock pygeoapi."""
+    from provider_builder.scaffold import ScaffoldRequest
+
+    kinds = ['feature', 'record', 'coverage', 'edr', 'tile', 'map']
+    for kind in kinds:
+        service.code_create(
+            ScaffoldRequest(
+                provider_type=kind,  # type: ignore[arg-type]
+                id=f'demo-{kind}',
+                title=f'Demo {kind}',
+                query_types=['position', 'locations'],
+            )
+        )
+    packages = [f'/pkgs/demo-{kind}' for kind in kinds]
+    imports = '; '.join(f'import demo_{kind}_provider.provider' for kind in kinds)
+    script = (
+        f'/venv/bin/python3 -m pip install --quiet --no-cache-dir {" ".join(packages)} && '
+        f'/venv/bin/python3 -c "{imports}; print(\'imported\')"'
+    )
+    proc = subprocess.run(
+        ['docker', 'run', '--rm', '--entrypoint', '/bin/sh',
+         '-v', f'{workdir / "providers"}:/pkgs:ro', IMAGE, '-c', script],
+        capture_output=True, text=True, timeout=600,
+    )  # fmt: skip
+    assert proc.returncode == 0, proc.stderr[-3000:]
+    assert proc.stdout.strip().endswith('imported')

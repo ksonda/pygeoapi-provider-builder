@@ -259,6 +259,23 @@ bound parameters only.
    database role. The parse check can't stop a privileged role from calling a
    dangerous function we didn't list.
 
+**As built (Phase 4).**
+- **What runs is what was checked.** The database runs the query as sqlglot
+  regenerates it from the checked tree, not the text the steward wrote, so a
+  trick that parses one way here and another way in the database can't get
+  through. For psycopg2, literal `%` is doubled and the time-series
+  placeholders (`:location_id`, `:parameter`, `:start`, `:end`, the only ones
+  allowed) become `%(name)s`.
+- **Connections.** A database may live at a private address; databases usually
+  do, and in the sandbox the egress gateway decides. Each new connection
+  resolves the host and refuses link-local and cloud-metadata addresses, and
+  libpq connects to the vetted address (`hostaddr`), as ADR-0018 does for HTTP.
+- **MySQL is deferred.** The pinned pygeoapi image has no MySQL driver, so the
+  template offers PostgreSQL/PostGIS and SQLite (GeoPackage included).
+  `START TRANSACTION READ ONLY` and `MAX_EXECUTION_TIME` stay the plan for when
+  it's added.
+- Ejected code (ADR-0021) carries the regenerated query, pretty-printed.
+
 ## ADR-0008: Sandbox: per-run containers with an egress gateway
 
 **Context.** §7 of PROMPT.md requires that custom code run only in disposable,
@@ -658,3 +675,59 @@ from each target's current config: a versioned spec path, a package reference
 or a plugin name. The publish log adds the history (ADR-0013). A package
 reference doesn't say which version is installed, so the UI says "the
 installed package".
+
+## ADR-0023: The harness validates CoverageJSON against the OGC schema, vendored
+
+**Context.** pygeoapi never validates the CoverageJSON its EDR providers return
+(notes §5.2), so a broken time series would reach clients (PLAN.md risk R7). The
+harness runs in a sandbox with no route to the internet, so it can't fetch a
+schema.
+
+**Decision.** The harness ships the OGC CoverageJSON Community Standard's
+bundled JSON Schema (draft 2020-12), copied unchanged from the standard's
+repository at a pinned commit (`tools/vendor.txt`; Apache-2.0, with
+attribution in `harness/src/pygeoapi_provider_harness/schemas/README.md`). A
+test checks that the copy still matches the pinned source. On top of the schema,
+`coveragejson.problems()` adds what the schema leaves out: each range's shape
+and value count match the domain's axes, and each range has a parameter that
+describes it. Every EDR query type is called with the API's 17 keywords, and
+every response is checked; `ProviderNoDataError` (HTTP 204) counts as an empty
+answer, not a failure.
+
+**Consequences.** Bumping the schema is a deliberate change of the pinned commit.
+The same check serves the time-series template, EDR scaffolds and ejected EDR
+code.
+
+## ADR-0024: Code-built providers are Git packages the backend never runs
+
+**Context.** J5 (PLAN.md §7.5): developers write providers of any type. Their
+code must not run in the backend (PROMPT.md §7), yet the builder has to lint,
+check, version and publish it.
+
+**Decision.**
+- **Scaffolds** come from Jinja2 templates plus the signatures and docstrings
+  of the installed pygeoapi. `BaseProvider.query()` takes no arguments in
+  0.24.0, so feature and record query signatures come from the GeoJSON
+  provider, coverage from rasterio and map from the WMS facade. Mutable
+  defaults become None, and the output is tidied with ruff (isort, then
+  format) over stdin.
+- **Each provider is a Git repository** under the workspace, with a
+  `.provider-builder.json` marker. A version is a tag. Saving one needs a
+  passing checklist, which is committed with it as `harness.json`, and
+  updates the version in `pyproject.toml`, the package and its descriptor.
+- **The backend only reads and writes text.** ruff lints and formats over
+  stdin, and ruff never executes code. The contract checks run in the sandbox
+  with the package's `src` on the path from the read-only workspace mount,
+  against the package's own example config, and reach only the hosts its
+  descriptor declares (`egress: {kind: hosts}`, plus `sql_keys` for database
+  connections in the config).
+- **Its descriptor ships in the package** (`src/<pkg>/descriptor.yaml`), so
+  Mode A's catalog lists it as `created/<id>` as soon as it's scaffolded.
+- **The dev stack** puts every `/specs/*/src` on the path (a `sitecustomize`),
+  so a code-built provider is served as soon as it's published. Production
+  installs the package instead (`Dockerfile.test`, J6).
+
+**Consequences.** A provider that needs packages the sandbox image lacks can't
+pass its checks yet; per-provider images (PLAN.md §8.2) are a later step. Import
+from a folder or a Git URL takes only repositories with the marker.
+

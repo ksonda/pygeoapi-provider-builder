@@ -20,7 +20,8 @@ test('a wrong password gets a friendly error, then the table publishes', async (
   await expectAccessible(page)
 
   await page.locator('input[type=password]').fill('postgres')
-  await expect(page.getByText('Found 2 table(s)')).toBeVisible()
+  // 2 tables, or 3 once docker/postgis/21-demo-sql.sql has added osm.waterway_classes.
+  await expect(page.getByText(/^Found [23] table\(s\)/)).toBeVisible()
   await page.getByRole('combobox', { name: 'Table or view', exact: true }).selectOption('hotosm_bdi_waterways')
   await page.getByRole('combobox', { name: 'Identifier column', exact: true }).selectOption('osm_id')
   await page.getByRole('combobox', { name: 'Geometry column', exact: true }).selectOption('foo_geom')
