@@ -40,8 +40,8 @@ from .validation import (
 from .workspace import (
     ProviderWorkspace,
     WorkspaceError,
-    capabilities_for,
     check_spec_text,
+    harness_capabilities,
     plugin_for,
     provider_type_for,
     spec_env,
@@ -506,6 +506,106 @@ class Service:
             res['suggestions'] = suggest_sql(out.result)
         return res
 
+    def sample_observations(
+        self,
+        observations: dict[str, Any],
+        location_id: str,
+        parameter: str,
+        window: str,
+        test_secrets: dict[str, str],
+    ) -> dict[str, Any]:
+        """One location's observations for one parameter (J4, time-series template).
+
+        The URL and query templates are filled here, with the same strict formatter
+        the engine uses, and the request goes through the HTTP sample job; a SQL
+        query runs through ``sql_sample`` with its parameters bound.
+        """
+        from datetime import UTC, datetime
+
+        from pygeoapi_spec_providers import formatter
+        from pygeoapi_spec_providers.spec import (
+            TS_DATETIME_TOKENS,
+            TS_TOKENS,
+            TS_URL_TOKENS,
+        )
+        from pygeoapi_spec_providers.spec import (
+            Problem as SpecProblem,
+        )
+        from pygeoapi_spec_providers.timeseries import parse_duration
+
+        from .suggest import suggest_observations, suggest_sql
+
+        try:
+            span = parse_duration(window)
+        except ValueError as err:
+            return {'ok': False, 'problems': [vars(SpecProblem('/window', str(err)))]}
+        end = datetime.now(UTC).replace(second=0, microsecond=0)
+        values = {
+            'location_id': location_id,
+            'parameter': parameter,
+            'start': end - span,
+            'end': end,
+        }
+        kind = observations.get('from')
+        names = set(spec_env({'observations': observations}))
+        secrets = {k: v for k, v in test_secrets.items() if k in names}
+        if kind == 'sql':
+            cfg = observations.get('sql') or {}
+            source, query = cfg.get('source') or {}, str(cfg.get('query') or '')
+            from pygeoapi_spec_providers.spec import validate_sql_source
+
+            problems = [
+                p
+                for p in validate_sql_source(source, 'SELECT 1')
+                if not p.pointer.startswith('/query')
+            ]
+            if problems:
+                return {'ok': False, 'problems': [vars(p) for p in problems]}
+            try:
+                self._check_spec_paths({'template': 'sql-features', 'source': source})
+            except WorkspaceError as err:
+                return {'ok': False, 'problems': [vars(p) for p in err.problems]}
+            bind: dict[str, Any] = dict(values)
+            if source.get('dialect') == 'sqlite':
+                bind['start'] = bind['start'].strftime('%Y-%m-%dT%H:%M:%SZ')
+                bind['end'] = bind['end'].strftime('%Y-%m-%dT%H:%M:%SZ')
+            else:
+                bind['start'], bind['end'] = bind['start'].isoformat(), bind['end'].isoformat()
+            out = self.runner.run(
+                {
+                    'kind': 'sql_sample',
+                    'source_yaml': yamlio.dump(source),
+                    'query': query,
+                    'params': bind,
+                },
+                secrets,
+                egress=egress.sql_source(egress.fill(source, secrets)),
+            )
+            res = self._mode_b_outcome(out)
+            if out.ok and out.result:
+                res['suggestions'] = suggest_sql(out.result)
+            return res
+        cfg = observations.get('http') or {}
+        try:
+            url = formatter.render_url(
+                formatter.parse(str(cfg.get('url', '')), TS_URL_TOKENS), values
+            )
+            params = {
+                str(k): formatter.render(
+                    formatter.parse(formatter.to_text(v), TS_TOKENS, TS_DATETIME_TOKENS), values
+                )
+                for k, v in (cfg.get('query') or {}).items()
+            }
+        except formatter.FormatError as err:
+            return {'ok': False, 'problems': [vars(SpecProblem('/observations/http', str(err)))]}
+        source = {k: v for k, v in cfg.items() if k in ('headers', 'auth', 'timeout_s')}
+        source.update(url=url, query=params)
+        res = self.sample(source, test_secrets)
+        if res.get('ok') and (res.get('result') or {}).get('json') is not None:
+            res['suggestions'] = suggest_observations(res['result']['json'])
+        res['request'] = {'url': url, 'query': params}
+        return res
+
     @staticmethod
     def spec_text(spec: str | dict[str, Any]) -> str:
         """Spec YAML; an object is written like a config, with placeholders as plain values."""
@@ -530,15 +630,24 @@ class Service:
 
     def _check_spec_paths(self, doc: dict[str, Any]) -> None:
         """A SQLite spec's file must be inside a data root: the sandbox mounts only those."""
-        source = doc.get('source') or {}
-        if doc.get('template') == 'sql-features' and source.get('dialect') == 'sqlite':
+        found: list[tuple[str, dict[str, Any]]] = []
+        if doc.get('template') == 'sql-features':
+            found.append(('/source', doc.get('source') or {}))
+        elif doc.get('template') == 'timeseries-edr':
+            for block in ('locations', 'observations'):
+                part = doc.get(block) or {}
+                if part.get('from') == 'sql':
+                    found.append(
+                        (f'/{block}/sql/source', (part.get('sql') or {}).get('source') or {})
+                    )
+        for pointer, source in found:
             path = source.get('path')
-            if isinstance(path, str) and '${' not in path:
+            if source.get('dialect') == 'sqlite' and isinstance(path, str) and '${' not in path:
                 try:
                     resolve_server_path(self.settings, path)
                 except PathError as err:
                     raise WorkspaceError(
-                        str(err), [Problem('/source/path', str(err), self._roots_hint())]
+                        str(err), [Problem(f'{pointer}/path', str(err), self._roots_hint())]
                     ) from err
 
     def _roots_hint(self) -> str:
@@ -594,7 +703,7 @@ class Service:
             doc, job, secrets, targets = self._spec_job(text, test_secrets)
         except WorkspaceError as err:
             return {'ok': False, 'problems': [vars(p) for p in err.problems]}
-        capabilities = capabilities_for(doc)
+        capabilities = harness_capabilities(doc)
         out = self.runner.run(
             {
                 **job,

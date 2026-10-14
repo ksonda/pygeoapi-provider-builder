@@ -63,15 +63,46 @@ SQL_DEFAULTS: dict[str, Any] = {
     'source': {'connect_timeout_s': 5, 'statement_timeout_s': 10},
     'limits': {'max_rows': 10_000},
 }
+TIMESERIES_DEFAULTS: dict[str, Any] = {
+    'observations': {'default_window': 'P7D', 'max_window': 'P31D'},
+    'query_types': ['locations', 'position', 'area', 'cube'],
+    'position': {'snap_radius_km': 1},
+    'limits': {'max_locations': 50, 'max_observations': 10_000},
+}
 TEMPLATE_DEFAULTS: dict[str, dict[str, Any]] = {
     'http-features': DEFAULTS,
     'sql-features': SQL_DEFAULTS,
+    'timeseries-edr': TIMESERIES_DEFAULTS,
 }
+_HTTP_SECRETS: list[tuple[str, ...]] = [
+    ('source', 'auth', 'value'),
+    ('source', 'auth', 'password'),
+]
+_SQL_SECRETS: list[tuple[str, ...]] = [('source', 'connection', 'password'), ('source', 'dsn')]
 #: Where each template keeps secrets: they must be ``${VAR}`` placeholders.
 SECRET_KEYS: dict[str, list[tuple[str, ...]]] = {
-    'http-features': [('source', 'auth', 'value'), ('source', 'auth', 'password')],
-    'sql-features': [('source', 'connection', 'password'), ('source', 'dsn')],
+    'http-features': _HTTP_SECRETS,
+    'sql-features': _SQL_SECRETS,
+    'timeseries-edr': [
+        *(('locations', 'http', *k) for k in _HTTP_SECRETS),
+        *(('locations', 'sql', *k) for k in _SQL_SECRETS),
+        ('observations', 'http', 'auth', 'value'),
+        ('observations', 'http', 'auth', 'password'),
+        *(('observations', 'sql', *k) for k in _SQL_SECRETS),
+    ],
 }
+#: Placeholders in a time-series spec's observation templates.
+TS_URL_TOKENS = ('location_id', 'parameter')
+TS_TOKENS = ('location_id', 'parameter', 'start', 'end')
+TS_DATETIME_TOKENS = ('start', 'end')
+LONLAT_CRS = frozenset(
+    {
+        'http://www.opengis.net/def/crs/OGC/1.3/CRS84',
+        'https://www.opengis.net/def/crs/OGC/1.3/CRS84',
+        'http://www.opengis.net/def/crs/EPSG/0/4326',
+        'https://www.opengis.net/def/crs/EPSG/0/4326',
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -112,7 +143,20 @@ class Spec:
     def properties(self) -> list[dict[str, Any]]:
         return list(self.data['properties'])
 
-    def fields(self) -> dict[str, dict[str, str]]:
+    def fields(self) -> dict[str, dict[str, Any]]:
+        if self.data['template'] == 'timeseries-edr':
+            # EDR fields are the parameters; get_parameters() needs x-ogc-unit (ADR-0009).
+            out: dict[str, dict[str, Any]] = {}
+            for p in self.data['parameters']:
+                field: dict[str, Any] = {
+                    'type': 'number',
+                    'title': p['label'],
+                    'x-ogc-unit': p['unit']['symbol'],
+                }
+                if p.get('description'):
+                    field['description'] = p['description']
+                out[p['id']] = field
+            return out
         return {p['name']: dict(FIELD_TYPES[p['type']]) for p in self.data['properties']}
 
     def get_property(self, name: str) -> dict[str, Any] | None:
@@ -131,16 +175,31 @@ class Spec:
         return declared_hosts(self.data)
 
 
+def declared_urls(doc: Mapping[str, Any]) -> list[str]:
+    """The HTTP URLs a spec declares (SQL specs reach their database, not HTTP hosts)."""
+    template = doc.get('template', 'http-features')
+    if template == 'http-features':
+        return [
+            u
+            for u in (_dig(doc, ('source', 'url')), _dig(doc, ('item', 'url')))
+            if isinstance(u, str)
+        ]
+    if template == 'timeseries-edr':
+        urls = [
+            _dig(doc, ('locations', 'http', 'source', 'url')),
+            _dig(doc, ('locations', 'http', 'item', 'url')),
+            _dig(doc, ('observations', 'http', 'url')),
+        ]
+        return [u for u in urls if isinstance(u, str)]
+    return []
+
+
 def declared_hosts(doc: Mapping[str, Any]) -> set[str]:
-    """The HTTP hosts a spec declares. SQL specs reach their database, not HTTP hosts."""
-    if doc.get('template', 'http-features') != 'http-features':
-        return set()
     hosts = set()
-    for url in (doc.get('source', {}).get('url'), doc.get('item', {}).get('url')):
-        if isinstance(url, str):
-            host = urlsplit(url).hostname
-            if host:
-                hosts.add(host.lower())
+    for url in declared_urls(doc):
+        host = urlsplit(url).hostname
+        if host:
+            hosts.add(host.lower())
     return hosts
 
 
@@ -220,7 +279,154 @@ def semantic_problems(doc: Mapping[str, Any]) -> list[Problem]:
     template = doc.get('template', 'http-features')
     if template == 'sql-features':
         return _sql_problems(doc)
+    if template == 'timeseries-edr':
+        return _timeseries_problems(doc)
     return _http_problems(doc)
+
+
+def _prefixed(problems: Iterable[Problem], prefix: str) -> list[Problem]:
+    return [Problem(prefix + p.pointer, p.message, p.hint) for p in problems]
+
+
+def _time_format_problems(pointer: str, fmt: str | None) -> list[Problem]:
+    if fmt is None or fmt in DATETIME_FORMATS:
+        return []
+    try:
+        formatter.check_strftime(fmt)
+    except formatter.FormatError as err:
+        return [
+            Problem(
+                pointer, str(err), 'Use iso8601, date, epoch_s, epoch_ms or a strftime pattern.'
+            )
+        ]
+    return []
+
+
+def _timeseries_problems(doc: Mapping[str, Any]) -> list[Problem]:
+    problems: list[Problem] = []
+    locations = doc['locations']
+    kind = locations['from']
+    block = locations[kind]
+    if kind == 'http':
+        problems += _prefixed(_http_problems(block), '/locations/http')
+    else:
+        problems += _prefixed(_sql_problems(block), '/locations/sql')
+    crs = (block.get('geometry') or {}).get('crs')
+    if crs and crs not in LONLAT_CRS:
+        problems.append(
+            Problem(
+                f'/locations/{kind}/geometry/crs',
+                'Time-series locations must be longitude/latitude (CRS84 or EPSG:4326).',
+            )
+        )
+    ids: set[str] = set()
+    for i, parameter in enumerate(doc['parameters']):
+        if parameter['id'] in ids:
+            problems.append(
+                Problem(f'/parameters/{i}/id', f'Duplicate parameter {parameter["id"]!r}.')
+            )
+        ids.add(parameter['id'])
+    many = len(doc['parameters']) > 1
+    obs = doc['observations']
+    if obs['from'] == 'http':
+        cfg, at = obs['http'], '/observations/http'
+        used: set[str] = set()
+        try:
+            used |= formatter.parse(cfg['url'], TS_URL_TOKENS).names
+        except formatter.FormatError as err:
+            problems.append(Problem(f'{at}/url', str(err)))
+        url = urlsplit(cfg['url'])
+        if url.username or url.password:
+            problems.append(Problem(f'{at}/url', 'The URL contains credentials.'))
+        if url.query:
+            problems.append(
+                Problem(f'{at}/url', 'Put query parameters under query, not in the URL.')
+            )
+        for name, value in (cfg.get('query') or {}).items():
+            if SECRET_NAME.search(name):
+                problems.append(
+                    Problem(
+                        f'{at}/query/{name}', f'{name!r} looks like a credential.', 'Use auth.'
+                    )
+                )
+            try:
+                used |= formatter.parse(
+                    formatter.to_text(value), TS_TOKENS, TS_DATETIME_TOKENS
+                ).names
+            except formatter.FormatError as err:
+                problems.append(Problem(f'{at}/query/{name}', str(err)))
+        for name in cfg.get('headers') or {}:
+            if SECRET_NAME.search(name):
+                problems.append(
+                    Problem(
+                        f'{at}/headers/{name}', f'{name!r} looks like a credential.', 'Use auth.'
+                    )
+                )
+        for key in ('records', 'error_path'):
+            if key in cfg:
+                try:
+                    jsonpaths.compile_path(cfg[key])
+                except jsonpaths.PathError as err:
+                    problems.append(Problem(f'{at}/{key}', str(err)))
+        for key in ('time', 'value', 'parameter'):
+            ref = (cfg.get(key) or {}).get('from')
+            if isinstance(ref, str) and ref.startswith('$'):
+                try:
+                    jsonpaths.compile_path(ref)
+                except jsonpaths.PathError as err:
+                    problems.append(Problem(f'{at}/{key}/from', str(err)))
+        if 'location_id' not in used:
+            problems.append(
+                Problem(
+                    f'{at}/url',
+                    'The observations request never uses {location_id}.',
+                    'Put {location_id} in the URL or in a query value.',
+                )
+            )
+        if many and 'parameter' not in used and 'parameter' not in cfg:
+            problems.append(
+                Problem(
+                    f'{at}/query',
+                    'With several parameters, the request must use {parameter}, '
+                    'or name the field that holds it (parameter.from).',
+                )
+            )
+    else:
+        cfg, at = obs['sql'], '/observations/sql'
+        try:
+            checked = sqlguard.check(cfg['query'], cfg['source']['dialect'], tuple(TS_TOKENS))
+        except sqlguard.SQLGuardError as err:
+            problems.append(Problem(f'{at}/query', str(err)))
+        else:
+            if 'location_id' not in checked.placeholders:
+                problems.append(Problem(f'{at}/query', 'The query must filter by :location_id.'))
+            if many and 'parameter' not in checked.placeholders and 'parameter' not in cfg:
+                problems.append(
+                    Problem(
+                        f'{at}/query',
+                        'With several parameters, filter by :parameter, '
+                        'or name the column that holds it (parameter.from).',
+                    )
+                )
+    problems += _time_format_problems(f'{at}/time/format', cfg['time'].get('format'))
+    from .timeseries import parse_duration  # here, because timeseries imports this module
+
+    windows = {}
+    for key in ('default_window', 'max_window'):
+        if key in obs:
+            try:
+                windows[key] = parse_duration(obs[key])
+            except ValueError as err:
+                problems.append(Problem(f'/observations/{key}', str(err)))
+    if (
+        'default_window' in windows
+        and 'max_window' in windows
+        and windows['default_window'] > windows['max_window']
+    ):
+        problems.append(
+            Problem('/observations/default_window', 'default_window is longer than max_window.')
+        )
+    return problems
 
 
 def _property_problems(doc: Mapping[str, Any], json_refs: bool) -> list[Problem]:

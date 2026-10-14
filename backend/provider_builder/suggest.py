@@ -603,3 +603,79 @@ def suggest_sql(sample: Mapping[str, Any]) -> dict[str, Any]:
         'query': sample.get('query'),
         'notes': notes,
     }
+
+
+# --- time-series observations ------------------------------------------------------------------
+
+#: strftime patterns tried for text times that aren't ISO 8601 (CO-OPS writes '2026-10-01 00:06').
+TIME_PATTERNS = (
+    '%Y-%m-%d %H:%M',
+    '%Y-%m-%d %H:%M:%S',
+    '%m/%d/%Y %H:%M',
+    '%m/%d/%Y %H:%M:%S',
+    '%Y%m%d%H%M',
+    '%d/%m/%Y %H:%M',
+)
+
+
+def observation_time_format(values: Sequence[Any]) -> str | None:
+    """iso8601, epoch_s, epoch_ms or a strftime pattern that reads every sampled value."""
+    present = [v for v in values if v not in (None, '')]
+    if not present:
+        return None
+    if all(isinstance(v, str) for v in present):
+        try:
+            for v in present:
+                datetime.fromisoformat(v.strip())
+            if 'T' in present[0] or present[0].count('-') == 2 and len(present[0]) == 10:
+                return 'iso8601'
+        except ValueError:
+            pass
+        for pattern in TIME_PATTERNS:
+            try:
+                for v in present:
+                    datetime.strptime(v.strip(), pattern)
+            except ValueError:
+                continue
+            return pattern
+        return None
+    return time_format('time', present)
+
+
+def suggest_observations(doc: Any, records: str | None = None) -> dict[str, Any]:
+    """Records, time and value for one sampled observations response."""
+    path: str | None
+    if records:
+        path, found = records, records_at(doc, records)
+    else:
+        path, found = find_records(doc)
+    if path is None:
+        return {'records': None, 'record_count': 0, 'columns': [], 'notes': [
+            'No array of observations was found in the response.'
+        ]}  # fmt: skip
+    columns = profile(list(found[:200]))
+    time = value = None
+    for c in columns:
+        fmt = observation_time_format(c['examples'])
+        if fmt and time is None:
+            time = {'from': ref(c), 'format': fmt}
+    for c in columns:
+        if time and ref(c) == time['from']:
+            continue
+        numbers = [number(v) for v in c['examples']]
+        if c['examples'] and all(n is not None for n in numbers):
+            value = {'from': ref(c)}
+            break
+    notes = []
+    if time is None:
+        notes.append('No field reads as a time: pick it, and its format.')
+    if value is None:
+        notes.append('No field reads as a number: pick the value field.')
+    return {
+        'records': path,
+        'record_count': len(found),
+        'columns': columns,
+        'time': time,
+        'value': value,
+        'notes': notes,
+    }

@@ -102,3 +102,48 @@ class EdrNoUnits(BaseEDRProvider):  # type: ignore[misc]
 
     def position(self, **kwargs: Any) -> dict[str, Any]:
         return {}
+
+
+STATION = {
+    'type': 'Feature',
+    'id': 'S1',
+    'geometry': {'type': 'Point', 'coordinates': [-105.0, 40.0]},
+    'properties': {'name': 'Station 1'},
+}
+
+
+class EdrBadCoverage(BaseEDRProvider):  # type: ignore[misc]
+    """Units are fine, but the coverage's range has no values (the schema needs one)."""
+
+    def __init__(self, provider_def: dict[str, Any]):
+        super().__init__(provider_def)
+        self._fields = {'stage': {'type': 'number', 'title': 'Stage', 'x-ogc-unit': 'm'}}
+
+    def get_fields(self) -> dict[str, Any]:
+        return self._fields
+
+    def locations(self, location_id: Any = None, **kwargs: Any) -> dict[str, Any]:
+        if not location_id:
+            return {'type': 'FeatureCollection', 'features': [STATION]}
+        if location_id != 'S1':
+            raise ProviderItemNotFoundError(user_msg='Unknown location')
+        return {
+            'type': 'Coverage',
+            'domain': {
+                'type': 'Domain',
+                'domainType': 'PointSeries',
+                'axes': {'x': {'values': [-105.0]}, 'y': {'values': [40.0]}, 't': {'values': []}},
+            },
+            'parameters': {
+                'stage': {'type': 'Parameter', 'observedProperty': {'label': {'en': 'Stage'}}}
+            },
+            'ranges': {
+                'stage': {
+                    'type': 'NdArray',
+                    'dataType': 'float',
+                    'axisNames': ['t'],
+                    'shape': [0],
+                    'values': [],
+                }
+            },
+        }

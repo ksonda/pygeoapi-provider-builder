@@ -82,6 +82,15 @@ class SqlSampleRequest(TestSecrets):
     query: str = Field(description='One read-only SELECT')
 
 
+class ObservationSampleRequest(TestSecrets):
+    observations: dict[str, Any] = Field(
+        description="A timeseries-edr spec's observations block (from: http or sql)"
+    )
+    location_id: str
+    parameter: str = Field(description="The source's name for the parameter ({parameter})")
+    window: str = Field(default='P1D', description='How far back from now, as a duration')
+
+
 class SpecRequest(TestSecrets):
     spec: str | dict[str, Any] = Field(
         description='The spec, as YAML text or an object, with ${VAR} placeholders for secrets'
@@ -362,6 +371,16 @@ def create_app(
     def samples_sql(req: SqlSampleRequest) -> JobCreated:
         job = svc.jobs.submit(
             'sql-sample', lambda: svc.sample_sql(req.source, req.query, req.test_secrets)
+        )
+        return JobCreated(job_id=job.id)
+
+    @app.post('/api/samples/observations', status_code=202, tags=['mode-b'])
+    def samples_observations(req: ObservationSampleRequest) -> JobCreated:
+        job = svc.jobs.submit(
+            'observation-sample',
+            lambda: svc.sample_observations(
+                req.observations, req.location_id, req.parameter, req.window, req.test_secrets
+            ),
         )
         return JobCreated(job_id=job.id)
 

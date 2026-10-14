@@ -576,22 +576,124 @@ TITLES = {
 
 # --- L1: EDR ------------------------------------------------------------------------------
 
+#: The 17 keywords pygeoapi's EDR API passes to ``query()`` (docs/pygeoapi-notes.md §5.2;
+#: ``pygeoapi/api/environmental_data_retrieval.py:417``).
+EDR_KWARGS: dict[str, Any] = {
+    'query_type': None,
+    'instance': None,
+    'format_': 'json',
+    'datetime_': None,
+    'select_properties': [],
+    'wkt': None,
+    'z': None,
+    'bbox': None,
+    'within': None,
+    'within_units': None,
+    'corridor_width': None,
+    'width_units': None,
+    'corridor_height': None,
+    'height_units': None,
+    'limit': 10,
+    'location_id': None,
+    'crs_transform_spec': None,
+}
+UNKNOWN_LOCATION = '__provider-builder-no-such-location__'
 
-def edr_checks(pdef: dict[str, Any], out: Checklist) -> None:
-    holder: dict[str, Any] = {}
 
-    def load() -> tuple[Any, ...]:
+class EDRContract:
+    """L1 checks for ``edr`` providers: fields with units, query types, CoverageJSON."""
+
+    def __init__(
+        self, pdef: dict[str, Any], capabilities: Mapping[str, Any] | None, out: Checklist
+    ):
+        self.pdef = pdef
+        self.declared = list((capabilities or {}).get('query_types') or [])
+        self.out = out
+        self.provider: Any = None
+        self.types: list[str] = []
+        self.fields: dict[str, Any] = {}
+        self.location: dict[str, Any] | None = None
+
+    def run(self) -> None:
+        self.out.run('L1.load', 'L1', 'pygeoapi loads the provider', self.load)
+        if self.provider is None:
+            return
+        self.out.run('L1.edr_fields', 'L1', 'EDR fields have units', self.check_fields)
+        self.out.run('L1.edr_query_types', 'L1', 'EDR query types', self.query_types)
+        self.out.run(
+            'L1.edr_parameters', 'L1', 'Parameters for the collection metadata', self.parameters
+        )
+        if 'locations' in self.types:
+            self.out.run('L1.edr_locations', 'L1', 'locations lists features', self.locations)
+        if self.location is None:
+            return
+        self.out.run(
+            'L1.edr_location',
+            'L1',
+            'One location as CoverageJSON',
+            functools.partial(self.coverage, 'locations', location_id=str(self.location['id'])),
+        )
+        self.out.run(
+            'L1.edr_unknown_location',
+            'L1',
+            'An unknown location raises ProviderItemNotFoundError',
+            self.unknown_location,
+        )
+        x, y = self.xy()
+        queries = {
+            'position': {'wkt': self.shape(f'POINT({x} {y})')},
+            'area': {'wkt': self.shape(_square(x, y, 0.01))},
+            'cube': {'bbox': [x - 0.01, y - 0.01, x + 0.01, y + 0.01]},
+        }
+        for query_type, kwargs in queries.items():
+            if query_type in self.types:
+                self.out.run(
+                    f'L1.edr_{query_type}',
+                    'L1',
+                    f'{query_type} returns CoverageJSON',
+                    functools.partial(self.coverage, query_type, **kwargs),
+                )
+
+    @staticmethod
+    def shape(text: str) -> Any:
+        from shapely import wkt
+
+        return wkt.loads(text)
+
+    def xy(self) -> tuple[float, float]:
+        from shapely.geometry import shape
+
+        assert self.location is not None
+        geom = shape(self.location['geometry'])
+        point = geom if geom.geom_type == 'Point' else geom.representative_point()
+        return float(point.x), float(point.y)
+
+    def call(self, query_type: str, **kwargs: Any) -> Any:
+        return self.provider.query(**{**EDR_KWARGS, 'query_type': query_type, **kwargs})
+
+    def load(self) -> tuple[Any, ...]:
         from pygeoapi.plugin import load_plugin
+        from pygeoapi.provider.base_edr import BaseEDRProvider
 
-        holder['p'] = load_plugin('provider', dict(pdef))
-        return ('pass', f'Loaded {type(holder["p"]).__qualname__}.')
+        self.provider = load_plugin('provider', dict(self.pdef))
+        if not isinstance(self.provider, BaseEDRProvider):
+            return (
+                'fail',
+                f'{type(self.provider).__name__} is not a pygeoapi BaseEDRProvider.',
+                'Subclass pygeoapi.provider.base_edr.BaseEDRProvider.',
+            )
+        return ('pass', f'Loaded {type(self.provider).__qualname__}.')
 
-    def fields() -> tuple[Any, ...]:
-        p = holder['p']
+    def check_fields(self) -> tuple[Any, ...]:
+        fields = dict(self.provider.get_fields() or {})
+        if not fields:
+            return (
+                'fail',
+                'get_fields() is empty, so parameter-name is never valid (notes §5.2).',
+                'Return one field per parameter.',
+            )
         missing = [
-            k
-            for k, v in (p.get_fields() or {}).items()
-            if not isinstance(v, Mapping) or 'x-ogc-unit' not in v
+            k for k, v in fields.items() if not isinstance(v, Mapping) or 'x-ogc-unit' not in v
         ]
         if missing:
             return (
@@ -601,34 +703,93 @@ def edr_checks(pdef: dict[str, Any], out: Checklist) -> None:
                 '(notes §5.2).',
                 "Add 'x-ogc-unit' to every field.",
             )
-        return ('pass', 'Every field has an x-ogc-unit.')
+        self.fields = fields
+        return ('pass', f'{len(fields)} parameter(s), each with a unit: {", ".join(fields)}.')
 
-    def query_types() -> tuple[Any, ...]:
-        types = list(holder['p'].get_query_types() or [])
-        if not types:
+    def query_types(self) -> tuple[Any, ...]:
+        self.types = list(self.provider.get_query_types() or [])
+        if not self.types:
             return (
                 'fail',
                 'No query types are registered.',
                 'Define the query methods in the class body (ADR-0009).',
             )
-        if 'items' in types:
+        if 'items' in self.types:
             return ('fail', "query types include 'items', which EDR doesn't define.")
-        return ('pass', f'Query types: {", ".join(types)}.')
+        if self.declared and sorted(self.types) != sorted(self.declared):
+            return (
+                'fail',
+                f'It offers {", ".join(self.types)}, but declares {", ".join(self.declared)}.',
+                'Narrow self.query_types to the declared ones (ADR-0009).',
+            )
+        return ('pass', f'Query types: {", ".join(self.types)}.')
 
-    out.run('L1.load', 'L1', 'pygeoapi loads the provider', load)
-    if 'p' not in holder:
-        return
-    out.run('L1.edr_fields', 'L1', 'EDR fields have units', fields)
-    out.run('L1.edr_query_types', 'L1', 'EDR query types', query_types)
-    out.add(
-        Check(
-            'L1.edr_coveragejson',
-            'L1',
-            'CoverageJSON responses',
-            'skip',
-            'CoverageJSON validation arrives with the time-series template (Phase 4).',
-        )
-    )
+    def parameters(self) -> tuple[Any, ...]:
+        params = self.provider.get_parameters()
+        return ('pass', f'get_parameters() describes {", ".join(sorted(params))}.')
+
+    def locations(self) -> tuple[Any, ...]:
+        fc = self.call('locations')
+        if not isinstance(fc, Mapping) or fc.get('type') != 'FeatureCollection':
+            return ('fail', 'locations without an id must return a GeoJSON FeatureCollection.')
+        features = [f for f in fc.get('features') or [] if f.get('geometry')]
+        if not features:
+            return (
+                'warn',
+                'locations returned no location with a geometry, so later checks skip.',
+            )
+        if any(f.get('id') in (None, '') for f in features):
+            return ('fail', 'A location has no id, so /locations/{id} can never find it.')
+        self.location = features[0]
+        return ('pass', f'{len(features)} location(s); checking {features[0]["id"]}.')
+
+    def coverage(self, query_type: str, **kwargs: Any) -> tuple[Any, ...]:
+        from pygeoapi.provider.base import ProviderNoDataError
+
+        from . import coveragejson
+
+        try:
+            doc = self.call(query_type, **kwargs)
+        except ProviderNoDataError:
+            return (
+                'warn',
+                f'{query_type} found no observations in the default time window.',
+                'That is HTTP 204 for clients; check the source has recent data.',
+            )
+        problems = coveragejson.problems(doc)
+        if problems:
+            return (
+                'fail',
+                f'{query_type} returned CoverageJSON that the OGC schema rejects.',
+                None,
+                problems[:10],
+            )
+        extra = sorted(coveragejson.range_keys(doc) - set(self.fields))
+        extra += sorted(set(doc.get('parameters') or {}) - set(self.fields) - set(extra))
+        if extra:
+            return (
+                'fail',
+                f'The response has parameters that get_fields() lacks: {", ".join(extra)}.',
+                'parameter-name is validated against get_fields() (notes §5.2).',
+            )
+        count = len(doc.get('coverages') or [doc])
+        return ('pass', f'Valid CoverageJSON ({doc.get("type")}, {count} coverage(s)).')
+
+    def unknown_location(self) -> tuple[Any, ...]:
+        from pygeoapi.provider.base import ProviderItemNotFoundError, ProviderNoDataError
+
+        try:
+            self.call('locations', location_id=UNKNOWN_LOCATION)
+        except ProviderItemNotFoundError:
+            return ('pass', 'An unknown location raises ProviderItemNotFoundError (HTTP 404).')
+        except ProviderNoDataError:
+            return ('warn', 'An unknown location gives no data (HTTP 204) rather than 404.')
+        return ('fail', 'A location that cannot exist returned data.')
+
+
+def _square(x: float, y: float, half: float) -> str:
+    a, b, c, d = x - half, y - half, x + half, y + half
+    return f'POLYGON(({a} {b}, {c} {b}, {c} {d}, {a} {d}, {a} {b}))'
 
 
 # --- L2: pygeoapi's API in-process --------------------------------------------------------
@@ -719,6 +880,80 @@ def api_checks(rid: str, resource: Mapping[str, Any], item_id: Any, out: Checkli
     out.run('L2.schema', 'L2', 'Schema', endpoint(get_collection_schema, f'{base}/schema', rid))
 
 
+def edr_api_checks(
+    rid: str, resource: Mapping[str, Any], location: Mapping[str, Any] | None, out: Checklist
+) -> None:
+    from pygeoapi.api import API, APIRequest, describe_collections
+    from pygeoapi.api.environmental_data_retrieval import get_collection_edr_query
+    from pygeoapi.openapi import get_oas
+    from werkzeug.test import EnvironBuilder
+
+    config = one_collection_config(rid, resource)
+    state: dict[str, Any] = {}
+
+    def openapi() -> tuple[Any, ...]:
+        oas = get_oas(config, fail_on_invalid_collection=True)
+        state['oas'] = oas
+        paths = [p for p in oas.get('paths', {}) if p.startswith(f'/collections/{rid}/')]
+        return ('pass', f'get_oas() with the fail flag lists {len(paths)} EDR path(s).')
+
+    out.run('L2.openapi', 'L2', 'OpenAPI generation', openapi)
+    if 'oas' not in state:
+        return
+    api = API(config, state['oas'])
+
+    def endpoint(
+        fn: Callable[..., Any],
+        path: str,
+        *args: Any,
+        query: str = 'f=json',
+        allow: tuple[int, ...] = (),
+    ) -> Callable[[], tuple[Any, ...]]:
+        def check() -> tuple[Any, ...]:
+            request = EnvironBuilder(path=path, query_string=query).get_request()
+            _h, status, content = fn(api, APIRequest.from_flask(request, api.locales), *args)
+            if status == 200:
+                return ('pass', f'GET {path}?{query} returned 200.')
+            if status in allow:
+                return ('warn', f'GET {path}?{query} returned {status} (no data in the window).')
+            return (
+                'fail',
+                f'GET {path}?{query} returned HTTP {status}.',
+                None,
+                str(content)[:2000],
+            )
+
+        return check
+
+    base = f'/collections/{rid}'
+    out.run(
+        'L2.collection', 'L2', 'Collection metadata', endpoint(describe_collections, base, rid)
+    )
+    out.run(
+        'L2.edr_locations',
+        'L2',
+        'Locations',
+        endpoint(get_collection_edr_query, f'{base}/locations', rid, None, 'locations'),
+    )
+    if location is None:
+        return
+    lid = str(location['id'])
+    out.run(
+        'L2.edr_location',
+        'L2',
+        'One location',
+        endpoint(
+            get_collection_edr_query,
+            f'{base}/locations/{lid}',
+            rid,
+            None,
+            'locations',
+            lid,
+            allow=(204,),
+        ),
+    )
+
+
 # --- L3: a live server in this container --------------------------------------------------
 
 
@@ -785,7 +1020,14 @@ def live_server(config: dict[str, Any], port: int) -> Iterator[str]:
         shutil.rmtree(workdir, ignore_errors=True)
 
 
-def live_checks(rid: str, resource: Mapping[str, Any], item_id: Any, out: Checklist) -> None:
+def live_checks(
+    rid: str,
+    resource: Mapping[str, Any],
+    item_id: Any,
+    out: Checklist,
+    paths: list[tuple[str, str]] | None = None,
+) -> None:
+    """``paths`` are (path with query, format) pairs; the default is the features ones."""
     import importlib.util
 
     if importlib.util.find_spec('gunicorn') is None:
@@ -801,33 +1043,37 @@ def live_checks(rid: str, resource: Mapping[str, Any], item_id: Any, out: Checkl
         return
     port = free_port()
     config = one_collection_config(rid, resource, url=f'http://127.0.0.1:{port}')
-    paths = [f'/collections/{rid}', f'/collections/{rid}/items']
-    if item_id is not None:
-        paths.append(f'/collections/{rid}/items/{item_id}')
+    if paths is None:
+        pages = [f'/collections/{rid}', f'/collections/{rid}/items']
+        if item_id is not None:
+            pages.append(f'/collections/{rid}/items/{item_id}')
+        paths = [(page, fmt) for page in pages for fmt in ('json', 'html', 'jsonld')]
     try:
         with live_server(config, port) as base:
             out.add(
                 Check('L3.server', 'L3', 'A live pygeoapi server', 'pass', 'gunicorn started.')
             )
-            for path in paths:
-                for fmt, kind in (('json', 'json'), ('html', 'html'), ('jsonld', 'json')):
-                    out.run(
-                        f'L3.{fmt}:{path}',
-                        'L3',
-                        f'{path}?f={fmt}',
-                        functools.partial(fetch, base, path, fmt, kind),
-                    )
+            for path, fmt in paths:
+                kind = 'html' if fmt == 'html' else 'json'
+                out.run(
+                    f'L3.{fmt}:{path}',
+                    'L3',
+                    f'{path}{"&" if "?" in path else "?"}f={fmt}',
+                    functools.partial(fetch, base, path, fmt, kind),
+                )
     except RuntimeError as err:
         out.add(Check('L3.server', 'L3', 'A live pygeoapi server', 'fail', str(err)))
 
 
 def fetch(base: str, path: str, fmt: str, kind: str) -> tuple[Any, ...]:
-    url = f'{base}{path}?f={fmt}'
+    url = f'{base}{path}{"&" if "?" in path else "?"}f={fmt}'
     try:
-        with urllib.request.urlopen(url, timeout=30) as r:  # noqa: S310 - loopback
-            body, ctype = r.read(), r.headers.get('content-type', '')
+        with urllib.request.urlopen(url, timeout=60) as r:  # noqa: S310 - loopback
+            body, ctype, status = r.read(), r.headers.get('content-type', ''), r.status
     except urllib.error.HTTPError as err:
         return ('fail', f'HTTP {err.code}.', None, err.read().decode(errors='replace')[:2000])
+    if status == 204:
+        return ('warn', 'HTTP 204: no data in the default time window.')
     if kind == 'json':
         json.loads(body)
     elif b'<html' not in body[:2000].lower():
@@ -850,13 +1096,16 @@ def run_contract(
     pdef = dict(resource['providers'][provider_index])
     kind = pdef.get('type')
     item_id = None
+    location = None
     if 'L1' in levels:
         if kind in ('feature', 'record'):
             contract = FeatureContract(pdef, capabilities, out)
             contract.run()
             item_id = contract.sample[0]['id'] if contract.sample else None
         elif kind == 'edr':
-            edr_checks(pdef, out)
+            edr = EDRContract(pdef, capabilities, out)
+            edr.run()
+            location = edr.location
         else:
             out.add(
                 Check(
@@ -878,6 +1127,14 @@ def run_contract(
         return out
     if 'L2' in levels and kind in ('feature', 'record'):
         api_checks(rid, resource, item_id, out)
+    if 'L2' in levels and kind == 'edr':
+        edr_api_checks(rid, resource, location, out)
     if 'L3' in levels and kind in ('feature', 'record') and out.ok():
         live_checks(rid, resource, item_id, out)
+    if 'L3' in levels and kind == 'edr' and out.ok():
+        base = f'/collections/{rid}'
+        pages = [(base, 'json'), (base, 'html'), (f'{base}/locations', 'json')]
+        if location is not None:
+            pages += [(f'{base}/locations/{location["id"]}', f) for f in ('json', 'html')]
+        live_checks(rid, resource, None, out, pages)
     return out

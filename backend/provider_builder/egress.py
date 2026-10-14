@@ -97,8 +97,22 @@ def sql_source(source: Mapping[str, Any]) -> set[HostPort]:
 
 def spec(doc: Mapping[str, Any]) -> set[HostPort]:
     """The hosts a spec declares: its source and item URLs, or its database server."""
-    if doc.get('template') == 'sql-features':
+    template = doc.get('template')
+    if template == 'sql-features':
         return sql_source(doc.get('source') or {})
+    if template == 'timeseries-edr':
+        found: set[HostPort] = set()
+        for block in ('locations', 'observations'):
+            part = doc.get(block) or {}
+            if part.get('from') == 'http':
+                http = part.get('http') or {}
+                if block == 'locations':
+                    found |= spec({'template': 'http-features', **http})
+                else:
+                    found |= urls([http.get('url')])
+            elif part.get('from') == 'sql':
+                found |= sql_source((part.get('sql') or {}).get('source') or {})
+        return found
     source = doc.get('source') or {}
     item = doc.get('item') or {}
     return urls([source.get('url'), item.get('url')])

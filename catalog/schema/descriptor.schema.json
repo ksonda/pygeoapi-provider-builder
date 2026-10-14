@@ -20,6 +20,12 @@
     "source": {"type": "array", "items": {"type": "string"}},
     "docs": {"type": "string", "format": "uri"},
     "requires": {"type": "array", "items": {"type": "string"}},
+    "query_types": {
+      "description": "The EDR query types an edr provider offers (the contract harness checks them)",
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"enum": ["position", "radius", "area", "cube", "trajectory", "corridor", "locations", "instances"]}
+    },
     "capabilities": {
       "type": "object",
       "additionalProperties": false,

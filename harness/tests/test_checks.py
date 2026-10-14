@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import sys
 import threading
 from collections.abc import Iterator
 from pathlib import Path
@@ -255,3 +256,50 @@ def test_the_sample_job_keeps_the_egress_rules(mock_api: str) -> None:
     assert (
         'non-public address' in out['error']['message'] or 'plain http' in out['error']['message']
     )
+
+
+def test_bad_coveragejson_fails_with_the_schema_problems() -> None:
+    out = run_contract(
+        'edr',
+        resource({'type': 'edr', 'name': 'broken_providers.EdrBadCoverage', 'data': 'unused'}),
+        levels=('L1',),
+    )
+    assert by_id(out, 'L1.edr_locations').status == 'pass'
+    assert by_id(out, 'L1.edr_unknown_location').status == 'pass'
+    check = by_id(out, 'L1.edr_location')
+    assert check.status == 'fail' and 'OGC schema rejects' in check.message
+    assert any('values' in p for p in check.details)
+
+
+def coops_resource(base: str) -> dict[str, Any]:
+    sys.path.insert(0, str(REPO / 'runtime' / 'tests'))
+    from tsfixtures import coops
+
+    return resource(
+        {
+            'type': 'edr',
+            'name': 'pygeoapi_spec_providers.timeseries.TimeSeriesEDRProvider',
+            'data': coops(base),
+        }
+    )
+
+
+def test_the_time_series_engine_passes_every_edr_check(mock_api: str) -> None:
+    out = run_contract(
+        'coops',
+        coops_resource(mock_api),
+        capabilities={'query_types': ['locations', 'position', 'area', 'cube']},
+        levels=('L1', 'L2'),
+    )
+    assert out.ok(), [(c.id, c.message, c.details) for c in out.results if c.status == 'fail']
+    got = statuses(out)
+    for check in ('edr_location', 'edr_position', 'edr_area', 'edr_cube'):
+        assert got[f'L1.{check}'] == 'pass', check
+    assert got['L2.collection'] == got['L2.edr_locations'] == got['L2.edr_location'] == 'pass'
+    narrowed = run_contract(
+        'coops',
+        coops_resource(mock_api),
+        capabilities={'query_types': ['locations']},
+        levels=('L1',),
+    )
+    assert by_id(narrowed, 'L1.edr_query_types').status == 'fail'

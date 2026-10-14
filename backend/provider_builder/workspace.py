@@ -49,7 +49,15 @@ TEMPLATES: dict[str, dict[str, Any]] = {
         'requires': ['pygeoapi_spec_providers', 'sqlglot', 'sqlalchemy'],
         'summary': 'A SQL query, made with the template wizard.',
     },
+    'timeseries-edr': {
+        'plugin': 'pygeoapi_spec_providers.timeseries.TimeSeriesEDRProvider',
+        'provider_type': 'edr',
+        'ogc_api': ['edr'],
+        'requires': ['pygeoapi_spec_providers'],
+        'summary': 'Time series at monitoring locations, made with the template wizard.',
+    },
 }
+EDR_QUERY_TYPES = ['locations', 'position', 'area', 'cube']
 
 
 def template_of(doc: dict[str, Any]) -> dict[str, Any]:
@@ -62,6 +70,37 @@ def plugin_for(doc: dict[str, Any]) -> str:
 
 def provider_type_for(doc: dict[str, Any]) -> str:
     return str(template_of(doc)['provider_type'])
+
+
+def requires_for(doc: dict[str, Any]) -> list[str]:
+    """The modules a spec's provider imports: the engine plus each source's client."""
+    out = list(template_of(doc)['requires'])
+    sources: list[dict[str, Any]] = []
+    if doc.get('template') == 'timeseries-edr':
+        for block in ('locations', 'observations'):
+            part = doc.get(block) or {}
+            kind = part.get('from')
+            if kind == 'http':
+                out += ['httpx', 'jsonpath']
+            elif kind == 'sql':
+                out += ['sqlglot', 'sqlalchemy']
+                sources.append((part.get('sql') or {}).get('source') or {})
+    else:
+        sources.append(doc.get('source') or {})
+    if any(s.get('dialect') == 'postgresql' for s in sources):
+        out.append('psycopg2')
+    return list(dict.fromkeys(out))
+
+
+def query_types_for(doc: dict[str, Any]) -> list[str]:
+    return list(doc.get('query_types') or EDR_QUERY_TYPES)
+
+
+def harness_capabilities(doc: dict[str, Any]) -> dict[str, Any]:
+    """What the contract harness holds a spec's provider to."""
+    if doc.get('template') == 'timeseries-edr':
+        return {'query_types': query_types_for(doc)}
+    return dict(capabilities_for(doc))
 
 
 def capabilities_for(doc: dict[str, Any]) -> dict[str, bool]:
@@ -115,7 +154,7 @@ def spec_env(doc: dict[str, Any]) -> list[str]:
 
 
 def secret_names(doc: dict[str, Any]) -> set[str]:
-    return secret_env(doc)
+    return set(secret_env(doc))
 
 
 def check_spec_text(text: str) -> tuple[dict[str, Any] | None, list[Problem]]:
@@ -137,9 +176,7 @@ def generated_descriptor(
     paths = [f'{server_path.rstrip("/")}/{pid}/{v}/spec.yaml' for v, _ in versions]
     secrets = secret_names(latest)
     info = template_of(latest)
-    requires = list(info['requires'])
-    if (latest.get('source') or {}).get('dialect') == 'postgresql':
-        requires.append('psycopg2')
+    requires = requires_for(latest)
     descriptor: dict[str, Any] = {
         'descriptor_version': 1,
         'id': f'created/{pid}',
@@ -151,7 +188,6 @@ def generated_descriptor(
         'ogc_api': list(info['ogc_api']),
         'version': latest_version,
         'requires': requires,
-        'capabilities': capabilities_for(latest),
         'probe': {'kind': info['provider_type']},
         'egress': {'kind': 'spec'},
         'hide': HIDDEN,
@@ -172,6 +208,11 @@ def generated_descriptor(
             },
         ],
     }
+    if info['provider_type'] == 'edr':
+        descriptor['query_types'] = query_types_for(latest)
+        descriptor['hide'] = HIDDEN + ['title_field', 'time_field', 'properties', 'count']
+    else:
+        descriptor['capabilities'] = capabilities_for(latest)
     # The spec sets these and the provider applies them; the config may override them.
     for key, title, kinds in (
         ('title_field', 'Title field', ['string']),

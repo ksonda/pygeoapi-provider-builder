@@ -43,7 +43,8 @@ services:
     image: geopython/pygeoapi:0.24.0   # Flask and gunicorn are already in the pinned image
     user: "10001:0"
     read_only: true
-    entrypoint: ["/venv/bin/gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2",
+    # --reload: edits to mock_api.py take effect without recreating the container
+    entrypoint: ["/venv/bin/gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "--reload",
                  "--worker-tmp-dir", "/tmp", "--chdir", "/opt/mock", "mock_api:app"]
     tmpfs: [/tmp]
     ports:

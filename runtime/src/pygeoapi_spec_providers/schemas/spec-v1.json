@@ -7,7 +7,7 @@
   "required": ["spec_version", "template", "id", "title"],
   "properties": {
     "spec_version": {"const": 1},
-    "template": {"enum": ["http-features", "sql-features"]},
+    "template": {"enum": ["http-features", "sql-features", "timeseries-edr"]},
     "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"},
     "title": {"type": "string", "minLength": 1},
     "description": {"type": "string"},
@@ -24,6 +24,10 @@
     {
       "if": {"properties": {"template": {"const": "sql-features"}}, "required": ["template"]},
       "then": {"$ref": "#/$defs/sql_features"}
+    },
+    {
+      "if": {"properties": {"template": {"const": "timeseries-edr"}}, "required": ["template"]},
+      "then": {"$ref": "#/$defs/timeseries_edr"}
     }
   ],
   "unevaluatedProperties": false,
@@ -183,6 +187,169 @@
           "then": {"properties": {"encoding": true}, "additionalProperties": false}
         }
       ]
+    },
+    "timeseries_edr": {
+      "type": "object",
+      "required": ["locations", "parameters", "observations"],
+      "properties": {
+        "locations": {"$ref": "#/$defs/ts_locations"},
+        "parameters": {"type": "array", "minItems": 1, "maxItems": 50, "items": {"$ref": "#/$defs/ts_parameter"}},
+        "observations": {"$ref": "#/$defs/ts_observations"},
+        "query_types": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["locations", "position", "area", "cube"]}
+        },
+        "position": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {"snap_radius_km": {"type": "number", "exclusiveMinimum": 0, "maximum": 1000}}
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "max_locations": {"type": "integer", "minimum": 1, "maximum": 1000},
+            "max_observations": {"type": "integer", "minimum": 1, "maximum": 1000000}
+          }
+        }
+      }
+    },
+    "ts_locations": {
+      "description": "Where the monitoring locations come from: an http-features or sql-features block",
+      "type": "object",
+      "required": ["from"],
+      "properties": {"from": {"enum": ["http", "sql"]}},
+      "allOf": [
+        {
+          "if": {"properties": {"from": {"const": "http"}}, "required": ["from"]},
+          "then": {
+            "required": ["http"],
+            "properties": {"from": true, "http": {"$ref": "#/$defs/http_features", "unevaluatedProperties": false}},
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {"properties": {"from": {"const": "sql"}}, "required": ["from"]},
+          "then": {
+            "required": ["sql"],
+            "properties": {"from": true, "sql": {"$ref": "#/$defs/sql_features", "unevaluatedProperties": false}},
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "ts_parameter": {
+      "type": "object",
+      "required": ["id", "label", "unit"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"$ref": "#/$defs/name"},
+        "label": {"type": "string", "minLength": 1},
+        "description": {"type": "string"},
+        "unit": {
+          "type": "object",
+          "required": ["symbol"],
+          "additionalProperties": false,
+          "properties": {"symbol": {"type": "string", "minLength": 1}, "label": {"type": "string"}}
+        },
+        "observed_property": {"description": "A vocabulary URI, such as an ODM2 variable", "type": "string", "pattern": "^https?://"},
+        "unit_uri": {"description": "A unit URI, such as a QUDT unit", "type": "string", "pattern": "^https?://"},
+        "upstream": {"description": "The source's name for the parameter, for {parameter} and :parameter (default: id)", "type": ["string", "integer"]}
+      }
+    },
+    "ts_observations": {
+      "type": "object",
+      "required": ["from"],
+      "properties": {"from": {"enum": ["http", "sql"]}},
+      "allOf": [
+        {
+          "if": {"properties": {"from": {"const": "http"}}, "required": ["from"]},
+          "then": {
+            "required": ["http"],
+            "properties": {
+              "from": true,
+              "http": {"$ref": "#/$defs/ts_obs_http"},
+              "default_window": {"$ref": "#/$defs/duration"},
+              "max_window": {"$ref": "#/$defs/duration"}
+            },
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {"properties": {"from": {"const": "sql"}}, "required": ["from"]},
+          "then": {
+            "required": ["sql"],
+            "properties": {
+              "from": true,
+              "sql": {"$ref": "#/$defs/ts_obs_sql"},
+              "default_window": {"$ref": "#/$defs/duration"},
+              "max_window": {"$ref": "#/$defs/duration"}
+            },
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "ts_obs_http": {
+      "type": "object",
+      "required": ["url", "records", "time", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "url": {"description": "May use {location_id} and {parameter} in the path", "type": "string", "pattern": "^https?://[^/?#@\\s{}]+"},
+        "query": {
+          "description": "Query parameters; values may use {location_id}, {parameter}, {start} and {end} (with a strftime format, e.g. {start:%Y%m%d})",
+          "type": "object",
+          "additionalProperties": {"type": ["string", "number", "boolean"]}
+        },
+        "headers": {"type": "object", "additionalProperties": {"type": "string"}},
+        "auth": {"$ref": "#/$defs/auth"},
+        "timeout_s": {"type": "number", "exclusiveMinimum": 0, "maximum": 120},
+        "retries": {"$ref": "#/$defs/source/properties/retries"},
+        "rate_limit": {"$ref": "#/$defs/source/properties/rate_limit"},
+        "cache_ttl_s": {"type": "integer", "minimum": 0, "maximum": 86400},
+        "max_response_bytes": {"type": "integer", "minimum": 1, "maximum": 100000000},
+        "error_path": {"$ref": "#/$defs/jsonpath"},
+        "records": {"$ref": "#/$defs/jsonpath"},
+        "time": {"$ref": "#/$defs/ts_time"},
+        "value": {"$ref": "#/$defs/ts_ref"},
+        "parameter": {"$ref": "#/$defs/ts_ref"}
+      }
+    },
+    "ts_obs_sql": {
+      "type": "object",
+      "required": ["source", "query", "time", "value"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {"$ref": "#/$defs/sql_source"},
+        "query": {
+          "description": "One read-only SELECT with :location_id, and :parameter, :start and :end as needed",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100000
+        },
+        "time": {"$ref": "#/$defs/ts_time"},
+        "value": {"$ref": "#/$defs/ts_ref"},
+        "parameter": {"$ref": "#/$defs/ts_ref"}
+      }
+    },
+    "ts_time": {
+      "type": "object",
+      "required": ["from"],
+      "additionalProperties": false,
+      "properties": {"from": {"$ref": "#/$defs/value_ref"}, "format": {"type": "string", "minLength": 1}}
+    },
+    "ts_ref": {
+      "type": "object",
+      "required": ["from"],
+      "additionalProperties": false,
+      "properties": {"from": {"$ref": "#/$defs/value_ref"}}
+    },
+    "duration": {
+      "description": "An ISO 8601 duration in weeks, days, hours, minutes or seconds, e.g. P7D or PT6H",
+      "type": "string",
+      "pattern": "^P(\\d+W|(\\d+D)?(T(\\d+H)?(\\d+M)?(\\d+(\\.\\d+)?S)?)?)$"
     },
     "column": {"description": "A column of the query's result", "type": "string", "minLength": 1, "maxLength": 128},
     "sql_name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_$]{0,62}$"},

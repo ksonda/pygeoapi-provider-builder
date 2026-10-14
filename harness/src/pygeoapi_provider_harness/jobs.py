@@ -116,8 +116,10 @@ def probe(job: dict[str, Any]) -> dict[str, Any]:
         'timings': timings,
     }
 
+    if pdef.get('type') == 'edr':
+        return _probe_edr(provider, result, limit, timings)
     if pdef.get('type') not in ('feature', 'record'):
-        result['note'] = 'Only feature and record probes are implemented in Phase 1.'
+        result['note'] = f'{pdef.get("type")} providers are loaded, but not queried, by the probe.'
         return result
 
     t0 = time.perf_counter()
@@ -149,6 +151,34 @@ def probe(job: dict[str, Any]) -> dict[str, Any]:
         'temporal': _time_range(extent_features, pdef.get('time_field')),
     }
     result['id_stats'] = _id_stats(extent_features)
+    return result
+
+
+def _probe_edr(
+    provider: Any, result: dict[str, Any], limit: int, timings: dict[str, float]
+) -> dict[str, Any]:
+    """An EDR provider's query types, and its locations as the sample (when it lists them)."""
+    from .checks import EDR_KWARGS
+
+    types = list(provider.get_query_types() or [])
+    result['query_types'] = types
+    result['parameters'] = sorted((provider.get_fields() or {}).keys())
+    if 'locations' not in types:
+        result['note'] = 'This EDR provider has no locations query, so there is no sample.'
+        return result
+    t0 = time.perf_counter()
+    fc = provider.query(**{**EDR_KWARGS, 'query_type': 'locations', 'limit': max(limit, 50)})
+    timings['query_ms'] = _ms(t0)
+    features = list(fc.get('features', [])) if isinstance(fc, dict) else []
+    result['sample'] = {
+        'type': 'FeatureCollection',
+        'features': features[:limit],
+        'numberMatched': len(features),
+        'numberReturned': min(len(features), limit),
+    }
+    result['sample_stats'] = _property_stats(features[:limit])
+    result['extent'] = {'from': 'locations', 'bbox': _bbox(features), 'temporal': None}
+    result['id_stats'] = _id_stats(features)
     return result
 
 
@@ -575,7 +605,12 @@ def sql_sample(job: dict[str, Any]) -> dict[str, Any]:
 
     source = remap_paths(_load_yaml(_materialize(job, 'source_yaml')), job.get('path_map', []))
     t0 = time.perf_counter()
-    out = sample_rows(source, str(job['query']), int(job.get('limit', SQL_SAMPLE_ROWS)))
+    out = sample_rows(
+        source,
+        str(job['query']),
+        int(job.get('limit', SQL_SAMPLE_ROWS)),
+        params=job.get('params') or None,
+    )
     names, found, db_types = out['columns'], out['rows'], out['types']
     columns = []
     for i, name in enumerate(names):

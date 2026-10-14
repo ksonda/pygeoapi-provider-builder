@@ -497,6 +497,47 @@
         "title": "Note",
         "type": "object"
       },
+      "ObservationSampleRequest": {
+        "properties": {
+          "location_id": {
+            "title": "Location Id",
+            "type": "string"
+          },
+          "observations": {
+            "additionalProperties": true,
+            "description": "A timeseries-edr spec's observations block (from: http or sql)",
+            "title": "Observations",
+            "type": "object"
+          },
+          "parameter": {
+            "description": "The source's name for the parameter ({parameter})",
+            "title": "Parameter",
+            "type": "string"
+          },
+          "test_secrets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "description": "ENV_NAME -> value",
+            "title": "Test Secrets",
+            "type": "object"
+          },
+          "window": {
+            "default": "P1D",
+            "description": "How far back from now, as a duration",
+            "title": "Window",
+            "type": "string"
+          }
+        },
+        "required": [
+          "observations",
+          "location_id",
+          "parameter"
+        ],
+        "title": "ObservationSampleRequest",
+        "type": "object"
+      },
       "OpenAPICheckRequest": {
         "properties": {
           "form": {
@@ -2087,6 +2128,47 @@
           }
         },
         "summary": "Samples",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/samples/observations": {
+      "post": {
+        "operationId": "samples_observations_api_samples_observations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObservationSampleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Samples Observations",
         "tags": [
           "mode-b"
         ]

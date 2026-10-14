@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 import time
 import uuid
 from collections.abc import Iterator
@@ -397,3 +398,88 @@ def test_pygeoapi_serves_the_sql_join(
     assert march.json()['numberMatched'] == 88 + 157  # canals and drains
     one = httpx.get(f'{url}/{items["features"][0]["id"]}?f=json', timeout=60)
     assert one.status_code == 200
+
+
+# --- Mode B: time series as EDR (Phase 4 exit: "CO-OPS water levels are served as EDR") ------
+
+
+def coops_spec_text() -> str:
+    sys.path.insert(0, str(REPO / 'runtime' / 'tests'))
+    import yaml
+    from tsfixtures import coops
+
+    return yaml.safe_dump(coops('http://mockapi:8000'), sort_keys=False)
+
+
+def test_the_time_series_harness_passes_in_the_sandbox(service: Service) -> None:
+    out = service.spec_harness(coops_spec_text(), {}, ['L1', 'L2', 'L3'])
+    assert out['ok'], out.get('explanation') or out.get('problems')
+    assert out['egress'] == ['mockapi:8000']
+    assert out['result']['ok'], [c for c in out['result']['checks'] if c['status'] == 'fail']
+    checks = {c['id']: c['status'] for c in out['result']['checks']}
+    assert checks['L3.server'] == 'pass'
+    assert checks['L3.json:/collections/coops-water-levels/locations/9414290'] == 'pass'
+    assert checks['L3.html:/collections/coops-water-levels/locations/9414290'] == 'pass'
+
+
+def test_pygeoapi_serves_coops_water_levels_as_edr(
+    service: Service, serve: callable, workdir: Path
+) -> None:
+    from pygeoapi_provider_harness import coveragejson
+
+    saved = service.workspace_save(coops_spec_text(), None, '', None)
+    form = FormState.model_validate(
+        {
+            'resource_id': 'coops',
+            'resource': {
+                'title': 'CO-OPS water levels',
+                'description': 'Water levels and air temperature at tide stations',
+                'keywords': ['water level', 'tides'],
+                'extents': {'spatial': {'bbox': [-160, 20, -70, 50]}},
+            },
+            'providers': [{'descriptor': saved['descriptor'], 'values': {'data': saved['data']}}],
+        }
+    )
+    probe = service.probe(form, 0, {})
+    assert probe['ok'], probe.get('explanation')
+    exported = service.export(form, 't')
+    assert not exported.validation.blocking, exported.validation.findings
+    base = serve(
+        exported.merged_yaml,
+        {'PYTHONPATH': '/opt/runtime', 'PYGEOAPI_SPEC_PRIVATE_HOSTS': 'mockapi'},
+        image=STABLE_TAG,
+        volumes=(
+            f'{REPO / "runtime" / "src"}:/opt/runtime:ro',
+            f'{workdir / "providers"}:/specs:ro',
+        ),
+        args=('--user', 'root', '--entrypoint', '/entrypoint.sh'),
+    )
+    collection = httpx.get(f'{base}/collections/coops?f=json', timeout=60).json()
+    assert set(collection['data_queries']) == {'locations', 'position', 'area', 'cube'}
+    assert collection['parameter_names']['water_level']['unit']['symbol']['value'] == 'm'
+    url = f'{base}/collections/coops'
+    stations = httpx.get(f'{url}/locations?f=json', timeout=60).json()
+    assert stations['type'] == 'FeatureCollection' and len(stations['features']) == 6
+    day = 'datetime=2026-10-01T00:00:00Z/2026-10-02T00:00:00Z'
+    one = httpx.get(f'{url}/locations/9414290?f=json&{day}&parameter-name=water_level', timeout=60)
+    assert one.status_code == 200, one.text
+    assert one.headers['content-type'].startswith('application/vnd.cov+json')
+    assert coveragejson.problems(one.json()) == []
+    assert one.json()['coverages'][0]['ranges']['water_level']['shape'] == [241]
+    for query in (
+        'position?coords=POINT(-122.47 37.80)',
+        'area?coords=POLYGON((-80 35, -65 35, -65 45, -80 45, -80 35))',
+        'cube?bbox=-125,40,-115,50',
+    ):
+        r = httpx.get(f'{url}/{query}&f=json&{day}', timeout=60)
+        assert r.status_code == 200, (query, r.text)
+        assert coveragejson.problems(r.json()) == [], query
+    html = httpx.get(f'{url}/locations/9414290?f=html&{day}', timeout=60)
+    assert html.status_code == 200 and '<html' in html.text.lower()
+    far = httpx.get(f'{url}/position?coords=POINT(-100 40)&f=json&{day}', timeout=60)
+    assert far.status_code == 204  # no station within the snap radius: no data
+    long = httpx.get(
+        f'{url}/locations/9414290?f=json&datetime=2026-01-01T00:00:00Z/2026-03-01T00:00:00Z',
+        timeout=60,
+    )
+    assert long.status_code == 400 and 'P31D' in long.text

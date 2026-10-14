@@ -327,6 +327,7 @@ def card(d: Descriptor) -> dict[str, Any]:
         'docs': raw.get('docs'),
         'requires': raw.get('requires', []),
         'capabilities': raw.get('capabilities', {}),
+        'query_types': raw.get('query_types', []),
         'notes': raw.get('notes', []),
         'verdict': raw.get('verdict'),
         'version': raw.get('version'),

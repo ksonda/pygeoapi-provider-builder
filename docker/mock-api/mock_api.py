@@ -1,7 +1,9 @@
 """A mock JSON API for Mode B tests and demos (PLAN.md §12, "Runtime engine").
 
 120 synthetic wells (seeded, so every run is identical) behind one endpoint per
-pagination style, auth type and failure the spec engine has to handle. Flask
+pagination style, auth type and failure the spec engine has to handle, and a
+NOAA CO-OPS look-alike (``/coops/…``: a station list and the datagetter, with
+CO-OPS's response shapes and errors) for the time-series template. Flask
 because it's already in the pinned pygeoapi image: the dev stack runs this
 file there with gunicorn, and tests serve it in-process.
 
@@ -13,10 +15,12 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import os
 import random
 import threading
 import time
+import zlib
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -280,6 +284,78 @@ def redirect_out() -> Response:
 @app.get('/redirect/in')
 def redirect_in() -> Response:
     return Response(status=302, headers={'Location': '/v2/wells'})
+
+
+# --- a NOAA CO-OPS look-alike (api.tidesandcurrents.noaa.gov) -------------------------------
+
+STATIONS = [
+    {'id': '9414290', 'name': 'San Francisco', 'state': 'CA', 'lat': 37.8063, 'lng': -122.4659},
+    {'id': '8518750', 'name': 'The Battery', 'state': 'NY', 'lat': 40.7006, 'lng': -74.0142},
+    {'id': '8443970', 'name': 'Boston', 'state': 'MA', 'lat': 42.3539, 'lng': -71.0503},
+    {'id': '9447130', 'name': 'Seattle', 'state': 'WA', 'lat': 47.6026, 'lng': -122.3393},
+    {'id': '8724580', 'name': 'Key West', 'state': 'FL', 'lat': 24.5508, 'lng': -81.8081},
+    {'id': '1612340', 'name': 'Honolulu', 'state': 'HI', 'lat': 21.3033, 'lng': -157.8645},
+]
+#: Products each station offers; Honolulu has no air temperature here, to test "no data".
+PRODUCTS = {
+    'water_level': (timedelta(minutes=6), 1.0, 0.8, 12.42),
+    'air_temperature': (timedelta(hours=1), 15.0, 5.0, 24.0),
+}
+NO_DATA = (
+    'No data was found. This product may not be offered at this station at the requested time.'
+)
+
+
+def coops_date(text: str | None) -> datetime | None:
+    for fmt in ('%Y%m%d %H:%M', '%Y%m%d'):
+        try:
+            return datetime.strptime(str(text), fmt).replace(tzinfo=UTC)
+        except ValueError:
+            continue
+    return None
+
+
+def coops_error(message: str) -> Response:
+    return jsonify(error={'message': message})  # CO-OPS answers HTTP 200 with an error body
+
+
+@app.get('/coops/mdapi/prod/webapi/stations.json')
+def coops_stations() -> Response:
+    stations = [dict(s, tidal=True, greatlakes=False) for s in STATIONS]
+    return jsonify(count=len(stations), units=None, stations=stations)
+
+
+@app.get('/coops/api/prod/datagetter')
+def coops_data() -> Response:
+    args = request.args
+    station = next((s for s in STATIONS if s['id'] == args.get('station')), None)
+    product = args.get('product')
+    if args.get('format') != 'json':
+        return Response('format=json is required', status=400, mimetype='text/plain')
+    if product not in PRODUCTS:
+        return coops_error(f'Wrong Product: {product}')
+    begin, end = coops_date(args.get('begin_date')), coops_date(args.get('end_date'))
+    if begin is None or end is None:
+        return coops_error('Wrong Begin Date or End Date')
+    if end - begin > timedelta(days=31):
+        return coops_error('The size limit for data retrieval for this product is 31 days')
+    if station is None or (product == 'air_temperature' and station['state'] == 'HI'):
+        return coops_error(NO_DATA)
+    step, base, amplitude, period_h = PRODUCTS[product]
+    phase = zlib.crc32(station['id'].encode()) % 360 / 180 * math.pi
+    moment = begin + (datetime.min.replace(tzinfo=UTC) - begin) % step
+    data = []
+    while moment <= end:
+        hours = moment.timestamp() / 3600
+        value = base + amplitude * math.sin(2 * math.pi * hours / period_h + phase)
+        data.append({'t': moment.strftime('%Y-%m-%d %H:%M'), 'v': f'{value:.3f}', 's': '0.003',
+                     'f': '0,0,0,0', 'q': 'p'})  # fmt: skip
+        moment += step
+    if not data:
+        return coops_error(NO_DATA)
+    meta = {'id': station['id'], 'name': station['name'], 'lat': str(station['lat']),
+            'lon': str(station['lng'])}  # fmt: skip
+    return jsonify(metadata=meta, data=data)
 
 
 if __name__ == '__main__':

@@ -293,6 +293,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/samples/observations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Samples Observations */
+        post: operations["samples_observations_api_samples_observations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/samples/sql": {
         parameters: {
             query?: never;
@@ -765,6 +782,37 @@ export interface components {
             message: string;
             /** Path */
             path: string;
+        };
+        /** ObservationSampleRequest */
+        ObservationSampleRequest: {
+            /** Location Id */
+            location_id: string;
+            /**
+             * Observations
+             * @description A timeseries-edr spec's observations block (from: http or sql)
+             */
+            observations: {
+                [key: string]: unknown;
+            };
+            /**
+             * Parameter
+             * @description The source's name for the parameter ({parameter})
+             */
+            parameter: string;
+            /**
+             * Test Secrets
+             * @description ENV_NAME -> value
+             * @default {}
+             */
+            test_secrets?: {
+                [key: string]: string;
+            };
+            /**
+             * Window
+             * @description How far back from now, as a duration
+             * @default P1D
+             */
+            window?: string;
         };
         /** OpenAPICheckRequest */
         OpenAPICheckRequest: {
@@ -1707,6 +1755,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SampleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    samples_observations_api_samples_observations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ObservationSampleRequest"];
             };
         };
         responses: {
