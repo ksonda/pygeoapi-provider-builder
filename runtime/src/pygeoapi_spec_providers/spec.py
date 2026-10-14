@@ -2,10 +2,11 @@
 
 A spec is data. It is loaded with pygeoapi's own ``yaml_load``, so ``${VAR}``
 behaves exactly as it does in the pygeoapi config, then checked against
-``schemas/spec-v1.json`` and the semantic rules below. ``check_text`` runs on
-the raw text, before environment variables are applied, and catches
-placeholders that ``yaml_load`` would silently leave alone, and secrets
-written into the spec itself.
+``schemas/spec-v1.json`` and the semantic rules below, per template
+(``http-features``, ``sql-features``). ``check_text`` runs on the raw text,
+before environment variables are applied, and catches placeholders that
+``yaml_load`` would silently leave alone, and secrets written into the spec
+itself.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ from urllib.parse import urlsplit
 import yaml
 from jsonschema import Draft202012Validator
 
-from . import formatter, jsonpaths
+from . import formatter, jsonpaths, sqlguard
 
 SCHEMA: dict[str, Any] = json.loads(
     importlib.resources.files(__package__).joinpath('schemas/spec-v1.json').read_text('utf-8')
@@ -57,6 +58,19 @@ DEFAULTS: dict[str, Any] = {
     'pagination': {'style': 'none', 'max_page_size': 100},
     'filters': {},
     'limits': {'max_records_scanned': 10_000, 'max_pages': 50},
+}
+SQL_DEFAULTS: dict[str, Any] = {
+    'source': {'connect_timeout_s': 5, 'statement_timeout_s': 10},
+    'limits': {'max_rows': 10_000},
+}
+TEMPLATE_DEFAULTS: dict[str, dict[str, Any]] = {
+    'http-features': DEFAULTS,
+    'sql-features': SQL_DEFAULTS,
+}
+#: Where each template keeps secrets: they must be ``${VAR}`` placeholders.
+SECRET_KEYS: dict[str, list[tuple[str, ...]]] = {
+    'http-features': [('source', 'auth', 'value'), ('source', 'auth', 'password')],
+    'sql-features': [('source', 'connection', 'password'), ('source', 'dsn')],
 }
 
 
@@ -118,6 +132,9 @@ class Spec:
 
 
 def declared_hosts(doc: Mapping[str, Any]) -> set[str]:
+    """The HTTP hosts a spec declares. SQL specs reach their database, not HTTP hosts."""
+    if doc.get('template', 'http-features') != 'http-features':
+        return set()
     hosts = set()
     for url in (doc.get('source', {}).get('url'), doc.get('item', {}).get('url')):
         if isinstance(url, str):
@@ -127,19 +144,49 @@ def declared_hosts(doc: Mapping[str, Any]) -> set[str]:
     return hosts
 
 
-def merge_defaults(doc: Mapping[str, Any]) -> dict[str, Any]:
-    def merge(base: Any, over: Any) -> Any:
-        if isinstance(base, dict) and isinstance(over, Mapping):
-            out = copy.deepcopy(base)
-            for k, v in over.items():
-                out[k] = merge(out.get(k), v) if k in out else copy.deepcopy(v)
-            return out
-        return copy.deepcopy(over)
+def _dig(doc: Any, path: tuple[str, ...]) -> Any:
+    for key in path:
+        if not isinstance(doc, Mapping):
+            return None
+        doc = doc.get(key)
+    return doc
 
-    data: dict[str, Any] = merge(DEFAULTS, doc)
-    page = data['pagination'].get('page')
-    if page is not None:
-        page.setdefault('page_start', 1)
+
+def secret_values(doc: Mapping[str, Any]) -> list[tuple[str, Any]]:
+    """(pointer, value) for every key of the spec's template that holds a secret."""
+    out = []
+    for path in SECRET_KEYS.get(str(doc.get('template', 'http-features')), []):
+        value = _dig(doc, path)
+        if value is not None:
+            out.append(('/' + '/'.join(path), value))
+    return out
+
+
+def secret_env(doc: Mapping[str, Any]) -> set[str]:
+    """The environment variables that hold the spec's secrets (as opposed to plain settings)."""
+    return {
+        v[2:-1]
+        for _, v in secret_values(doc)
+        if isinstance(v, str) and SECRET_PLACEHOLDER.match(v)
+    }
+
+
+def _merge(base: Any, over: Any) -> Any:
+    if isinstance(base, dict) and isinstance(over, Mapping):
+        out = copy.deepcopy(base)
+        for k, v in over.items():
+            out[k] = _merge(out.get(k), v) if k in out else copy.deepcopy(v)
+        return out
+    return copy.deepcopy(over)
+
+
+def merge_defaults(doc: Mapping[str, Any]) -> dict[str, Any]:
+    template = str(doc.get('template', 'http-features'))
+    data: dict[str, Any] = _merge(TEMPLATE_DEFAULTS.get(template, {}), doc)
+    if template == 'http-features':
+        page = data['pagination'].get('page')
+        if page is not None:
+            page.setdefault('page_start', 1)
     return data
 
 
@@ -170,6 +217,89 @@ def schema_problems(doc: Any) -> list[Problem]:
 
 def semantic_problems(doc: Mapping[str, Any]) -> list[Problem]:
     """Rules the JSON Schema can't express. Assumes the schema passed."""
+    template = doc.get('template', 'http-features')
+    if template == 'sql-features':
+        return _sql_problems(doc)
+    return _http_problems(doc)
+
+
+def _property_problems(doc: Mapping[str, Any], json_refs: bool) -> list[Problem]:
+    """Unique names, datetime formats, and time/title fields of the right type."""
+    problems: list[Problem] = []
+    names: dict[str, str] = {}
+    for i, prop in enumerate(doc['properties']):
+        if prop['name'] in names:
+            problems.append(
+                Problem(f'/properties/{i}/name', f'Duplicate property {prop["name"]!r}.')
+            )
+        names[prop['name']] = prop['type']
+        if json_refs and 'from' in prop and prop['from'].startswith('$'):
+            try:
+                jsonpaths.compile_path(prop['from'])
+            except jsonpaths.PathError as err:
+                problems.append(Problem(f'/properties/{i}/from', str(err)))
+        fmt = prop.get('format')
+        if fmt is not None:
+            if prop['type'] != 'datetime':
+                problems.append(
+                    Problem(f'/properties/{i}/format', 'Only datetime properties take a format.')
+                )
+            elif fmt not in DATETIME_FORMATS:
+                try:
+                    formatter.check_strftime(fmt)
+                except formatter.FormatError as err:
+                    problems.append(
+                        Problem(
+                            f'/properties/{i}/format',
+                            str(err),
+                            'Use iso8601, date, epoch_s, epoch_ms or a strftime pattern.',
+                        )
+                    )
+    for key, kind in (('time_field', 'datetime'), ('title_field', 'string')):
+        name = doc.get(key)
+        if name is None:
+            continue
+        if name not in names:
+            problems.append(Problem(f'/{key}', f'{name!r} is not one of the properties.'))
+        elif names[name] != kind:
+            problems.append(
+                Problem(f'/{key}', f'{key} must be a {kind} property; {name!r} is {names[name]}.')
+            )
+    return problems
+
+
+def _sql_problems(doc: Mapping[str, Any]) -> list[Problem]:
+    problems: list[Problem] = []
+    source = doc['source']
+    dialect = source['dialect']
+    try:
+        sqlguard.check(doc['query'], dialect)
+    except sqlguard.SQLGuardError as err:
+        problems.append(Problem('/query', str(err)))
+    encoding = doc['geometry']['encoding']
+    if encoding == 'native' and dialect != 'postgresql':
+        problems.append(
+            Problem(
+                '/geometry/encoding',
+                f'{dialect} has no native geometry type.',
+                'Use wkb, wkt, geojson, gpkg (GeoPackage) or xy.',
+            )
+        )
+    problems += _property_problems(doc, json_refs=False)
+    for i, prop in enumerate(doc['properties']):
+        if prop.get('from', '').startswith('$'):
+            problems.append(
+                Problem(f'/properties/{i}/from', 'For a SQL query, from names a column.')
+            )
+    dsn = source.get('dsn')
+    if isinstance(dsn, str) and not dsn.startswith('${'):
+        scheme = dsn.split('://', 1)[0].lower()
+        if scheme not in ('postgresql', 'postgres', 'postgresql+psycopg2'):
+            problems.append(Problem('/source/dsn', 'The connection string must be postgresql://…'))
+    return problems
+
+
+def _http_problems(doc: Mapping[str, Any]) -> list[Problem]:
     problems: list[Problem] = []
 
     def path(pointer: str, value: str) -> None:
@@ -232,43 +362,8 @@ def semantic_problems(doc: Mapping[str, Any]) -> list[Problem]:
         if key in geometry:
             ref(f'/geometry/{key}', geometry[key])
 
-    names: dict[str, str] = {}
-    for i, prop in enumerate(doc['properties']):
-        if prop['name'] in names:
-            problems.append(
-                Problem(f'/properties/{i}/name', f'Duplicate property {prop["name"]!r}.')
-            )
-        names[prop['name']] = prop['type']
-        if 'from' in prop:
-            ref(f'/properties/{i}/from', prop['from'])
-        fmt = prop.get('format')
-        if fmt is not None:
-            if prop['type'] != 'datetime':
-                problems.append(
-                    Problem(f'/properties/{i}/format', 'Only datetime properties take a format.')
-                )
-            elif fmt not in DATETIME_FORMATS:
-                try:
-                    formatter.check_strftime(fmt)
-                except formatter.FormatError as err:
-                    problems.append(
-                        Problem(
-                            f'/properties/{i}/format',
-                            str(err),
-                            'Use iso8601, date, epoch_s, epoch_ms or a strftime pattern.',
-                        )
-                    )
-
-    for key, kind in (('time_field', 'datetime'), ('title_field', 'string')):
-        name = doc.get(key)
-        if name is None:
-            continue
-        if name not in names:
-            problems.append(Problem(f'/{key}', f'{name!r} is not one of the properties.'))
-        elif names[name] != kind:
-            problems.append(
-                Problem(f'/{key}', f'{key} must be a {kind} property; {name!r} is {names[name]}.')
-            )
+    problems += _property_problems(doc, json_refs=True)
+    names = {prop['name']: prop['type'] for prop in doc['properties']}
 
     pagination = doc.get('pagination', {})
     if 'total' in pagination:
@@ -347,6 +442,35 @@ def validate_source(source: Any) -> list[Problem]:
     return [p for p in semantic_problems(doc) if p.pointer.startswith('/source')]
 
 
+SQL_SOURCE_VALIDATOR = Draft202012Validator(
+    {'$ref': '#/$defs/sql_source', '$defs': SCHEMA['$defs']}
+)
+
+
+def validate_sql_source(source: Any, query: str) -> list[Problem]:
+    """Checks for a SQL ``source`` and query on their own (J4 samples them before a spec)."""
+    problems = [
+        Problem('/source' + _pointer(e.absolute_path), e.message)
+        for e in SQL_SOURCE_VALIDATOR.iter_errors(source)
+    ]
+    if problems:
+        return problems
+    for pointer, value in secret_values({'template': 'sql-features', 'source': source}):
+        if not (isinstance(value, str) and SECRET_PLACEHOLDER.match(value)):
+            problems.append(
+                Problem(
+                    pointer,
+                    'Secrets must come from an environment variable.',
+                    'Write ${MY_SECRET} and give its value as a test secret.',
+                )
+            )
+    try:
+        sqlguard.check(query, source['dialect'])
+    except sqlguard.SQLGuardError as err:
+        problems.append(Problem('/query', str(err)))
+    return problems
+
+
 def normalize_source(source: Mapping[str, Any]) -> dict[str, Any]:
     """A ``source`` block with defaults applied."""
     return dict(merge_defaults({'source': source})['source'])
@@ -399,16 +523,13 @@ def check_text(text: str) -> list[Problem]:
 
     walk(root, '', False)
     raw = yaml.safe_load(text)
-    auth = raw.get('source', {}).get('auth') if isinstance(raw, dict) else None
-    if isinstance(auth, dict):
-        for key in ('value', 'password'):
-            value = auth.get(key)
-            if value is not None and not (
-                isinstance(value, str) and SECRET_PLACEHOLDER.match(value)
-            ):
+    if isinstance(raw, dict):
+        for pointer, value in secret_values(raw):
+            if not (isinstance(value, str) and SECRET_PLACEHOLDER.match(value)):
+                key = pointer.rsplit('/', 1)[-1]
                 problems.append(
                     Problem(
-                        f'/source/auth/{key}',
+                        pointer,
                         'Secrets must come from an environment variable.',
                         f'Write {key}: ${{MY_SECRET}} and set MY_SECRET on the server.',
                     )

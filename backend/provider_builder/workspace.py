@@ -23,15 +23,62 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pygeoapi_spec_providers.spec import SECRET_PLACEHOLDER, Problem, check_text, validate
+from pygeoapi_spec_providers.spec import Problem, check_text, secret_env, validate
 
 from .settings import Workspace
 
 SEMVER = re.compile(r'^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?$')
 PLACEHOLDER = re.compile(r'\$\{([A-Za-z_][A-Za-z0-9_]*)')
 PLUGIN = 'pygeoapi_spec_providers.http.HTTPFeatureProvider'
-#: Base keys a spec already decides, or that don't apply to an HTTP source.
+#: Base keys a spec already decides, or that don't apply to a spec-driven source.
 HIDDEN = ['editable', 'storage_crs', 'always_xy', 'storage_crs_coordinate_epoch', 'id_field']
+
+#: What each template becomes in Mode A's catalog.
+TEMPLATES: dict[str, dict[str, Any]] = {
+    'http-features': {
+        'plugin': PLUGIN,
+        'provider_type': 'feature',
+        'ogc_api': ['features'],
+        'requires': ['pygeoapi_spec_providers', 'httpx', 'jsonpath'],
+        'summary': 'An HTTP JSON API, made with the template wizard.',
+    },
+    'sql-features': {
+        'plugin': 'pygeoapi_spec_providers.sql.SQLFeatureProvider',
+        'provider_type': 'feature',
+        'ogc_api': ['features'],
+        'requires': ['pygeoapi_spec_providers', 'sqlglot', 'sqlalchemy'],
+        'summary': 'A SQL query, made with the template wizard.',
+    },
+}
+
+
+def template_of(doc: dict[str, Any]) -> dict[str, Any]:
+    return TEMPLATES.get(str(doc.get('template')), TEMPLATES['http-features'])
+
+
+def plugin_for(doc: dict[str, Any]) -> str:
+    return str(template_of(doc)['plugin'])
+
+
+def provider_type_for(doc: dict[str, Any]) -> str:
+    return str(template_of(doc)['provider_type'])
+
+
+def capabilities_for(doc: dict[str, Any]) -> dict[str, bool]:
+    """What the engine does for a spec: pushed down to the source, or applied locally."""
+    strings = any(p.get('type') == 'string' for p in doc.get('properties') or [])
+    return {
+        'bbox': True,
+        'datetime': bool(doc.get('time_field')),
+        'properties': True,
+        'sortby': True,
+        'select_properties': True,
+        'skip_geometry': True,
+        'q': True if doc.get('template') != 'sql-features' else strings,
+        'hits': True,
+        'cql': False,
+        'transactions': False,
+    }
 
 
 class WorkspaceError(ValueError):
@@ -68,12 +115,7 @@ def spec_env(doc: dict[str, Any]) -> list[str]:
 
 
 def secret_names(doc: dict[str, Any]) -> set[str]:
-    auth = (doc.get('source') or {}).get('auth') or {}
-    return {
-        v[2:-1]
-        for k, v in auth.items()
-        if k in ('value', 'password') and isinstance(v, str) and SECRET_PLACEHOLDER.match(v)
-    }
+    return secret_env(doc)
 
 
 def check_spec_text(text: str) -> tuple[dict[str, Any] | None, list[Problem]]:
@@ -94,32 +136,23 @@ def generated_descriptor(
     latest_version, latest = versions[0]
     paths = [f'{server_path.rstrip("/")}/{pid}/{v}/spec.yaml' for v, _ in versions]
     secrets = secret_names(latest)
+    info = template_of(latest)
+    requires = list(info['requires'])
+    if (latest.get('source') or {}).get('dialect') == 'postgresql':
+        requires.append('psycopg2')
     descriptor: dict[str, Any] = {
         'descriptor_version': 1,
         'id': f'created/{pid}',
-        'plugin': PLUGIN,
-        'provider_type': 'feature',
+        'plugin': info['plugin'],
+        'provider_type': info['provider_type'],
         'origin': 'created',
         'title': str(latest['title']),
-        'summary': str(
-            latest.get('description') or 'An HTTP JSON API, made with the template wizard.'
-        ),
-        'ogc_api': ['features'],
+        'summary': str(latest.get('description') or info['summary']),
+        'ogc_api': list(info['ogc_api']),
         'version': latest_version,
-        'requires': ['pygeoapi_spec_providers', 'httpx', 'jsonpath'],
-        'capabilities': {
-            'bbox': True,
-            'datetime': bool(latest.get('time_field')),
-            'properties': True,
-            'sortby': True,
-            'select_properties': True,
-            'skip_geometry': True,
-            'q': True,
-            'hits': True,
-            'cql': False,
-            'transactions': False,
-        },
-        'probe': {'kind': 'feature'},
+        'requires': requires,
+        'capabilities': capabilities_for(latest),
+        'probe': {'kind': info['provider_type']},
         'egress': {'kind': 'spec'},
         'hide': HIDDEN,
         'notes': [

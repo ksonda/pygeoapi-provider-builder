@@ -7,7 +7,7 @@
   "required": ["spec_version", "template", "id", "title"],
   "properties": {
     "spec_version": {"const": 1},
-    "template": {"enum": ["http-features"]},
+    "template": {"enum": ["http-features", "sql-features"]},
     "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"},
     "title": {"type": "string", "minLength": 1},
     "description": {"type": "string"},
@@ -20,6 +20,10 @@
     {
       "if": {"properties": {"template": {"const": "http-features"}}, "required": ["template"]},
       "then": {"$ref": "#/$defs/http_features"}
+    },
+    {
+      "if": {"properties": {"template": {"const": "sql-features"}}, "required": ["template"]},
+      "then": {"$ref": "#/$defs/sql_features"}
     }
   ],
   "unevaluatedProperties": false,
@@ -66,6 +70,122 @@
         }
       }
     },
+    "sql_features": {
+      "type": "object",
+      "required": ["source", "query", "item_id", "geometry", "properties"],
+      "properties": {
+        "source": {"$ref": "#/$defs/sql_source"},
+        "query": {
+          "description": "One read-only SELECT; the provider adds filters, sorting and paging around it (ADR-0007)",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100000
+        },
+        "item_id": {
+          "description": "The column that identifies each row; its type, when it isn't a published property",
+          "type": "object",
+          "required": ["from"],
+          "additionalProperties": false,
+          "properties": {
+            "from": {"$ref": "#/$defs/column"},
+            "type": {"enum": ["string", "integer", "number"]}
+          }
+        },
+        "geometry": {"$ref": "#/$defs/sql_geometry"},
+        "properties": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/property"}
+        },
+        "time_field": {"$ref": "#/$defs/name"},
+        "title_field": {"$ref": "#/$defs/name"},
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {"max_rows": {"type": "integer", "minimum": 1, "maximum": 100000}}
+        }
+      }
+    },
+    "sql_source": {
+      "type": "object",
+      "required": ["dialect"],
+      "properties": {"dialect": {"enum": ["postgresql", "sqlite"]}},
+      "allOf": [
+        {
+          "if": {"properties": {"dialect": {"const": "postgresql"}}, "required": ["dialect"]},
+          "then": {
+            "properties": {
+              "dialect": true,
+              "connection": {"$ref": "#/$defs/pg_connection"},
+              "dsn": {"$ref": "#/$defs/secret"},
+              "search_path": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/sql_name"}},
+              "connect_timeout_s": {"type": "number", "exclusiveMinimum": 0, "maximum": 60},
+              "statement_timeout_s": {"type": "number", "exclusiveMinimum": 0, "maximum": 300}
+            },
+            "additionalProperties": false,
+            "oneOf": [{"required": ["connection"]}, {"required": ["dsn"]}]
+          }
+        },
+        {
+          "if": {"properties": {"dialect": {"const": "sqlite"}}, "required": ["dialect"]},
+          "then": {
+            "required": ["path"],
+            "properties": {
+              "dialect": true,
+              "path": {"description": "The database file, as the pygeoapi server sees it", "type": "string", "pattern": "^/"},
+              "statement_timeout_s": {"type": "number", "exclusiveMinimum": 0, "maximum": 300}
+            },
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    "pg_connection": {
+      "type": "object",
+      "required": ["host", "dbname", "user"],
+      "additionalProperties": false,
+      "properties": {
+        "host": {"type": "string", "minLength": 1},
+        "port": {"type": ["integer", "string"]},
+        "dbname": {"type": "string", "minLength": 1},
+        "user": {"$ref": "#/$defs/secret"},
+        "password": {"$ref": "#/$defs/secret"}
+      }
+    },
+    "sql_geometry": {
+      "type": "object",
+      "required": ["encoding"],
+      "properties": {"encoding": {"enum": ["native", "wkb", "wkt", "geojson", "gpkg", "xy", "none"]}},
+      "allOf": [
+        {
+          "if": {"properties": {"encoding": {"enum": ["native", "wkb", "wkt", "geojson", "gpkg"]}}},
+          "then": {
+            "required": ["column"],
+            "properties": {"encoding": true, "column": {"$ref": "#/$defs/column"}, "crs": {"$ref": "#/$defs/crs"}},
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {"properties": {"encoding": {"const": "xy"}}},
+          "then": {
+            "required": ["x", "y"],
+            "properties": {
+              "encoding": true,
+              "x": {"$ref": "#/$defs/column"},
+              "y": {"$ref": "#/$defs/column"},
+              "crs": {"$ref": "#/$defs/crs"}
+            },
+            "additionalProperties": false
+          }
+        },
+        {
+          "if": {"properties": {"encoding": {"const": "none"}}},
+          "then": {"properties": {"encoding": true}, "additionalProperties": false}
+        }
+      ]
+    },
+    "column": {"description": "A column of the query's result", "type": "string", "minLength": 1, "maxLength": 128},
+    "sql_name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_$]{0,62}$"},
     "source": {
       "type": "object",
       "required": ["url"],

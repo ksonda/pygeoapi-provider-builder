@@ -86,8 +86,19 @@ def urls(values: Iterable[Any]) -> set[HostPort]:
     return found
 
 
+def sql_source(source: Mapping[str, Any]) -> set[HostPort]:
+    """The database server of a SQL spec's ``source`` (none for SQLite files)."""
+    if source.get('dialect') != 'postgresql':
+        return set()
+    if source.get('dsn') is not None:
+        return sql(source['dsn'], 5432)
+    return sql(source.get('connection') or {}, 5432)
+
+
 def spec(doc: Mapping[str, Any]) -> set[HostPort]:
-    """The hosts an ``http-features`` spec declares (its source and item URLs)."""
+    """The hosts a spec declares: its source and item URLs, or its database server."""
+    if doc.get('template') == 'sql-features':
+        return sql_source(doc.get('source') or {})
     source = doc.get('source') or {}
     item = doc.get('item') or {}
     return urls([source.get('url'), item.get('url')])

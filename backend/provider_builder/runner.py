@@ -16,7 +16,9 @@ unless the admin allowlist names the host. The sandbox reaches it through
 
 ``SubprocessRunner`` runs the same worker with the local venv. It isolates
 crashes and hangs, not untrusted code, and is used only when Docker is
-unavailable or in tests.
+unavailable or in tests. It remaps the server paths a job's config names to
+host paths, but not paths inside a spec (a SQLite file), so with it a spec must
+name its file by a path that exists locally.
 """
 
 from __future__ import annotations

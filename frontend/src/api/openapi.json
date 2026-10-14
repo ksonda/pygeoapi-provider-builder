@@ -1146,6 +1146,36 @@
         "title": "SpecRequest",
         "type": "object"
       },
+      "SqlSampleRequest": {
+        "properties": {
+          "query": {
+            "description": "One read-only SELECT",
+            "title": "Query",
+            "type": "string"
+          },
+          "source": {
+            "additionalProperties": true,
+            "description": "A sql-features spec's source block (dialect, connection or dsn, or path)",
+            "title": "Source",
+            "type": "object"
+          },
+          "test_secrets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "description": "ENV_NAME -> value",
+            "title": "Test Secrets",
+            "type": "object"
+          }
+        },
+        "required": [
+          "source",
+          "query"
+        ],
+        "title": "SqlSampleRequest",
+        "type": "object"
+      },
       "SuggestRequest": {
         "properties": {
           "headers": {
@@ -2057,6 +2087,47 @@
           }
         },
         "summary": "Samples",
+        "tags": [
+          "mode-b"
+        ]
+      }
+    },
+    "/api/samples/sql": {
+      "post": {
+        "operationId": "samples_sql_api_samples_sql_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SqlSampleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Samples Sql",
         "tags": [
           "mode-b"
         ]

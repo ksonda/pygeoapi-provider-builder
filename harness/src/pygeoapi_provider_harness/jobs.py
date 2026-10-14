@@ -562,6 +562,84 @@ def sample(job: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+SQL_SAMPLE_ROWS = 50
+
+
+def sql_sample(job: dict[str, Any]) -> dict[str, Any]:
+    """The first rows of a SQL query, profiled, for the template wizard (PLAN.md §7.4).
+
+    It runs through the spec engine's own guard and read-only connection, so the
+    query is checked and executed exactly as the provider will run it.
+    """
+    from pygeoapi_spec_providers.sql import sample_rows
+
+    source = remap_paths(_load_yaml(_materialize(job, 'source_yaml')), job.get('path_map', []))
+    t0 = time.perf_counter()
+    out = sample_rows(source, str(job['query']), int(job.get('limit', SQL_SAMPLE_ROWS)))
+    names, found, db_types = out['columns'], out['rows'], out['types']
+    columns = []
+    for i, name in enumerate(names):
+        values = [row[i] for row in found]
+        present = [v for v in values if v is not None and v != '']
+        kinds = sorted({type(v).__name__ for v in present})
+        distinct = len({repr(v) for v in present})
+        columns.append(
+            {
+                'name': name,
+                'kinds': kinds,
+                'db_type': db_types.get(name) or None,
+                'geometry': _geometry_encoding(present, db_types.get(name)),
+                'nulls': len(values) - len(present),
+                'distinct': distinct,
+                'unique': bool(present) and distinct == len(values) == len(present),
+                'examples': [_cell(v) for v in present[:3]],
+            }
+        )
+    return {
+        'columns': columns,
+        'rows': [[_cell(v) for v in row] for row in found[:20]],
+        'row_count': len(found),
+        'query': out['query'],
+        'ms': _ms(t0),
+    }
+
+
+def _cell(value: Any) -> Any:
+    from pygeoapi_spec_providers.sql import to_jsonable
+
+    out = to_jsonable(value)
+    if isinstance(out, dict) and 'hex' in out:
+        return {'bytes': out['bytes'], 'hex': str(out['hex'])[:64]}
+    if isinstance(out, str) and len(out) > 300:
+        return out[:300] + '…'
+    return out
+
+
+def _geometry_encoding(values: list[Any], db_type: str | None) -> str | None:
+    """native, gpkg, wkb, wkt or geojson when the sampled values read as geometries."""
+    from pygeoapi_spec_providers.db import decode_geometry
+
+    if db_type in ('geometry', 'geography'):
+        return 'native'
+    sample = values[:5]
+    if not sample:
+        return None
+    for encoding in ('gpkg', 'wkb', 'wkt', 'geojson'):
+        if encoding in ('gpkg', 'wkb') and not all(
+            isinstance(v, bytes | bytearray | memoryview) for v in sample
+        ):
+            continue
+        if encoding in ('wkt', 'geojson') and not all(isinstance(v, str | dict) for v in sample):
+            continue
+        if encoding == 'wkt' and not all(
+            isinstance(v, str) and v.lstrip()[:1].isalpha() and '(' in v for v in sample
+        ):
+            continue
+        if all(decode_geometry(v, encoding) is not None for v in sample):
+            return encoding
+    return None
+
+
 def httpx_host(url: str) -> str:
     from urllib.parse import urlsplit
 
@@ -572,6 +650,7 @@ JOBS: dict[str, JobFn] = {
     'probe': probe,
     'harness': harness,
     'sample': sample,
+    'sql_sample': sql_sample,
     'introspect': introspect,
     'openapi': openapi,
     'availability': availability,

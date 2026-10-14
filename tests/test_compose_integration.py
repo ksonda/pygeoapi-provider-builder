@@ -259,3 +259,141 @@ def test_pygeoapi_serves_a_created_provider(
     assert 0 < nearby.json()['numberMatched'] < 120
     html = httpx.get(f'{base}/collections/wells/items?f=html&limit=2', timeout=60)
     assert html.status_code == 200 and '<html' in html.text.lower()
+
+
+# --- Mode B: a SQL join (Phase 4 exit: "a multi-table join is published and passes the harness")
+
+DEMO_SQL = REPO / 'docker' / 'postgis' / '21-demo-sql.sql'
+READER = {'PB_READER_PASSWORD': 'reader-password'}  # docker/postgis/21-demo-sql.sql
+JOIN = """SELECT w.osm_id, w.name, w.foo_geom, w.waterway, c.label AS waterway_label,
+       c.natural_channel, c.reviewed_at
+FROM osm.hotosm_bdi_waterways AS w
+JOIN osm.waterway_classes AS c ON c.waterway = w.waterway"""
+SQL_SOURCE = {
+    'dialect': 'postgresql',
+    'connection': {
+        'host': 'postgis',
+        'port': 5432,
+        'dbname': 'test',
+        'user': 'pb_reader',
+        'password': '${PB_READER_PASSWORD}',
+    },
+}
+SQL_SPEC = f"""spec_version: 1
+template: sql-features
+id: bdi-waterways
+title: Waterways of Burundi, with their classes
+version: 1.0.0
+source:
+  dialect: postgresql
+  connection:
+    host: postgis
+    port: 5432
+    dbname: test
+    user: pb_reader
+    password: ${{PB_READER_PASSWORD}}
+query: |
+{chr(10).join('  ' + line for line in JOIN.splitlines())}
+item_id:
+  from: osm_id
+  type: integer
+geometry:
+  encoding: native
+  column: foo_geom
+  crs: http://www.opengis.net/def/crs/EPSG/0/4326
+properties:
+  - name: osm_id
+    type: integer
+  - name: name
+    type: string
+  - name: waterway
+    type: string
+  - name: waterway_label
+    type: string
+  - name: natural_channel
+    type: boolean
+  - name: reviewed_at
+    type: datetime
+time_field: reviewed_at
+title_field: name
+"""
+
+
+@pytest.fixture(scope='module')
+def demo_sql() -> None:
+    """The join's second table and the read-only role; idempotent on an existing stack."""
+    subprocess.run(
+        ['docker', 'exec', '-i', 'provider-builder-dev-postgis-1', 'psql', '-U', 'postgres',
+         '-d', 'test', '-v', 'ON_ERROR_STOP=1', '-q'],
+        input=DEMO_SQL.read_bytes(), check=True, capture_output=True, timeout=60,
+    )  # fmt: skip
+
+
+def test_sql_sample_suggests_the_join_mapping(service: Service, demo_sql: None) -> None:
+    out = service.sample_sql(SQL_SOURCE, JOIN, READER)
+    assert out['ok'], out.get('explanation') or out.get('problems')
+    assert out['egress'] == ['postgis:5432']
+    s = out['suggestions']
+    assert s['geometry'] == {'encoding': 'native', 'column': 'foo_geom'}
+    by_name = {p['name']: p for p in s['properties']}
+    assert by_name['reviewed_at']['type'] == 'datetime' and 'format' not in by_name['reviewed_at']
+    assert by_name['natural_channel']['type'] == 'boolean'
+    bad = service.sample_sql(SQL_SOURCE, JOIN, {'PB_READER_PASSWORD': 'not-the-password'})
+    assert not bad['ok'] and 'not-the-password' not in json.dumps(bad)
+    assert bad['error']['user_msg'] == 'The database rejected the credentials.'
+
+
+def test_the_sql_join_passes_the_harness_in_the_sandbox(service: Service, demo_sql: None) -> None:
+    out = service.spec_harness(SQL_SPEC, READER, ['L1', 'L2', 'L3'])
+    assert out['ok'], out.get('explanation') or out.get('problems')
+    assert out['egress'] == ['postgis:5432']
+    assert out['result']['ok'], [c for c in out['result']['checks'] if c['status'] == 'fail']
+    checks = {c['id']: c['status'] for c in out['result']['checks']}
+    assert checks['L3.server'] == 'pass'
+    for capability in ('bbox', 'datetime', 'properties', 'sortby', 'q'):
+        assert checks[f'L1.{capability}'] == 'pass', capability
+
+
+def test_pygeoapi_serves_the_sql_join(
+    service: Service, serve: callable, workdir: Path, demo_sql: None
+) -> None:
+    saved = service.workspace_save(SQL_SPEC, None, '', None)
+    form = FormState.model_validate(
+        {
+            'resource_id': 'waterways-classes',
+            'resource': {
+                'title': 'Waterways with classes',
+                'description': 'A join of two PostGIS tables',
+                'keywords': ['waterways'],
+                'extents': {'spatial': {'bbox': [29.0, -4.5, 30.9, -2.3]}},
+            },
+            'providers': [{'descriptor': saved['descriptor'], 'values': {'data': saved['data']}}],
+        }
+    )
+    probe = service.probe(form, 0, READER)
+    assert probe['ok'], probe.get('explanation')
+    exported = service.export(form, 't')
+    assert not exported.validation.blocking, exported.validation.findings
+    assert [e.name for e in exported.env] == ['PB_READER_PASSWORD']
+    base = serve(
+        exported.merged_yaml,
+        {'PYTHONPATH': '/opt/runtime', **READER},
+        image=STABLE_TAG,
+        volumes=(
+            f'{REPO / "runtime" / "src"}:/opt/runtime:ro',
+            f'{workdir / "providers"}:/specs:ro',
+        ),
+        args=('--user', 'root', '--entrypoint', '/entrypoint.sh'),
+    )
+    url = f'{base}/collections/waterways-classes/items'
+    items = httpx.get(f'{url}?f=json&limit=2', timeout=60).json()
+    assert items['numberMatched'] == 14768 and len(items['features']) == 2
+    assert items['features'][0]['properties']['waterway_label']
+    rivers = httpx.get(f'{url}?f=json&waterway=river&limit=1', timeout=60).json()
+    assert rivers['numberMatched'] == 436
+    march = httpx.get(
+        f'{url}?f=json&datetime=2026-03-01T00:00:00Z/2026-03-31T00:00:00Z', timeout=60
+    )
+    assert march.json()['numberMatched'] == 88 + 157  # canals and drains
+    one = httpx.get(f'{url}/{items["features"][0]["id"]}?f=json', timeout=60)
+    assert one.status_code == 200

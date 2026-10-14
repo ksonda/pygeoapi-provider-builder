@@ -293,6 +293,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/samples/sql": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Samples Sql */
+        post: operations["samples_sql_api_samples_sql_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/settings": {
         parameters: {
             query?: never;
@@ -1065,6 +1082,29 @@ export interface components {
                 [key: string]: string;
             };
         };
+        /** SqlSampleRequest */
+        SqlSampleRequest: {
+            /**
+             * Query
+             * @description One read-only SELECT
+             */
+            query: string;
+            /**
+             * Source
+             * @description A sql-features spec's source block (dialect, connection or dsn, or path)
+             */
+            source: {
+                [key: string]: unknown;
+            };
+            /**
+             * Test Secrets
+             * @description ENV_NAME -> value
+             * @default {}
+             */
+            test_secrets?: {
+                [key: string]: string;
+            };
+        };
         /** SuggestRequest */
         SuggestRequest: {
             /**
@@ -1667,6 +1707,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SampleRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    samples_sql_api_samples_sql_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SqlSampleRequest"];
             };
         };
         responses: {

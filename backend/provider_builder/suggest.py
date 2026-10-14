@@ -1,9 +1,11 @@
-"""Suggestions for a new spec, from one sampled JSON response (PLAN.md §7.4, step 2).
+"""Suggestions for a new spec, from one sample (PLAN.md §7.4, step 2).
 
-Pure functions over the parsed JSON, which is only data: the record array, id
-candidates, the geometry, date and time fields, property types, and paging
-hints from the body, the Link header and the URL. Every suggestion is a
-starting point the wizard asks the steward to confirm.
+Pure functions over sampled data, which is only data. For a JSON response: the
+record array, id candidates, the geometry, date and time fields, property types,
+and paging hints from the body, the Link header and the URL. For a SQL query
+(``suggest_sql``): the id column, the geometry encoding, and property types from
+the profiled columns. Every suggestion is a starting point the wizard asks the
+steward to confirm.
 """
 
 from __future__ import annotations
@@ -470,4 +472,134 @@ def _suggest(
         'pagination': suggest_pagination(doc, headers or {}, url),
         'notes': notes,
         'generated': datetime.now(UTC).strftime('%Y-%m-%dT%H:%M:%SZ'),
+    }
+
+
+# --- SQL -------------------------------------------------------------------------------------
+
+#: Python value types (from the sandbox's profile) to spec property types.
+SQL_KINDS = {
+    'int': 'integer',
+    'float': 'number',
+    'Decimal': 'number',
+    'bool': 'boolean',
+    'datetime': 'datetime',
+    'date': 'datetime',
+    'str': 'string',
+}
+
+
+def sql_type(column: Mapping[str, Any]) -> tuple[str, str | None]:
+    """A property type, plus a datetime format for text or epoch columns."""
+    kinds = [k for k in column.get('kinds') or [] if k != 'NoneType']
+    mapped = {SQL_KINDS.get(k, 'string') for k in kinds}
+    if not mapped:
+        return 'string', None
+    if mapped == {'integer'}:
+        kind_ = 'integer'
+    elif mapped <= {'integer', 'number'}:
+        kind_ = 'number'
+    elif len(mapped) == 1:
+        kind_ = next(iter(mapped))
+    else:
+        kind_ = 'string'
+    if kind_ in ('string', 'integer', 'number'):
+        fmt = time_format(str(column['name']), column.get('examples') or [])
+        if fmt:
+            return 'datetime', None if kind_ == 'string' and fmt == 'iso8601' else fmt
+    return kind_, None
+
+
+def suggest_sql(sample: Mapping[str, Any]) -> dict[str, Any]:
+    """Suggestions for a SQL spec from the sandbox's ``sql_sample`` profile."""
+    columns: list[dict[str, Any]] = list(sample.get('columns') or [])
+    typed = []
+    for c in columns:
+        kind_, fmt = sql_type(c)
+        typed.append({**c, 'type': kind_, 'format': fmt})
+    notes: list[str] = []
+
+    def id_score(c: Mapping[str, Any]) -> tuple[int, int, int]:
+        name = str(c['name']).lower()
+        exact = name in ID_NAMES or name.endswith(('_id', 'id'))
+        return (0 if exact else 1, 0 if c['type'] == 'integer' else 1, len(name))
+
+    ids = sorted(
+        (
+            c
+            for c in typed
+            if c['unique'] and c['type'] in ('string', 'integer') and not c['geometry']
+        ),
+        key=id_score,
+    )
+    item_id = None
+    if ids:
+        item_id = {
+            'from': ids[0]['name'],
+            'type': 'integer' if ids[0]['type'] == 'integer' else 'string',
+            'candidates': [c['name'] for c in ids],
+        }
+    else:
+        notes.append(
+            "No column is unique in this sample: pick an id, or items can't be fetched by id."
+        )
+
+    geometry: dict[str, Any] = {'encoding': 'none'}
+    rank = {'native': 0, 'gpkg': 1, 'wkb': 2, 'geojson': 3, 'wkt': 4}
+    found = min(
+        (c for c in typed if c['geometry']), key=lambda c: rank.get(c['geometry'], 9), default=None
+    )
+    if found:
+        geometry = {'encoding': found['geometry'], 'column': found['name']}
+    else:
+
+        def pick(names: Sequence[str], low: float, high: float) -> Mapping[str, Any] | None:
+            for c in typed:
+                leaf = str(c['name']).lower().split('_')[-1]
+                if (
+                    (str(c['name']).lower() in names or leaf in names)
+                    and c['type'] in ('number', 'integer')
+                    and all(low <= (number(v) or 0) <= high for v in c['examples'])
+                ):
+                    return c
+            return None
+
+        x, y = pick(LON_NAMES, -180, 180), pick(LAT_NAMES, -90, 90)
+        if x and y:
+            geometry = {'encoding': 'xy', 'x': x['name'], 'y': y['name']}
+        else:
+            notes.append('No geometry was found: items will be published without one.')
+    geometry_columns = {geometry.get('column'), geometry.get('x'), geometry.get('y')}
+
+    properties: list[dict[str, Any]] = []
+    column_of: dict[str, dict[str, Any]] = {}
+    seen: set[str] = set()
+    for c in typed:
+        if c['name'] in geometry_columns or {'bytes', 'memoryview'} & set(c.get('kinds') or []):
+            continue  # the geometry, and binary columns, which JSON can't carry
+        name = snake(str(c['name']))
+        while name in seen:
+            name += '_'
+        seen.add(name)
+        prop: dict[str, Any] = {'name': name, 'type': c['type']}
+        if name != c['name']:
+            prop['from'] = c['name']
+        if c['format']:
+            prop['format'] = c['format']
+        properties.append(prop)
+        column_of[name] = c
+    time_field = next((p['name'] for p in properties if p['type'] == 'datetime'), None)
+    title_field = suggest_title(properties, column_of, max(1, int(sample.get('row_count') or 1)))
+    if not sample.get('row_count'):
+        notes.append('The query returned no rows, so the suggestions are guesses.')
+    return {
+        'record_count': int(sample.get('row_count') or 0),
+        'columns': typed,
+        'item_id': item_id,
+        'geometry': geometry,
+        'properties': properties,
+        'time_field': time_field,
+        'title_field': title_field,
+        'query': sample.get('query'),
+        'notes': notes,
     }

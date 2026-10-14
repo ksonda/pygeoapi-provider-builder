@@ -11,6 +11,7 @@ import httpx
 import pygeoapi
 import yaml
 from pydantic import BaseModel
+from pygeoapi_spec_providers.spec import Problem
 
 from . import egress, yamlio
 from .catalog import Catalog, Descriptor, card, compile_descriptor
@@ -37,11 +38,12 @@ from .validation import (
     schema_findings,
 )
 from .workspace import (
-    PLUGIN,
     ProviderWorkspace,
     WorkspaceError,
+    capabilities_for,
     check_spec_text,
-    generated_descriptor,
+    plugin_for,
+    provider_type_for,
     spec_env,
 )
 
@@ -477,6 +479,33 @@ class Service:
             )
         return res
 
+    def sample_sql(
+        self, source: dict[str, Any], query: str, test_secrets: dict[str, str]
+    ) -> dict[str, Any]:
+        """Run a query's first rows in the sandbox and suggest a mapping (J4, SQL template)."""
+        from pygeoapi_spec_providers.spec import validate_sql_source
+
+        from .suggest import suggest_sql
+
+        problems = validate_sql_source(source, query)
+        if problems:
+            return {'ok': False, 'problems': [vars(p) for p in problems]}
+        try:
+            self._check_spec_paths({'template': 'sql-features', 'source': source})
+        except WorkspaceError as err:
+            return {'ok': False, 'problems': [vars(p) for p in err.problems]}
+        names = set(spec_env({'source': source}))
+        secrets = {k: v for k, v in test_secrets.items() if k in names}
+        out = self.runner.run(
+            {'kind': 'sql_sample', 'source_yaml': yamlio.dump(source), 'query': query},
+            secrets,
+            egress=egress.sql_source(egress.fill(source, secrets)),
+        )
+        res = self._mode_b_outcome(out)
+        if out.ok and out.result:
+            res['suggestions'] = suggest_sql(out.result)
+        return res
+
     @staticmethod
     def spec_text(spec: str | dict[str, Any]) -> str:
         """Spec YAML; an object is written like a config, with placeholders as plain values."""
@@ -499,6 +528,23 @@ class Service:
             )
         return result
 
+    def _check_spec_paths(self, doc: dict[str, Any]) -> None:
+        """A SQLite spec's file must be inside a data root: the sandbox mounts only those."""
+        source = doc.get('source') or {}
+        if doc.get('template') == 'sql-features' and source.get('dialect') == 'sqlite':
+            path = source.get('path')
+            if isinstance(path, str) and '${' not in path:
+                try:
+                    resolve_server_path(self.settings, path)
+                except PathError as err:
+                    raise WorkspaceError(
+                        str(err), [Problem('/source/path', str(err), self._roots_hint())]
+                    ) from err
+
+    def _roots_hint(self) -> str:
+        roots = ', '.join(r.server_path for r in self.settings.data_roots) or 'none'
+        return f'Put the database file in a data root ({roots}).'
+
     def _spec_job(
         self, spec: str | dict[str, Any], test_secrets: dict[str, str]
     ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str], set[egress.HostPort]]:
@@ -506,9 +552,15 @@ class Service:
         doc, problems = check_spec_text(text)
         if doc is None or problems:
             raise WorkspaceError('The spec has problems.', problems)
+        self._check_spec_paths(doc)
         names = set(spec_env(doc))
         secrets = {k: v for k, v in test_secrets.items() if k in names}
         rid = str(doc['id'])
+        provider = {
+            'type': provider_type_for(doc),
+            'name': plugin_for(doc),
+            'data': '@files@/spec.yaml',
+        }
         resource = {
             rid: {
                 'type': 'collection',
@@ -516,7 +568,7 @@ class Service:
                 'description': doc.get('description') or doc['title'],
                 'keywords': [rid],
                 'extents': {'spatial': {'bbox': [-180, -90, 180, 90]}},
-                'providers': [{'type': 'feature', 'name': PLUGIN, 'data': '@files@/spec.yaml'}],
+                'providers': [provider],
             }
         }
         job = {'resource_yaml': yamlio.dump(resource), 'files': {'spec.yaml': text}}
@@ -542,7 +594,7 @@ class Service:
             doc, job, secrets, targets = self._spec_job(text, test_secrets)
         except WorkspaceError as err:
             return {'ok': False, 'problems': [vars(p) for p in err.problems]}
-        capabilities = generated_descriptor(str(doc['id']), [('0.0.0', doc)], '/')['capabilities']
+        capabilities = capabilities_for(doc)
         out = self.runner.run(
             {
                 **job,

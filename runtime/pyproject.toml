@@ -1,7 +1,7 @@
 [project]
 name = "pygeoapi-spec-providers"
 version = "0.1.0"
-description = "Spec-driven pygeoapi providers: publish an HTTP JSON API as OGC API - Features without code"
+description = "Spec-driven pygeoapi providers: publish an HTTP JSON API, a SQL query or a time series without code"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
@@ -9,7 +9,12 @@ dependencies = [
     "pygeoapi==0.24.0",          # the base classes and yaml_load (ADR-0001, ADR-0016)
     "httpx>=0.28,<0.29",         # HTTP client; egress.py plugs a vetted-address backend into it
     "python-jsonpath>=2.2,<3",   # RFC 9535 JSONPath, no code evaluation (ADR-0006)
+    "sqlglot>=30.19,<31",        # parses SQL specs so only one read-only SELECT runs (ADR-0007)
+    "sqlalchemy>=2.0,<2.1",      # bound parameters and connections; already a pygeoapi dependency
 ]
+
+[project.optional-dependencies]
+postgresql = ["psycopg2-binary>=2.9"]   # the official pygeoapi image ships psycopg2 already
 
 [build-system]
 requires = ["hatchling>=1.27"]

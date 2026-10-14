@@ -8,7 +8,8 @@
 #   entrypoint regenerates OpenAPI. The spec engine's source and the
 #   workspace's specs are mounted, so created providers can be published here.
 # - postgis: seeded with pygeoapi's own test data (tests/data/hotosm_bdi_waterways.sql.gz:
-#   schema `osm`, table `hotosm_bdi_waterways`), as pygeoapi's CI does.
+#   schema `osm`, table `hotosm_bdi_waterways`), as pygeoapi's CI does, plus
+#   postgis/21-demo-sql.sql: a table to join it to, and a read-only role (pb_reader).
 #   imresamu/postgis is the multi-arch build by a docker-postgis maintainer; the
 #   official postgis/postgis images are amd64-only.
 # - mockapi: docker/mock-api/mock_api.py, the JSON API Mode B tests and demos use.
@@ -67,6 +68,7 @@ services:
     volumes:
       - ../vendor/pygeoapi/tests/data/hotosm_bdi_waterways.sql.gz:/fixtures/hotosm_bdi_waterways.sql.gz:ro
       - ./postgis/20-load-fixtures.sh:/docker-entrypoint-initdb.d/20-load-fixtures.sh:ro
+      - ./postgis/21-demo-sql.sql:/docker-entrypoint-initdb.d/21-demo-sql.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d test && psql -U postgres -d test -tAc \"select 1 from osm.hotosm_bdi_waterways limit 1\" | grep -q 1"]
       interval: 3s

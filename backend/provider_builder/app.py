@@ -75,6 +75,13 @@ class SampleRequest(TestSecrets):
     source: dict[str, Any] = Field(description="A spec's source block (url, query, headers, auth)")
 
 
+class SqlSampleRequest(TestSecrets):
+    source: dict[str, Any] = Field(
+        description="A sql-features spec's source block (dialect, connection or dsn, or path)"
+    )
+    query: str = Field(description='One read-only SELECT')
+
+
 class SpecRequest(TestSecrets):
     spec: str | dict[str, Any] = Field(
         description='The spec, as YAML text or an object, with ${VAR} placeholders for secrets'
@@ -349,6 +356,13 @@ def create_app(
     @app.post('/api/samples', status_code=202, tags=['mode-b'])
     def samples(req: SampleRequest) -> JobCreated:
         job = svc.jobs.submit('sample', lambda: svc.sample(req.source, req.test_secrets))
+        return JobCreated(job_id=job.id)
+
+    @app.post('/api/samples/sql', status_code=202, tags=['mode-b'])
+    def samples_sql(req: SqlSampleRequest) -> JobCreated:
+        job = svc.jobs.submit(
+            'sql-sample', lambda: svc.sample_sql(req.source, req.query, req.test_secrets)
+        )
         return JobCreated(job_id=job.id)
 
     @app.post('/api/specs/suggest', tags=['mode-b'])
