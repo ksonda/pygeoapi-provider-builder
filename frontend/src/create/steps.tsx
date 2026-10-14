@@ -1,67 +1,18 @@
-// The J4 steps (PLAN.md §7.4): source, sample, map, paging and filters, check, save.
+// The J4 steps for the http-features template (PLAN.md §7.4): source, sample,
+// map, paging and filters, check, save.
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { api, unwrap, waitForJob } from '../api/client'
-import type {
-  CheckStatus,
-  GeometrySpec,
-  HarnessData,
-  ModeBResult,
-  Pagination,
-  PaginationStyle,
-  ProbeData,
-  PropertyType,
-  SampleData,
-  SavedProvider,
-  SpecCheck,
-  Suggestions,
-} from '../api/types'
-import { ExplainedError, SampleTable, Spinner, YamlView } from '../components/common'
+import type { HarnessData, GeometrySpec, ModeBResult, Pagination, PaginationStyle, ProbeData, PropertyType, SampleData, Suggestions } from '../api/types'
+import { SampleTable, Spinner } from '../components/common'
 import { JsonTree } from '../components/JsonTree'
 import { MapView } from '../components/MapView'
+import { FieldError, Failure, HarnessPanel, SavePanel, described, type CreateStepProps } from './shared'
 import { buildSpec, secretsOf, sourceOf, useCreate, type AuthType, type KeyValue, type PropertyDraft } from './state'
 
-export interface CreateStepProps {
-  errors: Record<string, string>
-  showErrors: boolean
-}
+export type { CreateStepProps } from './shared'
 
-const ENV_RE = /^[A-Z][A-Z0-9_]*$/
-
-function FieldError({ id, errors, show }: { id: string; errors: Record<string, string>; show: boolean }) {
-  if (!show || !errors[id]) return null
-  return (
-    <p className="field-error" id={`${id}-error`}>
-      {errors[id]}
-    </p>
-  )
-}
-
-function described(id: string, errors: Record<string, string>, show: boolean, help?: string) {
-  const ids = [help ? `${id}-help` : null, show && errors[id] ? `${id}-error` : null].filter(Boolean)
-  return { 'aria-describedby': ids.length ? ids.join(' ') : undefined, 'aria-invalid': show && errors[id] ? true : undefined }
-}
-
-function Problems({ problems }: { problems?: { pointer: string; message: string; hint?: string | null }[] }) {
-  if (!problems?.length) return null
-  return (
-    <div className="notice error" role="alert">
-      <p>
-        <strong>The spec has {problems.length === 1 ? 'a problem' : `${problems.length} problems`}:</strong>
-      </p>
-      <ul>
-        {problems.map((p) => (
-          <li key={`${p.pointer}:${p.message}`}>
-            <code>{p.pointer || '/'}</code> {p.message}
-            {p.hint && <span className="muted"> {p.hint}</span>}
-          </li>
-        ))}
-      </ul>
-    </div>
-  )
-}
-
-function KeyValueList({ label, items, onChange, help }: { label: string; items: KeyValue[]; onChange: (items: KeyValue[]) => void; help?: string }) {
+export function KeyValueList({ label, items, onChange, help }: { label: string; items: KeyValue[]; onChange: (items: KeyValue[]) => void; help?: string }) {
   const id = label.toLowerCase().replace(/[^a-z]+/g, '-')
   // Focus the new row's name once it has rendered (a timeout can fire before React commits it).
   const focusRow = useRef<number | null>(null)
@@ -136,13 +87,9 @@ export function SourceStep({ errors, showErrors }: CreateStepProps) {
   return (
     <>
       <p>Point the template at a JSON API. The sample request runs in the sandbox, through the same egress rules the provider will use.</p>
-      <fieldset>
-        <legend>Template</legend>
-        <label className="radio">
-          <input type="radio" name="template" checked readOnly /> HTTP JSON API → OGC API - Features
-        </label>
-        <p className="muted small">SQL and time-series templates arrive in Phase 4.</p>
-      </fieldset>
+      <p className="muted small">
+        Template: HTTP JSON API → OGC API - Features. <a href="#/create/new">Choose another template</a>
+      </p>
       <label htmlFor="url">
         API URL <span aria-hidden="true">*</span>
       </label>
@@ -200,7 +147,7 @@ export function SourceStep({ errors, showErrors }: CreateStepProps) {
       </p>
       {busy && <Spinner label="Fetching a sample in the sandbox…" />}
       <FieldError id="sample" errors={errors} show={showErrors} />
-      {sample && !busy && !sample.ok && (sample.problems?.length ? <Problems problems={sample.problems} /> : <ExplainedError explanation={sample.explanation} error={sample.error} logs={sample.logs} />)}
+      {sample && !busy && !sample.ok && <Failure result={sample} />}
       {sample?.ok && sample.result && !busy && (
         <div className={`notice ${status && status < 300 ? 'ok' : 'error'}`} role="status">
           <p>
@@ -477,7 +424,7 @@ export function MapStep({ errors, showErrors }: CreateStepProps) {
       </p>
       <FieldError id="preview" errors={errors} show={showErrors} />
       {busy && <Spinner label="Running the spec in the sandbox…" />}
-      {state.preview && !state.preview.ok && !busy && (state.preview.problems?.length ? <Problems problems={state.preview.problems} /> : <ExplainedError explanation={state.preview.explanation} error={state.preview.error} logs={state.preview.logs} />)}
+      {state.preview && !state.preview.ok && !busy && <Failure result={state.preview} />}
       {r?.sample && !busy && (
         <>
           <p className="notice ok" role="status">
@@ -617,189 +564,26 @@ export function PagingStep() {
 
 // ------------------------------------------------------------------- check
 
-const STATUS_TEXT: Record<CheckStatus, string> = { pass: 'Pass', fail: 'Fail', warn: 'Warning', skip: 'Skipped', unsupported: 'Not supported' }
-const LEVELS: [string, string][] = [
-  ['L1', 'The provider itself'],
-  ['L2', "pygeoapi's API, in-process"],
-  ['L3', 'A live pygeoapi server'],
-]
-
 export function CheckStep({ errors, showErrors }: CreateStepProps) {
   const { state, dispatch } = useCreate()
-  const [busy, setBusy] = useState(false)
-  const run = useCallback(async () => {
-    setBusy(true)
-    try {
-      const job = unwrap(await api.POST('/api/specs/harness', { body: { spec: buildSpec(state) as unknown as Record<string, unknown>, test_secrets: secretsOf(state), levels: ['L1', 'L2', 'L3'] } }))
-      dispatch({ type: 'harness', result: await waitForJob<ModeBResult<HarnessData>>(job.job_id) })
-    } catch (e) {
-      dispatch({ type: 'harness', result: { ok: false, explanation: { code: 'client', message: String(e) } } })
-    } finally {
-      setBusy(false)
-    }
-  }, [state, dispatch])
-
-  useEffect(() => {
-    if (state.harness) return
-    const t = setTimeout(() => void run(), 0)
-    return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  const h = state.harness
-  const data = h?.ok ? h.result : null
-  return (
-    <>
-      <p>The contract checks run in the sandbox: the provider itself, pygeoapi's API in-process, then a live pygeoapi server.</p>
-      {busy && <Spinner label="Running the contract checks…" />}
-      <FieldError id="harness" errors={errors} show={showErrors} />
-      {h && !h.ok && !busy && (h.problems?.length ? <Problems problems={h.problems} /> : <ExplainedError explanation={h.explanation} error={h.error} logs={h.logs} />)}
-      {data && !busy && (
-        <>
-          <p className={`notice ${data.ok ? 'ok' : 'error'}`} role="status">
-            <strong>{data.ok ? 'Every check passed.' : 'Some checks failed.'}</strong> {data.summary.pass} passed, {data.summary.fail} failed, {data.summary.warn} warning(s),{' '}
-            {data.summary.skip + data.summary.unsupported} skipped or not supported · {(data.ms / 1000).toFixed(1)} s
-          </p>
-          {LEVELS.map(([level, title]) => {
-            const checks = data.checks.filter((c) => c.level === level)
-            if (!checks.length) return null
-            return (
-              <section key={level} aria-labelledby={`level-${level}`}>
-                <h3 id={`level-${level}`}>
-                  {level}: {title}
-                </h3>
-                <ul className="checklist">
-                  {checks.map((c) => (
-                    <li key={c.id} className={`check-${c.status}`}>
-                      <span className="check-status">{STATUS_TEXT[c.status]}</span> <strong>{c.title}</strong>
-                      <span className="muted"> {c.message}</span>
-                      {c.hint && <p className="small">{c.hint}</p>}
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )
-          })}
-        </>
-      )}
-      <p>
-        <button type="button" onClick={() => void run()} disabled={busy}>
-          Run the checks again
-        </button>
-      </p>
-    </>
-  )
+  const onResult = useCallback((result: ModeBResult<HarnessData> | null) => dispatch({ type: 'harness', result }), [dispatch])
+  return <HarnessPanel spec={buildSpec(state)} secrets={secretsOf(state)} result={state.harness} onResult={onResult} errors={errors} showErrors={showErrors} />
 }
 
 // ------------------------------------------------------------------- save
 
 export function SaveStep({ errors, showErrors }: CreateStepProps) {
   const { state, dispatch } = useCreate()
-  const [check, setCheck] = useState<SpecCheck | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const meta = state.meta
-  const spec = buildSpec(state)
-  const specKey = JSON.stringify(spec)
-
-  useEffect(() => {
-    let live = true
-    const t = setTimeout(() => {
-      api
-        .POST('/api/specs/validate', { body: { spec: JSON.parse(specKey) as Record<string, unknown> } })
-        .then((r) => live && setCheck(unwrap(r) as unknown as SpecCheck))
-        .catch((e: unknown) => live && setError(String(e)))
-    }, 300)
-    return () => {
-      live = false
-      clearTimeout(t)
-    }
-  }, [specKey])
-
-  const save = async () => {
-    setBusy(true)
-    setError(null)
-    try {
-      const res = await api.POST('/api/workspace', {
-        body: { spec: spec as unknown as Record<string, unknown>, version: meta.version, changes: meta.changes, harness: (state.harness?.result as unknown as Record<string, unknown>) ?? null },
-      })
-      if (res.error) {
-        const detail = res.error as { detail?: string; problems?: SpecCheck['problems'] }
-        setError(detail.detail ?? 'Saving failed.')
-        if (detail.problems?.length) setCheck((c) => (c ? { ...c, ok: false, problems: detail.problems ?? [] } : c))
-      } else {
-        dispatch({ type: 'saved', saved: res.data as unknown as SavedProvider })
-      }
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
   return (
-    <>
-      <label htmlFor="title">
-        Title <span aria-hidden="true">*</span>
-      </label>
-      <input id="title" value={meta.title} onChange={(e) => dispatch({ type: 'meta', patch: { title: e.target.value } })} {...described('title', errors, showErrors)} />
-      <FieldError id="title" errors={errors} show={showErrors} />
-      <label htmlFor="provider-id">
-        Provider id <span aria-hidden="true">*</span>
-      </label>
-      <p className="muted small" id="provider-id-help">
-        Lower-case letters, digits and hyphens. It names the workspace folder and the catalog entry.
-      </p>
-      <input id="provider-id" value={meta.id} onChange={(e) => dispatch({ type: 'meta', patch: { id: e.target.value }, idEdited: true })} {...described('provider-id', errors, showErrors, 'help')} />
-      <FieldError id="provider-id" errors={errors} show={showErrors} />
-      <label htmlFor="description">Description</label>
-      <textarea id="description" rows={2} value={meta.description} onChange={(e) => dispatch({ type: 'meta', patch: { description: e.target.value } })} />
-      <div className="inline-fields">
-        <label>
-          Version
-          <input id="version" value={meta.version} onChange={(e) => dispatch({ type: 'meta', patch: { version: e.target.value } })} {...described('version', errors, showErrors)} />
-        </label>
-        <label>
-          What changed
-          <input value={meta.changes} placeholder="First version." onChange={(e) => dispatch({ type: 'meta', patch: { changes: e.target.value } })} />
-        </label>
-      </div>
-      <FieldError id="version" errors={errors} show={showErrors} />
-      {check && !check.ok && <Problems problems={check.problems} />}
-      {check && (
-        <>
-          <h3>The spec</h3>
-          <p className="muted small">
-            Hosts it may reach: {check.hosts?.join(', ') || 'none'} · environment variables: {check.env?.length ? check.env.join(', ') : 'none'}
-          </p>
-          <YamlView text={check.text} label="The provider spec, as YAML" />
-        </>
-      )}
-      {error && <p className="notice error">{error}</p>}
-      {!state.saved && (
-        <p>
-          <button type="button" className="primary" onClick={() => void save()} disabled={busy || !check?.ok}>
-            Save version {meta.version}
-          </button>
-        </p>
-      )}
-      {state.saved && (
-        <div className="notice ok" role="status">
-          <p>
-            <strong>
-              Saved {state.saved.id} {state.saved.version}.
-            </strong>{' '}
-            The spec is at <code>{state.saved.data}</code> as the pygeoapi server sees it, and Mode A's catalog lists it.
-          </p>
-          <p>
-            <a className="button primary" href={`#/configure/new?descriptor=${encodeURIComponent(state.saved.descriptor)}`}>
-              Publish a collection with this provider →
-            </a>
-          </p>
-        </div>
-      )}
-    </>
+    <SavePanel
+      spec={buildSpec(state)}
+      harness={state.harness?.result ?? null}
+      meta={state.meta}
+      onMeta={(patch, idEdited) => dispatch({ type: 'meta', patch, idEdited })}
+      saved={state.saved}
+      onSaved={(saved) => dispatch({ type: 'saved', saved })}
+      errors={errors}
+      showErrors={showErrors}
+    />
   )
 }
-
-export { ENV_RE }

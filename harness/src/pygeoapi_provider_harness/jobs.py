@@ -595,9 +595,15 @@ def sql_sample(job: dict[str, Any]) -> dict[str, Any]:
                 'examples': [_cell(v) for v in present[:3]],
             }
         )
+    encodings = [c['geometry'] for c in columns]
+
+    def shown(row: tuple[Any, ...]) -> list[Any]:
+        pairs = zip(row, encodings, strict=True)
+        return [_geometry_summary(v, e) if e else _cell(v) for v, e in pairs]
+
     return {
         'columns': columns,
-        'rows': [[_cell(v) for v in row] for row in found[:20]],
+        'rows': [shown(row) for row in found[:20]],
         'row_count': len(found),
         'query': out['query'],
         'ms': _ms(t0),
@@ -613,6 +619,19 @@ def _cell(value: Any) -> Any:
     if isinstance(out, str) and len(out) > 300:
         return out[:300] + '…'
     return out
+
+
+def _geometry_summary(value: Any, encoding: str) -> Any:
+    """'MultiLineString, 85 points' rather than kilobytes of hex in the sample table."""
+    from pygeoapi_spec_providers.db import decode_geometry
+    from shapely import get_num_coordinates
+    from shapely.geometry import shape
+
+    geometry = decode_geometry(value, encoding)
+    if geometry is None:
+        return None if value is None else _cell(value)
+    count = int(get_num_coordinates(shape(geometry)))
+    return f'{geometry["type"]}, {count} point{"s" if count != 1 else ""}'
 
 
 def _geometry_encoding(values: list[Any], db_type: str | None) -> str | None:

@@ -413,3 +413,81 @@ export interface SavedProvider {
   descriptor: string
 }
 
+
+// ------------------------------------------------------------------ Mode B (J4): the SQL template
+
+export type SqlDialect = 'postgresql' | 'sqlite'
+
+export interface PgConnection {
+  host: string
+  port?: number | string
+  dbname: string
+  user: string
+  password?: string
+}
+
+export type SqlSource =
+  | { dialect: 'postgresql'; connection: PgConnection; search_path?: string[]; connect_timeout_s?: number; statement_timeout_s?: number }
+  | { dialect: 'postgresql'; dsn: string; search_path?: string[]; connect_timeout_s?: number; statement_timeout_s?: number }
+  | { dialect: 'sqlite'; path: string; statement_timeout_s?: number }
+
+export type SqlEncoding = 'native' | 'wkb' | 'wkt' | 'geojson' | 'gpkg' | 'xy' | 'none'
+
+export type SqlGeometry =
+  | { encoding: 'native' | 'wkb' | 'wkt' | 'geojson' | 'gpkg'; column: string; crs?: string }
+  | { encoding: 'xy'; x: string; y: string; crs?: string }
+  | { encoding: 'none' }
+
+export type SqlIdType = 'string' | 'integer' | 'number'
+
+export interface SqlSpecDoc {
+  spec_version: 1
+  template: 'sql-features'
+  id: string
+  title: string
+  description?: string
+  version?: string
+  source: SqlSource
+  query: string
+  item_id: { from: string; type?: SqlIdType }
+  geometry: SqlGeometry
+  properties: SpecProperty[]
+  time_field?: string
+  title_field?: string
+  limits?: { max_rows?: number }
+}
+
+export interface SqlColumn {
+  name: string
+  kinds: string[]
+  db_type: string | null
+  geometry: SqlEncoding | null
+  nulls: number
+  distinct: number
+  unique: boolean
+  examples: unknown[]
+  type?: PropertyType
+  format?: string | null
+}
+
+export interface SqlSuggestions {
+  record_count: number
+  columns: SqlColumn[]
+  item_id: { from: string; type: SqlIdType; candidates: string[] } | null
+  geometry: SqlGeometry
+  properties: SpecProperty[]
+  time_field: string | null
+  title_field: string | null
+  query: string | null
+  notes: string[]
+}
+
+export interface SqlSampleData {
+  columns: SqlColumn[]
+  rows: unknown[][]
+  row_count: number
+  query: string
+  ms: number
+}
+
+export type SqlSampleResult = Omit<ModeBResult<SqlSampleData>, 'suggestions'> & { suggestions?: SqlSuggestions }

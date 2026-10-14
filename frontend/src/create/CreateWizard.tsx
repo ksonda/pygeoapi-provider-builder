@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { ErrorSummary } from '../components/common'
 import { CREATE_STEPS, useCreate, type CreateState, type CreateStepId } from './state'
-import { CheckStep, ENV_RE, MapStep, PagingStep, SampleStep, SaveStep, SourceStep } from './steps'
+import { ENV_RE } from './shared'
+import { CheckStep, MapStep, PagingStep, SampleStep, SaveStep, SourceStep } from './steps'
 
 const ID_RE = /^[a-z0-9][a-z0-9-]{0,62}$/
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?$/

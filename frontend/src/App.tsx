@@ -5,7 +5,10 @@ import type { Health, PublicSettings } from './api/types'
 import { Configs } from './configs/Configs'
 import { takeHandOff } from './configs/handoff'
 import { CreateWizard } from './create/CreateWizard'
+import { SqlProvider } from './create/sql/state'
+import { SqlWizard } from './create/sql/SqlWizard'
 import { CreateProvider } from './create/state'
+import { TemplatePicker } from './create/TemplatePicker'
 import { WizardProvider } from './wizard/state'
 import { Wizard, type WizardLoad } from './wizard/Wizard'
 
@@ -66,7 +69,7 @@ function Home({
         </section>
         <section className="card mode">
           <h2>Create</h2>
-          <p>Build a provider for a source pygeoapi can't read today, such as an agency's JSON API, from a template and without code.</p>
+          <p>Build a provider for a source pygeoapi can't read today, such as an agency's JSON API or a SQL query, from a template and without code.</p>
           <button type="button" className="primary" onClick={onCreate}>
             Create a provider
           </button>
@@ -119,6 +122,7 @@ export function App() {
 
   const inWizard = hash.startsWith('#/configure')
   const inCreate = hash.startsWith('#/create')
+  const createRoute = hash.startsWith('#/create/http') ? 'http' : hash.startsWith('#/create/sql') ? 'sql' : 'pick'
   const inConfigs = hash.startsWith('#/configs')
   const query = new URLSearchParams(hash.split('?')[1] ?? '')
   const descriptor = query.get('descriptor')
@@ -164,10 +168,16 @@ export function App() {
             Nothing to import. <a href="#/configs">Import YAML from the collections page.</a>
           </p>
         )}
-        {inCreate && (
+        {inCreate && createRoute === 'pick' && <TemplatePicker />}
+        {inCreate && createRoute === 'http' && (
           <CreateProvider key={session}>
             <CreateWizard />
           </CreateProvider>
+        )}
+        {inCreate && createRoute === 'sql' && (
+          <SqlProvider key={session}>
+            <SqlWizard />
+          </SqlProvider>
         )}
         {inWizard && settings && !settings.targets.length && <p className="notice error">No publish targets are configured.</p>}
       </main>

@@ -13,6 +13,9 @@ test('a JSON API becomes a provider, then a collection @mobile', async ({ page }
   const id = `e2e-wells-${testInfo.project.name}`
   await page.goto('/')
   await page.getByRole('button', { name: 'Create a provider' }).click()
+  await expect(page.getByRole('heading', { name: 'Create a provider', level: 1 })).toBeVisible()
+  await expectAccessible(page)
+  await page.getByRole('link', { name: 'Start with an http json api' }).click()
   await expect(page.getByRole('heading', { name: /Step 1 of 6: Source/ })).toBeFocused()
 
   // Source: Next is blocked until a sample with records has been fetched.
