@@ -19,6 +19,13 @@ function bboxText(b: number[] | null | undefined): string {
   return b?.length === 4 ? b.map(fmt).join(', ') : '–'
 }
 
+/** A coverage query's subset as "Long −15 to 15 · Lat −15 to 15". */
+function subsetText(query: Record<string, unknown>): string {
+  const subsets = (query.subsets ?? {}) as Record<string, unknown[]>
+  const parts = Object.entries(subsets).map(([axis, range]) => `${axis} ${fmt(range[0])}${range[1] !== range[0] ? ` to ${fmt(range[1])}` : ''}`)
+  return parts.length ? parts.join(' · ') : 'the whole grid'
+}
+
 export function Problems({ title, items }: { title: string; items: string[] | undefined }) {
   if (!items?.length) return null
   return (
@@ -139,7 +146,7 @@ export function CoveragePreview({ r }: { r: ProbeData }) {
           <p className="muted">The window has no two-dimensional grid to draw.</p>
         )}
         <div className="table-wrap" tabIndex={0} role="region" aria-label="Grid">
-          <table className="compact">
+          <table className="compact grid-facts">
             <caption>Grid</caption>
             <tbody>
               <tr>
@@ -177,7 +184,7 @@ export function CoveragePreview({ r }: { r: ProbeData }) {
               )}
               <tr>
                 <th scope="row">Window queried</th>
-                <td className="mono small">{JSON.stringify((c.query as { subsets?: unknown }).subsets ?? {})}</td>
+                <td className="mono small">{subsetText(c.query)}</td>
               </tr>
             </tbody>
           </table>
@@ -360,18 +367,18 @@ export function probeSummary(r: ProbeData): string | null {
   const preview = r.preview
   if (r.provider_type === 'coverage') {
     const img = preview && 'data' in preview ? preview : null
-    return img ? `returned a ${img.width}×${img.height} window of ${img.parameter ?? 'the first band'} as CoverageJSON` : 'returned CoverageJSON'
+    return img ? `and returned a ${img.width}×${img.height} window of ${img.parameter ?? 'the first band'} as CoverageJSON` : 'and returned CoverageJSON'
   }
   if (r.provider_type === 'map') {
     const img = preview && 'data' in preview ? preview : null
-    return img ? `drew a ${img.width}×${img.height} map` : 'returned no image'
+    return img ? `and drew a ${img.width}×${img.height} map` : 'but returned no image'
   }
   if (r.provider_type === 'tile') {
     const tiles = preview && 'tiles' in preview ? Object.values(preview.tiles).filter(Boolean).length : 0
-    return `served ${tiles} tile(s)`
+    return `and served ${tiles} tile(s)`
   }
   if (r.provider_type === 'edr' && !r.sample) {
-    return r.edr?.domain ? `answered a ${String(r.edr.query.query_type)} query with ${r.edr.domain.type}` : 'loaded, with no sample query'
+    return r.edr?.domain ? `and answered a ${String(r.edr.query.query_type)} query with a ${r.edr.domain.type}` : 'but ran no sample query'
   }
   return null
 }

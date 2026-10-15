@@ -68,7 +68,7 @@ function Home({
       <div className="mode-cards">
         <section className="card mode">
           <h2>Configure</h2>
-          <p>Create a collection from a CSV, GeoJSON or GeoPackage file, or a PostGIS table, using pygeoapi's built-in providers.</p>
+          <p>Create a collection with pygeoapi's built-in providers: features from files, databases and ArcGIS, coverages, EDR, vector tiles, maps from a WMS, or catalogue records.</p>
           <button type="button" className="primary" onClick={onConfigure}>
             Create a collection
           </button>

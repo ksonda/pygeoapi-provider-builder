@@ -163,7 +163,7 @@ def provider(descriptor: str, values: dict[str, Any], **more: Any) -> dict[str, 
     return {'providers': [{'descriptor': descriptor, 'values': values, **more}]}
 
 
-DUTCH = [4.61, 52.27, 5.14, 52.49]  # Dutch addresses around Amsterdam
+DUTCH = [5.67, 52.04, 5.83, 52.13]  # Dutch addresses around Otterlo
 WORLD = [-180.0, -90.0, 180.0, 90.0]
 #: The mock API as the sandbox and the dev stack's pygeoapi reach it.
 MOCK = 'http://mockapi:8000'

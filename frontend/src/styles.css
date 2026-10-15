@@ -293,3 +293,4 @@ ol.publish-steps > li.error strong { color: var(--err); }
 .legend-bar { height: 12px; border-radius: 4px; border: 1px solid var(--border); }
 .legend-labels { display: flex; justify-content: space-between; color: var(--muted); }
 .sparkline { color: var(--accent); display: block; margin: 0.5rem 0; }
+.grid-facts td { overflow-wrap: anywhere; }

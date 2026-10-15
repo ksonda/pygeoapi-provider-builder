@@ -368,8 +368,10 @@ def _grid_extent(props: dict[str, Any]) -> dict[str, Any] | None:
     except (TypeError, ValueError):
         return None
     box = [min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)]
-    if not (box[0] >= -180 and box[2] <= 180 and box[1] >= -90 and box[3] <= 90):
+    if not (box[0] >= -181 and box[2] <= 181 and box[1] >= -91 and box[3] <= 91):
         return None  # 0-360 longitudes, or not degrees: leave the extent to the user
+    # Cell edges can reach just past the poles and the antimeridian.
+    box = [max(box[0], -180.0), max(box[1], -90.0), min(box[2], 180.0), min(box[3], 90.0)]
     time_range = props.get('time_range')
     temporal = [str(t) for t in time_range] if isinstance(time_range, list | tuple) else None
     return {'from': 'full', 'bbox': box, 'temporal': temporal}
