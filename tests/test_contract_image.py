@@ -32,6 +32,11 @@ def workdir(tmp_path: Path) -> Path:
     (tmp_path / 'data').mkdir()
     for name in ('obs.csv', 'ne_110m_lakes.geojson', 'poi_portugal.gpkg'):
         shutil.copy(DATA / name, tmp_path / 'data' / name)
+        (tmp_path / 'data' / name).chmod(0o666)
+    # pygeoapi's GeoPackage support writes when it loads (SpatiaLite's AutoGPKGStart
+    # creates virtual tables), and the CLI runs as the sandbox user 10001. Linux
+    # enforces the host's ownership on the bind mount; Docker Desktop doesn't.
+    (tmp_path / 'data').chmod(0o777)
     (tmp_path / 'config').mkdir()
     shutil.copy(BASE, tmp_path / 'config' / 'pygeoapi.config.yml')
     return tmp_path
