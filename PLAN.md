@@ -894,8 +894,9 @@ ADR-0021):
 - `tests/test_compose_integration.py` adds PostGIS, and a stock
   `geopython/pygeoapi:0.24.0` serving the ejected join and CO-OPS EDR without
   the runtime package.
-- Not carried over: the engine's address vetting (ADR-0018). The ejected
-  client checks hosts and schemes only.
+- Network safety is carried over (ADR-0018, ADR-0021). The ejected HTTP client
+  vets every resolved address inside the connection, and SQL connections pin
+  the vetted address with `hostaddr`, so ejected code is safe on an open network.
 
 ### 7.7 Contract harness
 Package `pygeoapi-provider-harness`. It runs inside the sandbox, and its checks

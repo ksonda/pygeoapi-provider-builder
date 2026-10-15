@@ -636,8 +636,16 @@ are copied as they are, only the ones a spec needs.
   auth, failures, SQLite geometries, CO-OPS EDR and SQL time series.
   `tests/test_compose_integration.py` adds PostGIS, and a stock
   `geopython/pygeoapi:0.24.0` serving ejected packages without the runtime.
-- Ejected code doesn't vet resolved addresses (ADR-0018): it checks hosts and
-  schemes, and the README says to run it where the network is restricted.
+- Ejected code is safe on an open network, with the engine's egress rules
+  (ADR-0018) ported to requests. Its urllib3 connections resolve the host,
+  check every address, and connect to a checked one. Link-local and metadata
+  addresses are always refused; private ones and plain http need
+  `PYGEOAPI_SPEC_PRIVATE_HOSTS`, the variable the engine reads. PostgreSQL
+  connects through libpq's `hostaddr` after the same check (private addresses
+  allowed, as in ADR-0007). `backend/tests/test_eject_egress.py` ports the
+  engine's egress tests, and the Docker suite proves the guard with the stock
+  image's urllib3. *(Changed 2026-10-15: at first ejected code checked hosts
+  and schemes only, and its README asked for a restricted network.)*
 - The spec stays as it was, and `ejected.json` records where it went. The
   package doesn't go back into the wizard.
 

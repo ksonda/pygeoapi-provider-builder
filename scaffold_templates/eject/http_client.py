@@ -1,24 +1,31 @@
 """HTTP for an ejected provider: auth, retries, redirects, a size cap and safe errors.
 
 These are the rules the Provider Builder's spec engine applied, written for
-``requests`` (which pygeoapi already depends on):
+``requests`` (which pygeoapi already depends on). They make the provider safe to
+run on an open network:
 
 - Every URL, redirects and next links included, must be on a host the
-  provider declares (``hosts``).
+  provider declares (``hosts``), over ``https``.
+- The connection itself resolves the host, checks **every** address it
+  resolves to, and connects to a checked one, so a DNS answer can't change in
+  between. Link-local and cloud-metadata addresses are always refused. Private
+  ones (and plain ``http``) are allowed only for hosts named in the
+  ``PYGEOAPI_SPEC_PRIVATE_HOSTS`` environment variable (comma-separated, ``*``
+  for all), the same variable the spec engine read. TLS still verifies the
+  certificate against the host name.
 - Connection failures, timeouts and the ``retry_on`` statuses are retried with
   exponential backoff, honouring ``Retry-After`` up to 30 s.
 - A response larger than ``max_bytes`` after decompression is refused.
 - Error messages name the host and path, never the query string, which may
   carry a key; the secrets given to the client are scrubbed from them too.
-
-One thing the engine did that this doesn't: it resolved each host itself and
-refused link-local and cloud-metadata addresses. Run the provider where its
-network reaches only the hosts it needs.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import json
+import os
+import socket
 import threading
 import time
 from collections import OrderedDict
@@ -30,11 +37,20 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
 import requests
 from pygeoapi.provider.base import ProviderConnectionError, ProviderQueryError
+from requests.adapters import HTTPAdapter
+from urllib3.connection import HTTPConnection, HTTPSConnection
+from urllib3.connectionpool import HTTPConnectionPool, HTTPSConnectionPool
+from urllib3.exceptions import ConnectTimeoutError, NewConnectionError
+from urllib3.util.connection import create_connection
 
 MAX_REDIRECTS = 5
 MAX_RETRY_AFTER_S = 30.0
 CACHE_ENTRIES = 128
 CHUNK_BYTES = 65_536
+
+ENV_PRIVATE_HOSTS = 'PYGEOAPI_SPEC_PRIVATE_HOSTS'
+#: Cloud metadata endpoints outside the link-local ranges.
+METADATA = frozenset(ipaddress.ip_address(a) for a in ('fd00:ec2::254', '100.100.100.200'))
 
 USER_MESSAGES = {
     'timeout': 'The data source timed out.',
@@ -53,6 +69,104 @@ class SourceError(Exception):
         super().__init__(message)
         self.kind = kind
         self.status = status
+
+
+class EgressRefused(Exception):
+    """A connection the policy doesn't allow (raised inside the connection itself)."""
+
+
+class Policy:
+    """Where the provider may connect: its declared hosts, never link-local, metadata or
+    reserved addresses, and private addresses or plain http only for allowed hosts."""
+
+    def __init__(self, hosts: Iterable[str], environ: Mapping[str, str] | None = None):
+        env = os.environ if environ is None else environ
+        self.hosts = frozenset(h.lower() for h in hosts)
+        self.private = frozenset(
+            h.strip().lower() for h in env.get(ENV_PRIVATE_HOSTS, '').split(',') if h.strip()
+        )
+
+    def may_be_private(self, host: str) -> bool:
+        return '*' in self.private or host.lower() in self.private
+
+    def check_url(self, url: str) -> None:
+        parts = urlsplit(url)
+        host = (parts.hostname or '').lower()
+        if parts.scheme not in ('http', 'https'):
+            raise SourceError(f'{parts.scheme} URLs are not allowed', kind='egress')
+        if host not in self.hosts:
+            raise SourceError(f'{host} is not a host this provider declares', kind='egress')
+        if parts.scheme == 'http' and not self.may_be_private(host):
+            raise SourceError(f'plain http to {host} is not allowed; use https', kind='egress')
+
+    def check_address(self, host: str, address: str) -> None:
+        ip: ipaddress.IPv4Address | ipaddress.IPv6Address = ipaddress.ip_address(
+            address.split('%', 1)[0]
+        )
+        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+            ip = ip.ipv4_mapped
+        reserved = ip.is_reserved and not ip.is_loopback  # ::1 sits in the reserved ::/8
+        if ip.is_link_local or ip in METADATA or ip.is_multicast or ip.is_unspecified or reserved:
+            raise EgressRefused(
+                f'{host} resolves to {ip}, a link-local, metadata or reserved address'
+            )
+        if not ip.is_global and not self.may_be_private(host):
+            raise EgressRefused(
+                f'{host} resolves to a non-public address ({ip}); '
+                f'allow it with {ENV_PRIVATE_HOSTS}={host}'
+            )
+
+
+def guarded_adapter(policy: Policy) -> HTTPAdapter:
+    """A requests adapter whose connections resolve, check every address, then connect
+    to a checked one."""
+
+    class Guarded:
+        def _new_conn(self: Any) -> socket.socket:
+            host, port = self._dns_host, self.port
+            try:
+                infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+            except socket.gaierror as err:
+                raise NewConnectionError(self, f"Couldn't resolve {host}: {err}") from err
+            addresses = list(dict.fromkeys(str(info[4][0]) for info in infos))
+            for address in addresses:
+                policy.check_address(host, address)
+            last: OSError | None = None
+            for address in addresses:
+                try:
+                    return create_connection(
+                        (address, port),
+                        self.timeout,
+                        source_address=self.source_address,
+                        socket_options=self.socket_options,
+                    )
+                except TimeoutError as err:
+                    raise ConnectTimeoutError(self, f'Connecting to {host} timed out') from err
+                except OSError as err:
+                    last = err
+            raise NewConnectionError(self, f'Failed to connect to {host}: {last}')
+
+    class GuardedHTTPConnection(Guarded, HTTPConnection):
+        pass
+
+    class GuardedHTTPSConnection(Guarded, HTTPSConnection):
+        pass
+
+    class GuardedHTTPPool(HTTPConnectionPool):
+        ConnectionCls = GuardedHTTPConnection
+
+    class GuardedHTTPSPool(HTTPSConnectionPool):
+        ConnectionCls = GuardedHTTPSConnection
+
+    class Adapter(HTTPAdapter):
+        def init_poolmanager(self, *args: Any, **kwargs: Any) -> None:
+            super().init_poolmanager(*args, **kwargs)
+            self.poolmanager.pool_classes_by_scheme = {
+                'http': GuardedHTTPPool,
+                'https': GuardedHTTPSPool,
+            }
+
+    return Adapter()
 
 
 def user_message(err: SourceError) -> str:
@@ -210,7 +324,7 @@ class Client:
         rate_limit: RateLimiter | None = None,
         secrets: Iterable[str] = (),
     ):
-        self.hosts = frozenset(h.lower() for h in hosts)
+        self.policy = Policy(hosts)
         self.headers = {'Accept': 'application/json', **(headers or {})}
         self.query = dict(query or {})
         self.auth_query = dict(auth_query or {})
@@ -233,6 +347,9 @@ class Client:
         if session is None:
             session = requests.Session()
             session.trust_env = False  # no proxies or .netrc credentials from the environment
+            adapter = guarded_adapter(self.policy)
+            session.mount('http://', adapter)
+            session.mount('https://', adapter)
             session.headers.update(self.headers)
             session.auth = self.basic_auth
             self._local.session = session
@@ -244,12 +361,7 @@ class Client:
         return message
 
     def check(self, url: str) -> None:
-        parts = urlsplit(url)
-        host = (parts.hostname or '').lower()
-        if parts.scheme not in ('http', 'https'):
-            raise SourceError(f'{parts.scheme} URLs are not allowed', kind='egress')
-        if host not in self.hosts:
-            raise SourceError(f'{host} is not a host this provider declares', kind='egress')
+        self.policy.check_url(url)
 
     def get(
         self, url: str, params: Mapping[str, str] | None = None, *, static: bool = True
@@ -312,6 +424,8 @@ class Client:
                         url = urljoin(url, location)
                         continue
                     return Response(r.status_code, url, r.headers, self._read(r, url))
+            except EgressRefused as err:
+                raise SourceError(str(err), kind='egress') from err
             except requests.Timeout as err:
                 raise SourceError(
                     f'{describe(url)} timed out after {self.timeout_s:g} s', kind='timeout'

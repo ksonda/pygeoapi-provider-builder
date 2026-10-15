@@ -684,9 +684,31 @@ def test_stock_pygeoapi_serves_ejected_providers(
         assert not exported.validation.blocking, exported.validation.findings
         config.write_text(exported.merged_yaml, encoding='utf-8')
     paths = ':'.join(f'/specs/{d["id"]}/src' for d in (sql, edr))
+    # The image's urllib3 (2.0.x) is guarded too: without the allowlist, a private
+    # address is refused when the connection opens; with it, the request goes through.
+    probe = (
+        f'import sys; sys.path.insert(0, "/specs/{edr["id"]}/src"); '
+        f'from {edr["package"]}.http_client import Client, SourceError\n'
+        'try:\n'
+        '    Client(["mockapi"], retries=0).get("http://mockapi:8000/health")\n'
+        '    print("allowed")\n'
+        'except SourceError as err:\n'
+        '    print(err.kind, err)\n'
+    )
+    for env, expected in (
+        ([], 'egress'),
+        (['-e', 'PYGEOAPI_SPEC_PRIVATE_HOSTS=mockapi'], 'allowed'),
+    ):
+        out = subprocess.run(
+            ['docker', 'run', '--rm', '--network', NETWORK, *env, '--entrypoint',
+             '/venv/bin/python3', '-v', f'{workdir / "providers"}:/specs:ro', IMAGE, '-c', probe],
+            capture_output=True, text=True, timeout=120,
+        )  # fmt: skip
+        assert out.stdout.split()[:1] == [expected], (out.stdout, out.stderr[-1500:])
     base = serve(
         config.read_text(encoding='utf-8'),
-        {'PYTHONPATH': paths, **READER},
+        # Ejected code checks addresses as the engine does: mockapi is a private one.
+        {'PYTHONPATH': paths, 'PYGEOAPI_SPEC_PRIVATE_HOSTS': 'mockapi', **READER},
         volumes=(f'{workdir / "providers"}:/specs:ro',),
     )
     url = f'{base}/collections/waterways-ejected/items'

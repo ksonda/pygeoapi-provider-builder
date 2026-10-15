@@ -26,11 +26,15 @@ Set {{ c.env_names }} on the pygeoapi server: the config reads them as
 - {{ line }}
 {% endfor %}
 
-## What the spec engine did that this code doesn't
+{% if c.safety %}
+## Network safety
 
-{% for line in c.left_out %}
+The provider is safe to run on an open network:
+
+{% for line in c.safety %}
 - {{ line }}
 {% endfor %}
+{% endif %}
 
 ## Develop
 

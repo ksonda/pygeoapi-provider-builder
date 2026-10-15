@@ -9,16 +9,22 @@ transaction with a statement timeout, always rolled back.
 - SQLite: the file opens ``mode=ro`` with ``PRAGMA query_only``, and a progress
   handler interrupts a statement that runs past the timeout.
 
+Each new PostgreSQL connection resolves the host and checks every address it
+resolves to, as the engine did: link-local and cloud-metadata addresses are
+refused, and private ones are allowed (databases usually live on private
+networks). libpq then connects to the checked address (``hostaddr``), so a DNS
+answer can't change in between.
+
 Errors become pygeoapi ``Provider*Error``\\ s with a ``user_msg`` that names no
-SQL, path or secret. One thing the engine did that this doesn't: it refused
-database hosts that resolve to link-local or cloud-metadata addresses. This
-code connects where ``data`` says.
+SQL, path or secret.
 """
 
 from __future__ import annotations
 
 import functools
+import ipaddress
 import json
+import socket
 import struct
 import threading
 import time
@@ -38,6 +44,8 @@ from sqlalchemy.engine import URL, Connection, Engine, make_url
 from sqlalchemy.exc import DBAPIError, NoSuchModuleError, SQLAlchemyError
 
 DEFAULT_PORT = 5432
+#: Cloud metadata endpoints outside the link-local ranges.
+METADATA = frozenset(ipaddress.ip_address(a) for a in ('fd00:ec2::254', '100.100.100.200'))
 #: SQLite progress-handler granularity, in virtual machine instructions.
 PROGRESS_STEPS = 10_000
 
@@ -47,6 +55,7 @@ USER_MESSAGES = {
     'timeout': 'The database query took too long.',
     'readonly': 'The query tried to change data, which a provider may not do.',
     'query': 'The database query failed.',
+    'egress': "The database host isn't allowed.",
 }
 
 
@@ -55,17 +64,50 @@ class DatabaseError(Exception):
 
     def __init__(self, message: str, *, kind: str):
         super().__init__(message)
-        self.kind = kind  # connect | auth | timeout | readonly | query
+        self.kind = kind  # connect | auth | timeout | readonly | query | egress
 
 
 def provider_error(err: DatabaseError) -> Exception:
     user_msg = USER_MESSAGES.get(err.kind, USER_MESSAGES['query'])
-    if err.kind in ('connect', 'auth'):
+    if err.kind in ('connect', 'auth', 'egress'):
         return ProviderConnectionError(str(err), user_msg=user_msg)  # type: ignore[no-any-return]
     return ProviderQueryError(str(err), user_msg=user_msg)  # type: ignore[no-any-return]
 
 
 # --- where to connect ------------------------------------------------------------------------
+
+
+def check_address(host: str, address: str) -> None:
+    """Refuse link-local, metadata and reserved addresses (private ones are fine)."""
+    ip: ipaddress.IPv4Address | ipaddress.IPv6Address = ipaddress.ip_address(
+        address.split('%', 1)[0]
+    )
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    if ip.is_link_local or ip in METADATA or ip.is_multicast or ip.is_unspecified:
+        raise DatabaseError(
+            f'{host} resolves to {ip}, a link-local, metadata or reserved address', kind='egress'
+        )
+    if ip.is_reserved and not ip.is_loopback:
+        raise DatabaseError(f'{host} resolves to {ip}, a reserved address', kind='egress')
+
+
+def vetted_address(host: str, port: int) -> str:
+    """Resolve ``host`` and check every answer; the first address."""
+    try:
+        ipaddress.ip_address(host)
+        addresses = [host]
+    except ValueError:
+        try:
+            infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+        except socket.gaierror as err:
+            raise DatabaseError(
+                f"Couldn't resolve {host}: {err.strerror}", kind='connect'
+            ) from err
+        addresses = list(dict.fromkeys(str(info[4][0]) for info in infos))
+    for address in addresses:
+        check_address(host, address)
+    return addresses[0]
 
 
 def sqlite_url(path: Any) -> URL:
@@ -160,7 +202,7 @@ class Database:
             ]
             if self.search_path:
                 options.append('-c search_path=' + ','.join(self.search_path))
-            return create_engine(
+            engine = create_engine(
                 self.url,
                 connect_args={
                     'connect_timeout': max(1, int(self.connect_timeout_s)),
@@ -171,8 +213,15 @@ class Database:
                 pool_pre_ping=True,
                 pool_recycle=1800,
             )
+            event.listen(engine, 'do_connect', self._vet)
+            return engine
         except NoSuchModuleError as err:
             raise DatabaseError(f'No database driver for {self.dialect}', kind='connect') from err
+
+    def _vet(self, dialect: Any, record: Any, cargs: Any, cparams: dict[str, Any]) -> None:
+        """Check the address for every new connection; libpq then connects to it."""
+        host = str(self.url.host or '')
+        cparams['hostaddr'] = vetted_address(host, int(self.url.port or DEFAULT_PORT))
 
     @contextmanager
     def connect(self) -> Iterator[Connection]:

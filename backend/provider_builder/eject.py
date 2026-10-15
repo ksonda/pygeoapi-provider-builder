@@ -1050,7 +1050,7 @@ def eject_files(
     dependencies = [f'pygeoapi=={pygeoapi.__version__}', 'shapely>=2.0']
     hosts = sorted(str(h) for h in egress.spec(raw))
     sql_keys: list[str] = []
-    left_out: list[str] = []
+    safety: list[str] = []
     postgresql = False
 
     def add_http(
@@ -1060,10 +1060,11 @@ def eject_files(
             helpers.append('http_client.py')
             dependencies.append('requests>=2.31')
             requires.append('requests')
-            left_out.append(
-                'It resolved each host itself and refused link-local and cloud-metadata '
-                'addresses. This code connects to the hosts it declares (`HOSTS`): run it where '
-                'the network reaches only what it needs.'
+            safety.append(
+                'HTTP goes only to the hosts the provider declares (`HOSTS`, plus the host of '
+                '`data`), over https. When a connection opens, every address the host resolves '
+                'to is checked: link-local and cloud-metadata addresses are refused, and private '
+                'ones (and plain http) need the host in `PYGEOAPI_SPEC_PRIVATE_HOSTS`.'
             )
         for o in opts:
             options[o['option']] = o['value']
@@ -1084,9 +1085,10 @@ def eject_files(
             helpers.append('database.py')
             dependencies.append('sqlalchemy>=2.0,<2.1')
             requires.append('sqlalchemy')
-            left_out.append(
-                'It refused database hosts that resolve to link-local or cloud-metadata '
-                'addresses. This code connects where the config says.'
+            safety.append(
+                'Database connections check every address the host resolves to, refuse '
+                'link-local and cloud-metadata ones, and connect to the checked address. '
+                'Queries run read-only, with a statement timeout.'
             )
         if source['dialect'] == 'postgresql':
             postgresql = True
@@ -1293,7 +1295,7 @@ def eject_files(
         'capabilities': literal(capabilities),
         'init_doc': docstring(f'{title}: a pygeoapi {provider_type} provider (ejected).'),
         'files': [markdown(line) for line in package_lines(pkg, helpers, locations is not None)],
-        'left_out': [markdown(line) for line in left_out or ['Nothing that changes results.']],
+        'safety': [markdown(line) for line in safety],
     }
     files.update(
         {
