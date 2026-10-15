@@ -80,12 +80,6 @@ def _resource(job: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     return str(rid), body
 
 
-def _provider_def(job: dict[str, Any]) -> dict[str, Any]:
-    """The provider definition, placeholders resolved, paths remapped."""
-    _rid, body = _resource(job)
-    return dict(body['providers'][int(job.get('provider_index', 0))])
-
-
 # --------------------------------------------------------------------------- probe
 
 
@@ -93,7 +87,8 @@ def probe(job: dict[str, Any]) -> dict[str, Any]:
     """Load a provider with ``load_plugin`` and exercise it like the API does."""
     from pygeoapi.plugin import load_plugin
 
-    pdef = _provider_def(job)
+    rid, body = _resource(job)
+    pdef = dict(body['providers'][int(job.get('provider_index', 0))])
     limit = int(job.get('limit', 5))
     timings: dict[str, float] = {}
     if job.get('copy_data') and isinstance(pdef.get('data'), str) and os.path.isfile(pdef['data']):
@@ -118,15 +113,24 @@ def probe(job: dict[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = {
         'provider_type': pdef.get('type'),
         'provider_class': f'{type(provider).__module__}.{type(provider).__qualname__}',
-        'fields': fields,
+        'fields': _jsonable(fields),
         'fields_cached': fields_cached,
         'timings': timings,
     }
 
-    if pdef.get('type') == 'edr':
+    kind = pdef.get('type')
+    if kind == 'edr':
         return _probe_edr(provider, result, limit, timings)
-    if pdef.get('type') not in ('feature', 'record'):
-        result['note'] = f'{pdef.get("type")} providers are loaded, but not queried, by the probe.'
+    if kind == 'coverage':
+        return _probe_coverage(provider, result, timings)
+    if kind == 'map':
+        return _probe_map(provider, pdef, body, result, timings)
+    if kind == 'tile':
+        return _probe_tile(
+            provider, lambda: load_plugin('provider', pdef), rid, body, result, timings
+        )
+    if kind not in ('feature', 'record'):
+        result['note'] = f'{kind} providers are loaded, but not queried, by the probe.'
         return result
 
     t0 = time.perf_counter()
@@ -171,7 +175,10 @@ def _probe_edr(
     result['query_types'] = types
     result['parameters'] = sorted((provider.get_fields() or {}).keys())
     if 'locations' not in types:
-        result['note'] = 'This EDR provider has no locations query, so there is no sample.'
+        result['note'] = (
+            'This EDR provider has no locations query, so there is no sample of items.'
+        )
+        _edr_sample(provider, result, None, timings)
         return result
     t0 = time.perf_counter()
     fc = provider.query(**{**EDR_KWARGS, 'query_type': 'locations', 'limit': max(limit, 50)})
@@ -186,7 +193,462 @@ def _probe_edr(
     result['sample_stats'] = _property_stats(features[:limit])
     result['extent'] = {'from': 'locations', 'bbox': _bbox(features), 'temporal': None}
     result['id_stats'] = _id_stats(features)
+    located = next(
+        (f for f in features if f.get('geometry') and f.get('id') not in (None, '')), None
+    )
+    _edr_sample(provider, result, located, timings)
     return result
+
+
+#: Values of the sample EDR query's first parameter returned for the preview.
+EDR_SERIES = 50
+
+
+def _edr_sample(
+    provider: Any,
+    result: dict[str, Any],
+    location: dict[str, Any] | None,
+    timings: dict[str, float],
+) -> None:
+    """One EDR query as the API makes it: the first location, else a position at the grid's centre.
+
+    It goes in ``result['edr']``: the query, the CoverageJSON's axes and
+    parameters, its problems, and the first values of its first parameter.
+    """
+    from shapely.geometry import Point
+
+    from . import coveragejson
+    from .checks import EDR_KWARGS
+
+    types = result['query_types']
+    query: dict[str, Any]
+    shown: dict[str, Any]
+    if location is not None and 'locations' in types:
+        query = {'query_type': 'locations', 'location_id': str(location['id'])}
+        shown = dict(query)
+    else:
+        props = getattr(provider, '_coverage_properties', None) or {}
+        bbox = props.get('bbox')
+        if 'position' not in types or not isinstance(bbox, list | tuple) or len(bbox) != 4:
+            return
+        x = (float(bbox[0]) + float(bbox[2])) / 2
+        y = (float(bbox[1]) + float(bbox[3])) / 2
+        query = {'query_type': 'position', 'wkt': Point(x, y)}
+        shown = {'query_type': 'position', 'coords': f'POINT({x:g} {y:g})'}
+    from pygeoapi.provider.base import ProviderNoDataError
+
+    t0 = time.perf_counter()
+    try:
+        doc = provider.query(**{**EDR_KWARGS, **query})
+    except ProviderNoDataError:
+        result['edr'] = {
+            'query': shown,
+            'problems': ['No data for this query: pygeoapi answers HTTP 204.'],
+        }
+        return
+    except Exception as err:  # noqa: BLE001 - the provider loaded; report the query's failure
+        result['edr'] = {
+            'query': shown,
+            'problems': [f'The query failed: {type(err).__name__}: {err}'],
+        }
+        return
+    finally:
+        timings['sample_query_ms'] = _ms(t0)
+    sample: dict[str, Any] = {
+        'query': shown,
+        'problems': coveragejson.problems(doc),
+        'domain': _coverage_summary(doc),
+        'series': _series(doc),
+    }
+    result['edr'] = _jsonable(sample)
+
+
+def _series(doc: Any) -> dict[str, Any] | None:
+    """The first parameter's values along the time axis, when there is one."""
+    if not isinstance(doc, dict):
+        return None
+    coverage = doc
+    if doc.get('type') == 'CoverageCollection':
+        coverage = (doc.get('coverages') or [{}])[0] or {}
+    ranges = coverage.get('ranges') or {}
+    key = next(iter(ranges), None)
+    if key is None or not isinstance(ranges[key], dict):
+        return None
+    values = ranges[key].get('values')
+    times = ((coverage.get('domain') or {}).get('axes') or {}).get('t', {}).get('values')
+    if not isinstance(values, list):
+        return None
+    pairs = (
+        list(zip(times, values, strict=False))
+        if isinstance(times, list) and len(times) == len(values)
+        else None
+    )
+    return {
+        'parameter': key,
+        'count': len(values),
+        'values': values[:EDR_SERIES],
+        'times': [t for t, _ in pairs[:EDR_SERIES]] if pairs else None,
+    }
+
+
+#: Cells along each axis of the probe's coverage window.
+COVERAGE_WINDOW = 200
+#: The maps API's default image size (``pygeoapi/api/maps.py:131-132``).
+MAP_SIZE = (500, 300)
+CRS84 = 'http://www.opengis.net/def/crs/OGC/1.3/CRS84'
+#: The server URL the probe passes to tile metadata, which only uses it in links.
+PROBE_SERVER = 'http://localhost:5000'
+#: Tiles fetched for the preview: the first three zooms over the extent, within these limits.
+TILE_ZOOMS = 3
+MAX_PREVIEW_TILES = 24
+MAX_PREVIEW_TILE_BYTES = 3_000_000
+
+
+def _probe_coverage(
+    provider: Any, result: dict[str, Any], timings: dict[str, float]
+) -> dict[str, Any]:
+    """A coverage's grid, and a window of its first band as CoverageJSON and a PNG.
+
+    The window is a ``subset`` on the provider's own x and y axes, in the data's
+    own coordinates, plus its first time step, as ``/coverage?subset=`` asks
+    (``pygeoapi/api/coverages.py:165-187``).
+    """
+    from . import coveragejson, previews
+
+    props = dict(getattr(provider, '_coverage_properties', None) or {})
+    axes = [str(a) for a in getattr(provider, 'axes', None) or []]
+    info: dict[str, Any] = {
+        'axes': axes,
+        'crs': props.get('bbox_crs'),
+        'bbox': props.get('bbox'),
+        'width': props.get('width'),
+        'height': props.get('height'),
+        'resx': props.get('resx'),
+        'resy': props.get('resy'),
+        'time_range': props.get('time_range'),
+        'restime': props.get('restime'),
+        # What /collections/{id} reads for the grid (pygeoapi/api/collection.py:313-318).
+        'metadata_missing': [k for k in ('width', 'height', 'resx', 'resy') if k not in props],
+    }
+    fields = list(result['fields'])
+    query = {
+        'bbox': [],
+        'datetime_': None,
+        'format_': 'json',
+        'properties': fields[:1],
+        'subsets': _coverage_window(props, axes),
+    }
+    t0 = time.perf_counter()
+    doc = provider.query(**query)
+    timings['query_ms'] = _ms(t0)
+    info['query'] = query
+    info['problems'] = coveragejson.problems(doc)
+    info['domain'] = _coverage_summary(doc)
+    result['coverage'] = _jsonable(info)
+    result['preview'] = previews.coverage_image(doc, fields[0] if fields else None)
+    return result
+
+
+def _coverage_window(props: dict[str, Any], axes: list[str]) -> dict[str, list[Any]]:
+    """At most COVERAGE_WINDOW cells around the centre, and the first time step."""
+    subsets: dict[str, list[Any]] = {}
+    x, y = props.get('x_axis_label'), props.get('y_axis_label')
+    bbox, width, height = props.get('bbox'), props.get('width'), props.get('height')
+    if x in axes and y in axes and isinstance(bbox, list | tuple) and len(bbox) == 4:
+        try:
+            minx, miny, maxx, maxy = (float(v) for v in bbox)
+            fx = min(1.0, COVERAGE_WINDOW / float(width or COVERAGE_WINDOW))
+            fy = min(1.0, COVERAGE_WINDOW / float(height or COVERAGE_WINDOW))
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
+        else:
+            cx, cy = (minx + maxx) / 2, (miny + maxy) / 2
+            hx, hy = (maxx - minx) * fx / 2, (maxy - miny) * fy / 2
+            subsets[str(x)] = [cx - hx, cx + hx]
+            subsets[str(y)] = [cy - hy, cy + hy]
+    t, time_range = props.get('time_axis_label'), props.get('time_range')
+    if t and t in axes and isinstance(time_range, list | tuple) and time_range:
+        subsets[str(t)] = [str(time_range[0]), str(time_range[0])]
+    return subsets
+
+
+def _coverage_summary(doc: Any) -> dict[str, Any] | None:
+    """A CoverageJSON document's type, axes (first, last, count) and parameters."""
+    if not isinstance(doc, dict):
+        return None
+    coverage = doc
+    if doc.get('type') == 'CoverageCollection':
+        coverage = (doc.get('coverages') or [{}])[0] or {}
+    domain = coverage.get('domain') or {}
+    axes: dict[str, Any] = {}
+    for name, axis in (domain.get('axes') or {}).items():
+        if not isinstance(axis, dict):
+            continue
+        values = axis.get('values')
+        if isinstance(values, list):
+            axes[name] = {
+                'count': len(values),
+                'first': values[0] if values else None,
+                'last': values[-1] if values else None,
+            }
+        else:
+            axes[name] = {
+                'count': axis.get('num'),
+                'first': axis.get('start'),
+                'last': axis.get('stop'),
+            }
+    parameters = {}
+    for key, p in (
+        {**(doc.get('parameters') or {}), **(coverage.get('parameters') or {})}
+    ).items():
+        if not isinstance(p, dict):
+            continue
+        prop = p.get('observedProperty') or {}
+        unit = p.get('unit') or {}
+        symbol = unit.get('symbol')
+        parameters[key] = {
+            'label': _label(prop.get('label')) or _label(p.get('description')),
+            'unit': (symbol.get('value') if isinstance(symbol, dict) else symbol)
+            or _label(unit.get('label')),
+        }
+    return {
+        'type': doc.get('type'),
+        'domainType': domain.get('domainType'),
+        'coverages': len(doc.get('coverages') or [])
+        if doc.get('type') == 'CoverageCollection'
+        else 1,
+        'axes': axes,
+        'parameters': parameters,
+        'ranges': sorted((coverage.get('ranges') or {}).keys()),
+    }
+
+
+def _label(value: Any) -> str | None:
+    """An i18n string ``{"en": ...}``, or a plain one."""
+    if isinstance(value, dict):
+        value = value.get('en') or next(iter(value.values()), None)
+    return str(value) if value not in (None, '') else None
+
+
+def _probe_map(
+    provider: Any,
+    pdef: dict[str, Any],
+    body: dict[str, Any],
+    result: dict[str, Any],
+    timings: dict[str, float],
+) -> dict[str, Any]:
+    """The map of the collection's extent, asked for as ``/map?f=<format>`` does.
+
+    The keywords are the API's (``pygeoapi/api/maps.py:95-255``): the storage
+    CRS, the bbox transformed into it, 500×300 pixels, transparent.
+    """
+    from pygeoapi.crs import transform_bbox
+
+    from . import previews
+
+    fmt = pdef.get('format') or {}
+    crs = pdef.get('storage_crs', CRS84)
+    bbox = _extent_bbox(body)
+    query_bbox = bbox if crs == CRS84 else transform_bbox(bbox, CRS84, crs, always_xy=True)
+    width, height = MAP_SIZE
+    query = {
+        'format_': fmt.get('name', 'png'),
+        'style': None,
+        'crs': crs,
+        'bbox-crs': CRS84,
+        'transparent': True,
+        'width': width,
+        'height': height,
+        'bbox': [float(v) for v in query_bbox],
+        'datetime_': None,
+    }
+    t0 = time.perf_counter()
+    data = provider.query(**query)
+    timings['query_ms'] = _ms(t0)
+    problems: list[str] = []
+    info: dict[str, Any] = {'query': query, 'bytes': None, 'problems': problems}
+    result['map'] = info
+    if not isinstance(data, bytes | bytearray):
+        problems.append(f'query() returned {type(data).__name__}, not image bytes.')
+        return result
+    data = bytes(data)
+    info['bytes'] = len(data)
+    found = previews.image_mimetype(data)
+    if found is None:
+        problems.append(f'query() did not return an image: {data[:80]!r}')
+        return result
+    if fmt.get('mimetype') and found != fmt['mimetype']:
+        problems.append(f'The image is {found}, but format.mimetype says {fmt["mimetype"]}.')
+    size = previews.image_size(data)
+    if size and size != MAP_SIZE:
+        problems.append(f'Asked for {width}×{height} pixels, got {size[0]}×{size[1]}.')
+    result['preview'] = {
+        'mimetype': found,
+        'data': previews.b64(data),
+        'width': size[0] if size else width,
+        'height': size[1] if size else height,
+        'bbox': bbox,
+    }
+    return result
+
+
+def _extent_bbox(body: dict[str, Any]) -> list[float]:
+    """The resource's spatial extent in CRS84 (the first box when there are several)."""
+    bbox = ((body.get('extents') or {}).get('spatial') or {}).get('bbox')
+    if isinstance(bbox, list) and bbox and isinstance(bbox[0], list):
+        bbox = bbox[0]
+    if isinstance(bbox, list) and len(bbox) in (4, 6):
+        try:
+            values = [float(v) for v in bbox]
+        except (TypeError, ValueError):
+            pass
+        else:
+            return values if len(values) == 4 else [values[0], values[1], values[3], values[4]]
+    return [-180.0, -90.0, 180.0, 90.0]
+
+
+def _probe_tile(
+    provider: Any,
+    fresh: Callable[[], Any],
+    rid: str,
+    body: dict[str, Any],
+    result: dict[str, Any],
+    timings: dict[str, float],
+) -> dict[str, Any]:
+    """Tiling schemes, the service and metadata documents, and the first tiles over the extent.
+
+    Calls are the API's (``pygeoapi/api/tiles.py:132-320``): tile indexes are
+    strings, the format is the provider's own. Each document comes from a new
+    instance, as pygeoapi loads one per request: MVT providers' get_tiles_service()
+    replaces the service URL that get_tiles() reads.
+    """
+    from pygeoapi.provider.tile import ProviderTileNotFoundError
+
+    from . import previews
+
+    schemes = list(provider.get_tiling_schemes() or [])
+    names = [str(s.tileMatrixSet) for s in schemes]
+    zoom = dict((getattr(provider, 'options', None) or {}).get('zoom') or {})
+    layer = provider.get_layer()
+    problems: list[str] = []
+    info: dict[str, Any] = {
+        'tile_type': getattr(provider, 'tile_type', None),
+        'format': provider.format_type,
+        'mimetype': provider.mimetype,
+        'layer': layer,
+        'schemes': names,
+        'zoom': zoom,
+        'problems': problems,
+    }
+    result['tile'] = info
+    if not names:
+        problems.append('get_tiling_schemes() is empty, so /tiles lists no tile set.')
+        return result
+
+    service = fresh().get_tiles_service(
+        baseurl=PROBE_SERVER,
+        servicepath=f'{PROBE_SERVER}/collections/{rid}/tiles/{{tileMatrixSetId}}/{{tileMatrix}}/{{tileRow}}/{{tileCol}}?f={provider.format_type}',
+    )
+    info['service_links'] = len((service or {}).get('links') or [])
+    try:
+        metadata = fresh().get_metadata(
+            dataset=rid,
+            server_url=PROBE_SERVER,
+            layer=layer,
+            tileset=names[0],
+            metadata_format='json',
+            title=_label(body.get('title')),
+            description=_label(body.get('description')),
+            language=None,
+        )
+        info['metadata'] = _jsonable(metadata)
+    except Exception as err:  # noqa: BLE001 - reported, the tiles may still work
+        problems.append(f'The tile set metadata (/tiles/{names[0]}/metadata) fails: {err}')
+
+    scheme = 'WebMercatorQuad' if 'WebMercatorQuad' in names else names[0]
+    info['preview_scheme'] = scheme
+    zmin = int(zoom.get('min', 0))
+    zmax = int(zoom.get('max', zmin))
+    bbox = _extent_bbox(body)
+    tiles: dict[str, str | None] = {}
+    layers: list[list[dict[str, Any]]] = []
+    total = 0
+    t0 = time.perf_counter()
+    last = zmin
+    for z in range(zmin, min(zmax, zmin + TILE_ZOOMS - 1) + 1):
+        wanted = (
+            list(previews.web_mercator_tiles(bbox, z)) if scheme == 'WebMercatorQuad' else [(0, 0)]
+        )
+        if len(tiles) + len(wanted) > MAX_PREVIEW_TILES and tiles:
+            break
+        for x, y in wanted[:MAX_PREVIEW_TILES]:
+            try:
+                content = provider.get_tiles(
+                    layer=layer,
+                    tileset=scheme,
+                    z=str(z),
+                    y=str(y),
+                    x=str(x),
+                    format_=provider.format_type,
+                )
+            except ProviderTileNotFoundError:
+                content = None
+            key = f'{z}/{x}/{y}'
+            if content is None:
+                tiles[key] = None
+                continue
+            raw = previews.gunzip(bytes(content))
+            total += len(raw)
+            if info['tile_type'] != 'raster' and not provider.mimetype.startswith('image'):
+                try:
+                    layers.append(previews.mvt_layers(raw))
+                except (ValueError, IndexError) as err:
+                    problems.append(f'Tile {key} is not a valid vector tile: {err}')
+                    continue
+            tiles[key] = previews.b64(raw)
+        last = z
+        if total > MAX_PREVIEW_TILE_BYTES:
+            break
+    timings['query_ms'] = _ms(t0)
+    if tiles and all(v is None for v in tiles.values()):
+        problems.append(f'Every tile fetched ({", ".join(tiles)}) is empty.')
+    result['preview'] = {
+        'scheme': scheme,
+        'mimetype': provider.mimetype,
+        'minzoom': zmin,
+        'maxzoom': last,
+        'bbox': bbox,
+        'tiles': tiles,
+        'layers': previews.merge_layers(layers),
+    }
+    return result
+
+
+def _jsonable(value: Any) -> Any:
+    """Plain JSON: numpy values, tuples, dates and enums become lists, numbers or text."""
+    import datetime as dt
+    import math
+    from enum import Enum
+
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, list | tuple | set):
+        return [_jsonable(v) for v in value]
+    if isinstance(value, bool) or value is None or isinstance(value, str):
+        return value
+    if isinstance(value, Enum):
+        return _jsonable(value.value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dt.datetime | dt.date):
+        return value.isoformat()
+    if hasattr(value, 'tolist'):  # numpy scalars and arrays
+        return _jsonable(value.tolist())
+    if hasattr(value, 'model_dump'):  # pydantic models (tile metadata)
+        return _jsonable(value.model_dump(exclude_none=True))
+    return str(value)
 
 
 def _api_query_kwargs(limit: int) -> dict[str, Any]:
@@ -274,17 +736,27 @@ def _bbox(features: list[dict[str, Any]]) -> list[float] | None:
 def _time_range(features: list[dict[str, Any]], time_field: str | None) -> list[str] | None:
     if not time_field:
         return None
+    import datetime as dt
+
     from dateutil.parser import isoparse
 
     values = []
     for feature in features:
         raw = (feature.get('properties') or {}).get(time_field)
-        if raw in (None, ''):
+        if raw in (None, '') or isinstance(raw, bool):
             continue
         try:
-            values.append(isoparse(str(raw)))
-        except ValueError:
+            if isinstance(raw, int | float) or (isinstance(raw, str) and raw.isdigit()):
+                # Epoch time: ArcGIS services give milliseconds.
+                number = float(raw)
+                when = dt.datetime.fromtimestamp(
+                    number / 1000 if abs(number) > 1e11 else number, dt.UTC
+                )
+            else:
+                when = isoparse(str(raw))
+        except (ValueError, OverflowError, OSError):
             continue
+        values.append(when if when.tzinfo else when.replace(tzinfo=dt.UTC))
     if not values:
         return None
     return [min(values).isoformat(), max(values).isoformat()]
@@ -305,7 +777,138 @@ def introspect(job: dict[str, Any]) -> dict[str, Any]:
         return _introspect_sqlite(data)
     if what == 'sql':
         return _introspect_sql(data, job.get('dialect', 'postgresql'))
+    if what == 'ogr':
+        return _introspect_ogr(data)
+    if what == 'esri':
+        return _introspect_esri(data)
     raise ValueError(f'unknown introspection kind: {what}')
+
+
+#: OGR field types as pygeoapi's OGR provider names them (pygeoapi/provider/ogr.py:243-261).
+OGR_TYPES = {'integer64': 'integer', 'real': 'number'}
+
+
+def _introspect_ogr(pdef: dict[str, Any]) -> dict[str, Any]:
+    """The layers of a GDAL/OGR source, opened as pygeoapi's OGR provider opens it.
+
+    Config and driver options are set first, open options passed to OpenEx
+    (pygeoapi/provider/ogr.py:128-137, 177-196). Each layer lists its attribute
+    fields, with the FID column marked ``pk`` (first, when it isn't an attribute).
+    """
+    from osgeo import gdal
+
+    gdal.UseExceptions()
+    data = dict(pdef.get('data') or {})
+    for key, value in {
+        **(data.get('gdal_ogr_options') or {}),
+        **(data.get('source_options') or {}),
+    }.items():
+        gdal.SetConfigOption(str(key), str(value))
+    driver = data.get('source_type')
+    source = data.get('source')
+    if not source:
+        raise ValueError('data.source is empty')
+    if isinstance(source, str) and source.startswith('/') and not os.path.exists(source):
+        raise FileNotFoundError(f"No such file or directory: '{source}'")
+    kwargs: dict[str, Any] = {}
+    if driver:
+        kwargs['allowed_drivers'] = [str(driver)]
+    if data.get('open_options'):
+        kwargs['open_options'] = [f'{k}={v}' for k, v in data['open_options'].items()]
+    ds = gdal.OpenEx(str(source), gdal.OF_VECTOR | gdal.OF_READONLY, **kwargs)
+    if ds is None:
+        raise ValueError(f'GDAL could not open {source} as {driver or "a vector source"}')
+    tables = []
+    for i in range(min(ds.GetLayerCount(), MAX_TABLES)):
+        layer = ds.GetLayerByIndex(i)
+        defn = layer.GetLayerDefn()
+        columns: list[dict[str, Any]] = []
+        for j in range(defn.GetFieldCount()):
+            field = defn.GetFieldDefn(j)
+            kind = field.GetFieldTypeName(field.GetType()).lower()
+            columns.append({'name': field.GetName(), 'type': OGR_TYPES.get(kind, kind)})
+        fid = layer.GetFIDColumn() or 'fid'  # pygeoapi falls back to the FID (ogr.py:514-516)
+        same = next((c for c in columns if c['name'] == fid), None)
+        if same is not None:
+            same['pk'] = True
+        else:
+            columns.insert(0, {'name': fid, 'type': 'integer', 'pk': True})
+        geom = defn.GetGeomFieldDefn(0) if defn.GetGeomFieldCount() else None
+        tables.append(
+            {
+                'name': layer.GetName(),
+                'kind': gdal.ogr.GeometryTypeToName(geom.GetType()) if geom else 'no geometry',
+                'columns': columns,
+                'count': layer.GetFeatureCount(force=0),
+            }
+        )
+    return {'tables': tables, 'driver': ds.GetDriver().ShortName}
+
+
+#: ArcGIS field types and the JSON types they hold.
+ESRI_TYPES = {
+    'esriFieldTypeOID': 'integer',
+    'esriFieldTypeInteger': 'integer',
+    'esriFieldTypeSmallInteger': 'integer',
+    'esriFieldTypeBigInteger': 'integer',
+    'esriFieldTypeDouble': 'number',
+    'esriFieldTypeSingle': 'number',
+    'esriFieldTypeString': 'string',
+    'esriFieldTypeDate': 'integer',  # epoch milliseconds in GeoJSON
+    'esriFieldTypeGUID': 'string',
+    'esriFieldTypeGlobalID': 'string',
+}
+
+
+def _introspect_esri(pdef: dict[str, Any]) -> dict[str, Any]:
+    """An ArcGIS layer's fields, its object id field and its extent (``<layer>?f=pjson``).
+
+    This is the request pygeoapi's ESRI provider makes to list fields
+    (pygeoapi/provider/esri.py:90). A layer behind a login is looked up after the
+    provider loads, by the probe.
+    """
+    import requests
+
+    url = pdef.get('data')
+    if not isinstance(url, str) or not url.startswith(('http://', 'https://')):
+        raise ValueError('data must be the layer URL')
+    resp = requests.get(url, params={'f': 'pjson'}, timeout=30)
+    resp.raise_for_status()
+    doc = resp.json()
+    if isinstance(doc.get('error'), dict):
+        raise ValueError(f'The service answered: {doc["error"].get("message")}')
+    oid = doc.get('objectIdField')
+    columns = [
+        {
+            'name': f.get('name'),
+            'type': ESRI_TYPES.get(f.get('type'), 'string'),
+            'pk': f.get('name') == oid or f.get('type') == 'esriFieldTypeOID',
+            'title': f.get('alias'),
+        }
+        for f in doc.get('fields') or []
+        if f.get('name')
+    ]
+    advanced = doc.get('advancedQueryCapabilities') or {}
+    problems = []
+    if not advanced.get('supportsPagination') or not advanced.get('supportsOrderBy'):
+        problems.append('The layer must support pagination and orderBy, or pygeoapi refuses it.')
+    if 'geojson' not in str(doc.get('supportedQueryFormats', '')).lower():
+        problems.append('The layer must answer queries as geoJSON, or pygeoapi refuses it.')
+    extent = doc.get('extent') or {}
+    wkid = (extent.get('spatialReference') or {}).get('latestWkid') or (
+        extent.get('spatialReference') or {}
+    ).get('wkid')
+    bbox = None
+    if wkid == 4326 and all(k in extent for k in ('xmin', 'ymin', 'xmax', 'ymax')):
+        bbox = [extent['xmin'], extent['ymin'], extent['xmax'], extent['ymax']]
+    return {
+        'columns': columns,
+        'object_id_field': oid,
+        'geometry_type': doc.get('geometryType'),
+        'max_record_count': doc.get('maxRecordCount'),
+        'bbox': bbox,
+        'problems': problems,
+    }
 
 
 def _infer_type(values: list[str]) -> str:
