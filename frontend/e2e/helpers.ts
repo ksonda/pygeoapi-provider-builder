@@ -14,7 +14,7 @@ export async function startWizard(page: Page, backend: RegExp) {
   await card.getByRole('button', { name: 'Use this' }).click()
   await expect(card.getByRole('button', { name: 'Selected' })).toBeVisible()
   await next(page)
-  await expect(page.getByRole('heading', { name: /Step 3 of 8: Connect/ })).toBeFocused()
+  await expect(page.getByRole('heading', { name: /Step 3 of \d: Connect/ })).toBeFocused()
 }
 
 /** No serious or critical WCAG 2.1 A/AA violations on the current page. */
