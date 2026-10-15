@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 from fastapi.testclient import TestClient
 from forms import csv_form, postgres_form
+from provider_builder import app as app_module
+from provider_builder.service import Service
 
 
 def wait(client: TestClient, job_id: str) -> dict[str, Any]:
@@ -115,3 +119,20 @@ def test_validate_blocks_on_errors(client: TestClient) -> None:
 def test_openapi_document_is_served(client: TestClient) -> None:
     doc = client.get('/api/openapi.json').json()
     assert '/api/probe' in doc['paths'] and 'FormState' in doc['components']['schemas']
+
+
+def test_the_page_is_revalidated_and_assets_are_kept(
+    service: Service, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rebuilt frontend shows on the next load, and its hashed assets are fetched once."""
+    dist = (tmp_path / 'dist').resolve()
+    (dist / 'assets').mkdir(parents=True)
+    (dist / 'index.html').write_text('<!doctype html>')
+    (dist / 'assets' / 'index-abc123.js').write_text('')
+    monkeypatch.setattr(app_module, 'FRONTEND_DIST', dist)
+    client = TestClient(app_module.create_app(service=service, check_sandbox=False))
+    for page in ('/', '/configs'):  # the app's own routes get the page too
+        response = client.get(page, headers={'Host': 'localhost'})
+        assert response.status_code == 200 and response.headers['cache-control'] == 'no-cache'
+    asset = client.get('/assets/index-abc123.js', headers={'Host': 'localhost'})
+    assert asset.headers['cache-control'] == 'max-age=31536000, immutable'

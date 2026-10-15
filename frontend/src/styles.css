@@ -89,7 +89,7 @@ textarea { resize: vertical; }
 .field.checkbox .help { flex-basis: 100%; }
 .field.has-error input, .field.has-error select, .field.has-error textarea { border-color: var(--err); }
 .help { margin: 0.25rem 0 0; font-size: 0.875rem; color: var(--muted); }
-fieldset { border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem 1rem 1rem; margin: 0 0 1rem; }
+fieldset { border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem 1rem 1rem; margin: 0 0 1rem; min-width: 0; } /* not min-content: wide tables scroll inside */
 legend { font-weight: 600; padding: 0 0.25rem; }
 .radio { display: flex; align-items: center; gap: 0.5rem; margin: 0.35rem 0; }
 .radio.disabled { color: var(--muted); }
@@ -124,7 +124,8 @@ details.advanced > summary { cursor: pointer; font-weight: 600; margin-bottom: 0
 .nav-buttons .primary { margin-left: auto; }
 
 .cards { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 0.75rem; }
-.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.9rem 1rem; display: flex; flex-direction: column; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.9rem 1rem; display: flex; flex-direction: column; min-width: 0; }
+.card pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
 .card h4 { margin: 0 0 0.25rem; }
 .card p { margin: 0.25rem 0; }
@@ -296,5 +297,5 @@ ol.publish-steps > li.error strong { color: var(--err); }
 .grid-facts td { overflow-wrap: anywhere; }
 /* Linked data: template slots and the RDF preview. */
 .linked-data .slots { border-left: 3px solid var(--border); padding-left: 0.75rem; margin: 0.5rem 0; }
-.triples td { overflow-wrap: anywhere; }
+.table-wrap table.triples td { overflow-wrap: anywhere; }
 .jsonld-preview pre { max-height: 24rem; overflow: auto; background: var(--surface-2); padding: 0.5rem; border-radius: var(--radius); }

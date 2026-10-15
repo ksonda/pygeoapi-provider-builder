@@ -28,6 +28,8 @@ from .workspace import WorkspaceError
 from .yamlio import SpliceError
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / 'frontend' / 'dist'
+REVALIDATE = {'Cache-Control': 'no-cache'}
+IMMUTABLE = {'Cache-Control': 'max-age=31536000, immutable'}
 
 
 class TestSecrets(BaseModel):
@@ -640,7 +642,10 @@ def create_app(
                 raise HTTPException(404)
             candidate = (FRONTEND_DIST / path).resolve()
             if path and candidate.is_file() and FRONTEND_DIST in candidate.parents:
-                return FileResponse(candidate)
-            return FileResponse(FRONTEND_DIST / 'index.html')
+                # Vite names each asset by its content hash, so a name never changes meaning.
+                hashed = candidate.parent == FRONTEND_DIST / 'assets'
+                return FileResponse(candidate, headers=IMMUTABLE if hashed else REVALIDATE)
+            # The page names the current assets: a cached copy would load an old build.
+            return FileResponse(FRONTEND_DIST / 'index.html', headers=REVALIDATE)
 
     return app
