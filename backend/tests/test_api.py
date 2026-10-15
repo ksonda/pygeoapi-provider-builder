@@ -21,7 +21,9 @@ def wait(client: TestClient, job_id: str) -> dict[str, Any]:
 
 def test_catalog(client: TestClient) -> None:
     cards = client.get('/api/catalog').json()
-    assert {c['id'] for c in cards} == {'CSV', 'GeoJSON', 'SQLiteGPKG', 'PostgreSQL'}
+    assert {'CSV', 'GeoJSON', 'SQLiteGPKG', 'PostgreSQL', 'OGR', 'MVT-tippecanoe'} <= {
+        c['id'] for c in cards
+    }
     detail = client.get('/api/catalog/CSV').json()
     assert detail['json_schema']['required'] == [
         'data',

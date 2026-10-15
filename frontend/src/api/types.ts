@@ -40,6 +40,8 @@ export interface UiField {
   choices_from?: string | null
   field_types?: string[] | null
   extensions?: string[] | null
+  /** Path fields: a file, a folder, or either. */
+  path_kind?: 'file' | 'folder' | 'any' | null
   advanced: boolean
   unit?: string | null
   min?: number | null
@@ -61,13 +63,22 @@ export interface UiVariant {
   title: string
   help?: string | null
   keys: string[]
+  /** The variant's own fields: two variants may define one key differently (a path or a URL). */
+  fields?: Record<string, UiField>
 }
 
 export interface DescriptorDetail extends CatalogCard {
   json_schema: Record<string, unknown>
   ui: { groups: UiGroup[]; variants: UiVariant[]; fields: Record<string, UiField> }
   probe?: { kind: string; copy_data?: boolean } | null
-  introspect?: { what: 'csv' | 'geojson' | 'sqlite' | 'sql'; dialect?: string } | null
+  introspect?: {
+    what: 'csv' | 'geojson' | 'sqlite' | 'sql' | 'ogr' | 'esri'
+    dialect?: string
+    /** The form key that picks a table or layer (default: table). */
+    table_key?: string
+    /** The form key the lookup needs filled first (default: data). */
+    source_key?: string
+  } | null
 }
 
 export interface Explanation {

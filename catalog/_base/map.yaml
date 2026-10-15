@@ -27,7 +27,7 @@ fields:
     type: string
     title: Image format
     help: The format name, e.g. png, which ?f= selects.
-    default: png
+    suggest: png
     required: true
     step: connect
     source: pygeoapi/api/maps.py:252
@@ -36,7 +36,7 @@ fields:
     type: string
     title: Image media type
     help: The Content-Type of the image, e.g. image/png.
-    default: image/png
+    suggest: image/png
     required: true
     step: connect
     source: pygeoapi/api/maps.py:258

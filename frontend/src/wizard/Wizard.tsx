@@ -8,7 +8,7 @@ import type { FormState } from '../api/client'
 import type { DescriptorDetail, LoadedResource, PublicSettings } from '../api/types'
 import { ErrorSummary, Spinner } from '../components/common'
 import { fieldId } from '../forms/DescriptorForm'
-import { validateProvider } from '../forms/validate'
+import { activeFields, validateProvider } from '../forms/validate'
 import {
   BackendStep,
   ConnectStep,
@@ -34,7 +34,7 @@ function stepErrors(state: WizardState, step: StepId): Record<string, string> {
     case 'connect':
     case 'fields': {
       if (!d || !p) return {}
-      const all = validateProvider(d.json_schema, d.ui.fields, p)
+      const all = validateProvider(d.json_schema, activeFields(d, p.variant), p)
       const group = d.ui.groups.find((g) => g.id === (step === 'connect' ? 'connect' : 'map'))
       const keys = new Set([...(group?.keys ?? []), ...(group?.advanced ?? [])])
       if (step === 'connect') for (const v of d.ui.variants) if (v.id === (p.variant ?? d.ui.variants[0]?.id)) v.keys.forEach((k) => keys.add(k))

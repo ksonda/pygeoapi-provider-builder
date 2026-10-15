@@ -6,7 +6,9 @@ declares. ``${VAR}`` placeholders are filled from the job's test secrets, so a
 connection string kept in a secret still yields its host.
 
 A descriptor opts in with an ``egress`` rule: ``{kind: sql, default_port: 5432}``,
-``{kind: spec}``, or ``{kind: hosts, hosts: [api.example.gov:443]}`` (code-built
+``{kind: spec}``, ``{kind: url, keys: [data]}`` (the hosts of the http(s) URLs in
+those config keys, such as a WMS or a tile server; GDAL prefixes like ``WFS:`` are
+dropped first), or ``{kind: hosts, hosts: [api.example.gov:443]}`` (code-built
 providers declare what they reach; ``sql_keys`` names config keys holding a database
 connection, such as ``data``). Providers without one get no network at all.
 """
@@ -120,6 +122,21 @@ def spec(doc: Mapping[str, Any]) -> set[HostPort]:
     return urls([source.get('url'), item.get('url')])
 
 
+#: GDAL's prefixes before a URL: a driver name (WFS:, ESRIJSON:) or a virtual file system.
+GDAL_PREFIX = re.compile(
+    r'^(?:/vsicurl(?:_streaming)?/|[A-Za-z][A-Za-z0-9_]*:(?=https?://))', re.IGNORECASE
+)
+
+
+def strip_gdal_prefix(value: Any) -> Any:
+    """``WFS:https://…`` or ``/vsicurl/https://…`` as the plain URL GDAL connects to."""
+    if not isinstance(value, str):
+        return value
+    while m := GDAL_PREFIX.match(value):
+        value = value[m.end() :]
+    return value
+
+
 def _dotted(pdef: Mapping[str, Any], key: str) -> Any:
     node: Any = pdef
     for part in key.split('.'):
@@ -140,6 +157,9 @@ def for_provider(
         return sql(fill(pdef.get('data'), secrets), int(rule.get('default_port', 5432)))
     if kind == 'spec' and spec_doc is not None:
         return spec(fill(spec_doc, secrets))
+    if kind == 'url':  # the service a URL in the config names (ESRI, MVT-proxy, WMSFacade, OGR)
+        values = [fill(_dotted(pdef, str(key)), secrets) for key in rule.get('keys') or ['data']]
+        return urls(strip_gdal_prefix(v) for v in values)
     if kind == 'hosts':  # a code-built provider's declared host:port pairs
         found: set[HostPort] = set()
         for entry in rule.get('hosts') or []:

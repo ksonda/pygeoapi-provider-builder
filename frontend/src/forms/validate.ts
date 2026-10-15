@@ -4,7 +4,7 @@ import type { ErrorObject, ValidateFunction } from 'ajv'
 import Ajv2020 from 'ajv/dist/2020'
 
 import type { ProviderState } from '../api/client'
-import type { UiField } from '../api/types'
+import type { DescriptorDetail, UiField } from '../api/types'
 
 // Draft 2020-12, the dialect the backend compiles descriptors to.
 const ajv = new Ajv2020({ allErrors: true, strict: false })
@@ -18,6 +18,12 @@ ajv.addFormat('uri', (v: string) => {
 ajv.addFormat('date-time', (v: string) => !Number.isNaN(Date.parse(v)))
 
 const compiled = new WeakMap<object, ValidateFunction>()
+
+/** The fields a provider's form uses: its variant's own definitions win over the shared ones. */
+export function activeFields(detail: DescriptorDetail, variant: string | null | undefined): Record<string, UiField> {
+  const chosen = detail.ui.variants.find((v) => v.id === (variant ?? detail.ui.variants[0]?.id))
+  return { ...detail.ui.fields, ...(chosen?.fields ?? {}) }
+}
 
 export function flatValues(p: ProviderState | undefined): Record<string, unknown> {
   if (!p) return {}

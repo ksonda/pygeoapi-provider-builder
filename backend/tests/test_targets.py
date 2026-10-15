@@ -449,13 +449,19 @@ obs:
         - type: tile
           name: MVT-tippecanoe
           data: /data/tiles
+          options: {zoom: {min: 0, max: 5}}
+          format: {name: pbf, mimetype: application/vnd.mapbox-vector-tile}
+        - type: map
+          name: example_org.maps.CustomMaps
+          data: /data/maps
 """
     [found] = ops_client.post('/api/import', json={'yaml': snippet}).json()
     assert found['resource_id'] == 'obs'
     providers = found['form']['providers']
     assert providers[0]['descriptor'] == 'CSV'
     assert providers[0]['extra'] == {'password': '${QUOTED}'}
-    assert providers[1]['descriptor'] == '_raw'
+    assert (providers[1]['descriptor'], providers[1]['variant']) == ('MVT-tippecanoe', 'folder')
+    assert providers[2]['descriptor'] == '_raw'
     text = ' '.join(found['warnings'])
     assert 'placeholder is quoted' in text
     assert 'legacy template' in text

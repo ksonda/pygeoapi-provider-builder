@@ -4,6 +4,7 @@ import { createContext, useContext, useReducer, type Dispatch, type ReactNode } 
 
 import type { FormState, ProviderState, ResourceState } from '../api/client'
 import type { DescriptorDetail, IntrospectData, ProbeData, SandboxResult } from '../api/types'
+import { activeFields } from '../forms/validate'
 
 export const STEPS = [
   { id: 'start', title: 'Start' },
@@ -154,7 +155,7 @@ function syncEnvNames(state: WizardState): WizardState {
   const p = current(state)
   if (!d || !p) return state
   const secrets = { ...(p.secrets ?? {}) }
-  for (const f of Object.values(d.ui.fields)) {
+  for (const f of Object.values(activeFields(d, p.variant))) {
     if (f.type !== 'secret' || state.envEdited[f.key]) continue
     secrets[f.key] = { env: envName(state.form.resource_id, f.key, f.env_name) }
   }
@@ -164,7 +165,8 @@ function syncEnvNames(state: WizardState): WizardState {
 function suggestId(state: WizardState, key: string, value: unknown): WizardState {
   if (state.idEdited || typeof value !== 'string' || !value) return state
   if (key !== 'data' && key !== 'table') return state
-  if (key === 'data' && state.detail?.ui.fields.data?.type !== 'path') return state
+  const p = provider(state)
+  if (key === 'data' && state.detail && activeFields(state.detail, p.variant).data?.type !== 'path') return state
   const id = slug(value.split('/').pop() ?? value)
   return id ? syncEnvNames({ ...state, form: { ...state.form, resource_id: id } }) : state
 }
@@ -195,8 +197,8 @@ export function reducer(state: WizardState, action: Action): WizardState {
     case 'descriptor': {
       const d = action.detail
       const values: Record<string, unknown> = {}
-      for (const f of Object.values(d.ui.fields)) if (f.suggest !== undefined && f.suggest !== null) values[f.key] = f.suggest
       const variant = d.ui.variants[0]?.id ?? null
+      for (const f of Object.values(activeFields(d, variant))) if (f.suggest !== undefined && f.suggest !== null) values[f.key] = f.suggest
       if (variant) values['$variant'] = variant
       // A created provider is one API: its id is a good collection id to start from.
       const resourceId = !state.idEdited && !state.form.resource_id && d.origin === 'created' ? slug(d.id.split('/').pop() ?? '') : state.form.resource_id
@@ -219,7 +221,15 @@ export function reducer(state: WizardState, action: Action): WizardState {
     }
     case 'variant': {
       const p = provider(state)
-      return withProvider(state, { ...p, variant: action.variant, values: { ...(p.values ?? {}), $variant: action.variant } })
+      const values: Record<string, unknown> = { ...(p.values ?? {}), $variant: action.variant }
+      // The new variant's own suggestions fill what's empty or no longer one of its choices.
+      const own = state.detail?.ui.variants.find((v) => v.id === action.variant)?.fields ?? {}
+      for (const f of Object.values(own)) {
+        if (f.suggest === undefined || f.suggest === null) continue
+        const stale = Boolean(f.choices?.length) && !f.choices?.includes(values[f.key])
+        if (values[f.key] === undefined || stale) values[f.key] = f.suggest
+      }
+      return withProvider(state, { ...p, variant: action.variant, values })
     }
     case 'secretEnv': {
       const p = provider(state)

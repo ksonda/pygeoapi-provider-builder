@@ -1,5 +1,5 @@
-// Pick a file inside a data root. Paths are server paths (as pygeoapi sees
-// them); the backend refuses anything outside the configured roots.
+// Pick a file or folder inside a data root. Paths are server paths (as pygeoapi
+// sees them); the backend refuses anything outside the configured roots.
 import { useEffect, useRef, useState } from 'react'
 
 import { api, unwrap } from '../api/client'
@@ -9,6 +9,8 @@ interface Props {
   open: boolean
   start: string
   extensions?: string[] | null
+  /** file: pick files; folder: pick folders (a tile tree); any: either (a .zarr store). */
+  pathKind?: 'file' | 'folder' | 'any'
   onPick: (path: string) => void
   onClose: () => void
 }
@@ -20,7 +22,7 @@ function formatSize(n: number | null): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
-export function FileBrowser({ open, start, extensions, onPick, onClose }: Props) {
+export function FileBrowser({ open, start, extensions, pathKind = 'file', onPick, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
   const [path, setPath] = useState(start)
   const [listing, setListing] = useState<FsListing | null>(null)
@@ -50,14 +52,23 @@ export function FileBrowser({ open, start, extensions, onPick, onClose }: Props)
   }, [open, path])
 
   const allowed = (name: string) => !extensions?.length || extensions.some((ext) => name.toLowerCase().endsWith(ext))
+  // A folder can be the answer: any folder for a tile tree, a matching one (x.zarr) for "any".
+  const folderPick = (name: string) => pathKind === 'folder' || (pathKind === 'any' && Boolean(extensions?.length) && allowed(name))
 
   return (
     <dialog ref={ref} className="file-browser" aria-labelledby="fb-title" onClose={onClose}>
-      <h2 id="fb-title">Choose a file</h2>
+      <h2 id="fb-title">{pathKind === 'folder' ? 'Choose a folder' : 'Choose a file'}</h2>
       <p className="muted">
         Folder <code>{listing?.server_path ?? path}</code>
-        {extensions?.length ? <> · showing {extensions.join(', ')} files</> : null}
+        {extensions?.length ? <> · showing {extensions.join(', ')} {pathKind === 'file' ? 'files' : 'entries'}</> : null}
       </p>
+      {pathKind === 'folder' && listing && (
+        <p>
+          <button type="button" onClick={() => onPick(listing.server_path)}>
+            Use this folder
+          </button>
+        </p>
+      )}
       {error && <p className="error-text">{error}</p>}
       <ul className="fs-list">
         {listing?.parent && (
@@ -70,11 +81,21 @@ export function FileBrowser({ open, start, extensions, onPick, onClose }: Props)
         {listing?.entries.map((e) => (
           <li key={e.server_path}>
             {e.kind === 'dir' ? (
-              <button type="button" className="link" onClick={() => setPath(e.server_path)}>
-                📁 {e.name}/
-              </button>
+              <>
+                <button type="button" className="link" onClick={() => setPath(e.server_path)}>
+                  📁 {e.name}/
+                </button>
+                {folderPick(e.name) && (
+                  <>
+                    {' '}
+                    <button type="button" className="small" onClick={() => onPick(e.server_path)} aria-label={`Use the folder ${e.name}`}>
+                      Use
+                    </button>
+                  </>
+                )}
+              </>
             ) : (
-              <button type="button" className="link" disabled={!allowed(e.name)} onClick={() => onPick(e.server_path)}>
+              <button type="button" className="link" disabled={pathKind === 'folder' || !allowed(e.name)} onClick={() => onPick(e.server_path)}>
                 {e.name} <span className="muted">{formatSize(e.size)}</span>
               </button>
             )}

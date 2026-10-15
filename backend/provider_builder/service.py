@@ -26,6 +26,7 @@ from .render import (
     RenderResult,
     render,
     render_provider,
+    variant_of,
 )
 from .runner import Outcome, Runner, make_runner
 from .settings import Settings
@@ -252,8 +253,8 @@ class Service:
                     found |= self.egress_for(pdef, self.catalog.by_plugin(pdef['name']), secrets)
         return found
 
-    def _check_paths(self, pdef: dict[str, Any], d: Descriptor) -> None:
-        for f in d.all_fields():
+    def _check_paths(self, pdef: dict[str, Any], d: Descriptor, variant: str | None) -> None:
+        for f in d.active_fields(variant):
             if f['type'] != 'path':
                 continue
             node: Any = pdef
@@ -306,7 +307,7 @@ class Service:
             }
         pdef = render_provider(provider, d, resource_id or 'resource', {})
         try:
-            self._check_paths(pdef, d)
+            self._check_paths(pdef, d, variant_of(provider))
         except PathError as err:
             return {
                 'ok': False,
@@ -328,7 +329,7 @@ class Service:
         rendered = render(form, self.catalog)
         pdef = rendered.resource['providers'][index]
         try:
-            self._check_paths(pdef, d)
+            self._check_paths(pdef, d, variant_of(p))
         except PathError as err:
             return {
                 'ok': False,

@@ -6,6 +6,7 @@ import { useState, type ReactNode } from 'react'
 import type { ProviderState } from '../api/client'
 import type { DescriptorDetail, UiField } from '../api/types'
 import { FileBrowser } from './FileBrowser'
+import { activeFields } from './validate'
 
 export interface FormProps {
   detail: DescriptorDetail
@@ -205,6 +206,7 @@ function Control({ f, props }: { f: UiField; props: FormProps }) {
             open={browsing}
             start={props.dataRoot}
             extensions={f.extensions}
+            pathKind={f.path_kind ?? 'file'}
             onClose={() => setBrowsing(false)}
             onPick={(p) => (onValue(f.key, p), setBrowsing(false))}
           />
@@ -308,8 +310,9 @@ export function DescriptorForm(props: FormProps) {
   const variants = step === 'connect' ? detail.ui.variants : []
   const current = provider.variant ?? variants[0]?.id
   const variant = variants.find((v) => v.id === current)
+  const defs = activeFields(detail, current)
   const fields = (keys: string[]) =>
-    keys.map((k) => detail.ui.fields[k]).filter((f): f is UiField => Boolean(f)).map((f) => <Control key={f.key} f={f} props={props} />)
+    keys.map((k) => defs[k]).filter((f): f is UiField => Boolean(f)).map((f) => <Control key={f.key} f={f} props={props} />)
 
   return (
     <div className="descriptor-form">

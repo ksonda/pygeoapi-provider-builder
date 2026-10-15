@@ -111,7 +111,21 @@ class Catalog:
             if raw['id'] in self.descriptors:
                 self.errors.append(f'{path}: duplicate descriptor id {raw["id"]!r}')
                 continue
+            untyped = self._untyped(raw)
+            if untyped:
+                self.errors.append(
+                    f'{path}: fields without a type that override no base field: '
+                    + ', '.join(untyped)
+                )
+                continue
             self.descriptors[raw['id']] = self._merge(path, raw)
+
+    def _untyped(self, raw: dict[str, Any]) -> list[str]:
+        """Keys of fields with no type of their own or a base field's to inherit."""
+        base_keys = {b['key'] for b in self.bases.get(raw['provider_type'], {}).get('fields', [])}
+        own = [f for f in raw.get('fields', []) if 'type' not in f and f['key'] not in base_keys]
+        variants = [f for v in raw.get('variants', []) for f in v['fields'] if 'type' not in f]
+        return [f['key'] for f in [*own, *variants]]
 
     def _merge(self, path: Path, raw: dict[str, Any]) -> Descriptor:
         base = self.bases.get(raw['provider_type'], {})
@@ -215,10 +229,27 @@ def field_schema(f: dict[str, Any]) -> dict[str, Any]:
     return s
 
 
+def shared_variant_keys(d: Descriptor) -> set[str]:
+    """Keys more than one variant defines, each its own way (a path or a URL)."""
+    seen: dict[str, int] = {}
+    for v in d.variants:
+        for f in v['fields']:
+            seen[f['key']] = seen.get(f['key'], 0) + 1
+    return {k for k, n in seen.items() if n > 1}
+
+
 def compile_descriptor(d: Descriptor) -> dict[str, Any]:
-    """The compiled form: JSON Schema, UI schema and card metadata."""
-    fields = d.all_fields()
-    properties = {f['key']: field_schema(f) for f in fields}
+    """The compiled form: JSON Schema, UI schema and card metadata.
+
+    A key that several variants define is checked by each variant's own schema
+    (under ``allOf``), and each variant lists its own UI fields; ``ui.fields``
+    then holds the first variant's definition.
+    """
+    shared = shared_variant_keys(d)
+    fields = list(d.fields)
+    for v in d.variants:
+        fields += [f for f in v['fields'] if f['key'] not in {g['key'] for g in fields}]
+    properties = {f['key']: {} if f['key'] in shared else field_schema(f) for f in fields}
     schema: dict[str, Any] = {
         '$schema': 'https://json-schema.org/draft/2020-12/schema',
         'type': 'object',
@@ -227,13 +258,17 @@ def compile_descriptor(d: Descriptor) -> dict[str, Any]:
     }
     if d.variants:
         schema['properties'][VARIANT_KEY] = {'enum': [v['id'] for v in d.variants]}
-        schema['allOf'] = [
-            {
-                'if': {'properties': {VARIANT_KEY: {'const': v['id']}}},
-                'then': {'required': [f['key'] for f in v['fields'] if f.get('required')]},
+        schema['allOf'] = []
+        for v in d.variants:
+            then: dict[str, Any] = {
+                'required': [f['key'] for f in v['fields'] if f.get('required')]
             }
-            for v in d.variants
-        ]
+            own = {f['key']: field_schema(f) for f in v['fields'] if f['key'] in shared}
+            if own:
+                then['properties'] = own
+            schema['allOf'].append(
+                {'if': {'properties': {VARIANT_KEY: {'const': v['id']}}}, 'then': then}
+            )
     ui_fields = {f['key']: _ui_field(f) for f in fields}
     groups = []
     for step, title in (('connect', 'Connection'), ('map', 'Fields and output')):
@@ -261,6 +296,7 @@ def compile_descriptor(d: Descriptor) -> dict[str, Any]:
                     'title': v['title'],
                     'help': v.get('help'),
                     'keys': [f['key'] for f in v['fields']],
+                    'fields': {f['key']: _ui_field(f) for f in v['fields']},
                 }
                 for v in d.variants
             ],
@@ -304,6 +340,7 @@ def _ui_field(f: dict[str, Any]) -> dict[str, Any]:
         'choices_from': f.get('choices_from'),
         'field_types': f.get('field_types'),
         'extensions': f.get('extensions'),
+        'path_kind': f.get('path_kind', 'file') if f['type'] == 'path' else None,
         'advanced': bool(f.get('advanced')),
         'unit': f.get('unit'),
         'min': f.get('min'),

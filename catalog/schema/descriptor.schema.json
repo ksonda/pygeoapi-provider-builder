@@ -68,9 +68,11 @@
       "required": ["what"],
       "additionalProperties": false,
       "properties": {
-        "what": {"enum": ["csv", "geojson", "sqlite", "sql"]},
+        "what": {"enum": ["csv", "geojson", "sqlite", "sql", "ogr", "esri"]},
         "dialect": {"enum": ["postgresql", "mysql"]},
-        "needs": {"type": "array", "items": {"type": "string"}}
+        "needs": {"type": "array", "items": {"type": "string"}},
+        "table_key": {"description": "The form key that picks the table or layer whose columns fill pickers (default table)", "type": "string"},
+        "source_key": {"description": "The form key a lookup needs before it runs (default data)", "type": "string"}
       }
     },
     "notes": {"type": "array", "items": {"type": "string"}},
@@ -109,12 +111,17 @@
       }
     },
     "egress": {
-      "description": "Where the sandbox may connect for this provider (PLAN.md §8.2): sql reads data's host and port; spec reads the URLs of the spec data points at; hosts lists the host:port pairs a code-built provider declares",
+      "description": "Where the sandbox may connect for this provider (PLAN.md §8.2): sql reads data's host and port; spec reads the URLs of the spec data points at; url reads the http(s) URLs in the config keys named by keys (default data); hosts lists the host:port pairs a code-built provider declares",
       "type": "object",
       "required": ["kind"],
       "additionalProperties": false,
       "properties": {
-        "kind": {"enum": ["sql", "spec", "hosts"]},
+        "kind": {"enum": ["sql", "spec", "url", "hosts"]},
+        "keys": {
+          "description": "With kind url: config keys whose value is a URL, such as data or data.source",
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"}
+        },
         "default_port": {"type": "integer", "minimum": 1, "maximum": 65535},
         "hosts": {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z0-9.-]+:[0-9]{1,5}$"}},
         "sql_keys": {
@@ -145,8 +152,9 @@
   ],
   "$defs": {
     "field": {
+      "description": "A form field. A descriptor's field with a base field's key overrides it and may leave out type and the other keys it inherits; every other field needs a type (checked when the catalog loads)",
       "type": "object",
-      "required": ["key", "type"],
+      "required": ["key"],
       "additionalProperties": false,
       "properties": {
         "key": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(\\.[A-Za-z_][A-Za-z0-9_-]*)*$"},
@@ -162,6 +170,7 @@
         "choices_from": {"type": "string", "pattern": "^(probe|introspect)\\.[a-z_]+$"},
         "field_types": {"type": "array", "items": {"enum": ["string", "integer", "number", "boolean"]}},
         "extensions": {"type": "array", "items": {"type": "string", "pattern": "^\\.[a-z0-9]+$"}},
+        "path_kind": {"description": "For path fields: a file (default), a folder (a tile tree), or either (a NetCDF file or a .zarr folder)", "enum": ["file", "folder", "any"]},
         "advanced": {"type": "boolean"},
         "step": {"enum": ["connect", "map"]},
         "unit": {"type": "string"},

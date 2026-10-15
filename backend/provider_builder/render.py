@@ -111,12 +111,16 @@ def placeholder(name: str) -> str:
 
 
 def _set_nested(target: dict[str, Any], dotted: str, value: Any) -> None:
+    """Set a dotted key. A mapping merges with one already there (options and options.crs)."""
     parts = dotted.split('.')
     for part in parts[:-1]:
         nxt = target.get(part)
         if not isinstance(nxt, dict):
             nxt = target[part] = {}
         target = nxt
+    current = target.get(parts[-1])
+    if isinstance(value, dict):
+        value = {**current, **value} if isinstance(current, dict) else dict(value)
     target[parts[-1]] = value
 
 
@@ -142,11 +146,17 @@ def _merge_extra(target: dict[str, Any], extra: dict[str, Any]) -> None:
             target[k] = v
 
 
+def variant_of(p: ProviderState) -> str | None:
+    """The variant a provider's form uses."""
+    chosen = p.variant or p.values.get(VARIANT_KEY)
+    return str(chosen) if chosen else None
+
+
 def render_provider(
     p: ProviderState, d: Descriptor, resource_id: str, env: dict[str, EnvVar]
 ) -> dict[str, Any]:
     body: dict[str, Any] = {}
-    for f in d.active_fields(p.variant or p.values.get(VARIANT_KEY)):
+    for f in d.active_fields(variant_of(p)):
         key = f['key']
         if f['type'] == 'secret':
             ref = p.secrets.get(key)
@@ -250,14 +260,25 @@ def form_values_from_provider(
             if key in ('type', 'name'):
                 continue
             f = fields.get(key)
-            if f is not None:
+            nested = isinstance(v, dict) and any(fk.startswith(key + '.') for fk in fields)
+            if f is not None and f['type'] == 'object' and nested:
+                # A free-form mapping some of whose keys are fields of their own (options.crs).
+                depth = key.count('.') + 1
+                own = {fk.split('.')[depth] for fk in fields if fk.startswith(key + '.')} & set(v)
+                rest = {k2: v2 for k2, v2 in v.items() if k2 not in own}
+                if rest:
+                    values[key] = rest
+                walk({k2: v[k2] for k2 in own}, key + '.', extra_node.setdefault(k, {}))
+                if not extra_node[k]:
+                    del extra_node[k]
+            elif f is not None:
                 if f['type'] == 'secret':
                     m = re.fullmatch(r'\$\{(\w+)(:-[^}]*)?\}', v) if isinstance(v, str) else None
                     name = m.group(1) if m else env_name(resource_id, f)
                     secrets[key] = SecretRef(env=name)
                 else:
                     values[key] = v
-            elif isinstance(v, dict) and any(fk.startswith(key + '.') for fk in fields):
+            elif nested:
                 sub: dict[str, Any] = {}
                 walk(v, key + '.', sub)
                 if sub:
@@ -292,12 +313,35 @@ def detect_variant(d: Descriptor, provider: dict[str, Any]) -> str | None:
         n = 0
         for f in v['fields']:
             if f['key'] in present:
-                n += 2
+                n += 2 if _fits(f, _dotted_get(provider, f['key'])) else -2
             elif f.get('required'):
                 n -= 1
         if n > score:
             best, score = v['id'], n
     return str(best)
+
+
+def _dotted_get(obj: dict[str, Any], key: str) -> Any:
+    node: Any = obj
+    for part in key.split('.'):
+        node = node.get(part) if isinstance(node, dict) else None
+    return node
+
+
+def _fits(f: dict[str, Any], value: Any) -> bool:
+    """Whether a config value has the shape a field expects: its choices, URL or path, pattern."""
+    if isinstance(value, str) and '${' in value:
+        return True  # a placeholder fits anything
+    if f.get('choices') and value not in f['choices']:
+        return False
+    if f['type'] == 'url' and not (isinstance(value, str) and URL_SCHEME.match(value)):
+        return False
+    if f['type'] == 'path' and isinstance(value, str) and URL_SCHEME.match(value):
+        return False
+    return not (f.get('pattern') and isinstance(value, str) and not re.search(f['pattern'], value))
+
+
+URL_SCHEME = re.compile(r'^https?://', re.IGNORECASE)
 
 
 class LoadedResource(BaseModel):
