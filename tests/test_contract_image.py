@@ -169,6 +169,7 @@ def test_sandbox_is_non_root_and_read_only(service: Service) -> None:
     cmd = runner.command('x', [])
     for flag in ('--read-only', '--cap-drop', 'no-new-privileges', '--pids-limit', '--memory'):
         assert flag in cmd
+    assert cmd[cmd.index('--memory-swap') + 1] == cmd[cmd.index('--memory') + 1]  # no swap
     assert cmd[cmd.index('--user') + 1] == '10001:0'
     assert all(':ro' in cmd[i + 1] for i, c in enumerate(cmd) if c == '-v')
 

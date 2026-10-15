@@ -1010,7 +1010,10 @@ warns.
 - **Run flags:**
   - `--rm --read-only --tmpfs /tmp:size=256m`
   - `--cap-drop ALL --security-opt no-new-privileges`
-  - `--pids-limit 256 --memory 1g --cpus 1 --user 10001:0`
+  - `--pids-limit 256 --memory 1g --memory-swap 1g --cpus 1 --user 10001:0`.
+    *As built:* `--memory-swap` equals `--memory`, so the container gets no
+    swap. Without it, a CI runner let a 3 GiB allocation through the 1 GiB
+    limit by swapping (`tests/test_sandbox.py`, 2026-10-15).
   - a backend-enforced timeout (then `docker kill`)
   - mounts: the provider's workspace read-only (Mode B), and data roots
     read-only **at their server paths** (Mode A file providers), so the config

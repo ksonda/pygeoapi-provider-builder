@@ -204,6 +204,8 @@ class DockerRunner(Runner):
             '256',
             '--memory',
             s.memory,
+            '--memory-swap',  # the same: no swap, so the limit doesn't depend on the host's
+            s.memory,
             '--cpus',
             str(s.cpus),
             '--network',
@@ -276,6 +278,8 @@ class DockerRunner(Runner):
                     '--sysctl',
                     'net.ipv4.ip_unprivileged_port_start=0',
                     '--memory',
+                    '64m',
+                    '--memory-swap',
                     '64m',
                     '--pids-limit',
                     '64',
