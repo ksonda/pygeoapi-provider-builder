@@ -15,14 +15,26 @@ Target: **pygeoapi 0.24.0** (pinned).
 
 ## Status
 
-**Phase 4: Mode B breadth.** Both modes work end to end. Create now builds
-providers from an HTTP API, a SQL query or a time series, or from Python, and
-delivers them.
+**Phase 5: catalog breadth.** Configure now covers every provider pygeoapi
+0.24.0 ships, the cgs-earth org plugins, and the Geoconnex options.
 
-- **Configure** (Phase 1): a wizard for CSV, GeoJSON, GeoPackage/SQLite,
-  PostgreSQL/PostGIS and providers made in Create. It covers connecting, a probe
-  in the sandbox, field mapping, metadata, review with every validation layer
-  and OpenAPI generation, and an export of the merged config.
+- **Configure** (Phases 1 and 5): a wizard for all 33 of pygeoapi's providers
+  (features, coverages, EDR, vector and map tiles, maps, records, STAC), the 9
+  usable pygeoapi-plugins providers, and providers made in Create. It covers
+  connecting (with lookups such as OGR layers and an ArcGIS layer's fields), a
+  probe in the sandbox, field mapping, metadata, review with every validation
+  layer and OpenAPI generation, and an export of the merged config.
+  - **Test and inspect** asks each provider what pygeoapi's API would: a
+    coverage window drawn from its CoverageJSON, the map image, the first
+    vector tiles on a map, an EDR query, a STAC catalog.
+  - **Known issues** found in pygeoapi and the plugins are on the catalog
+    cards (such as xarray's CoverageJSON failing on missing values), and a
+    provider whose libraries the image lacks shows the derived image it needs.
+  - **Geoconnex options** in Describe: a JSON-LD template for items, from a
+    library (a schema.org place, a Geoconnex hydrologic location, a gage on
+    the river network), written beside the config with `templates.path`, and
+    a preview of an item's RDF rendered by pygeoapi itself. `uri_field` must
+    hold unique URIs.
 - **Create without code** (Phases 2 and 4). Three templates, each a wizard that
   samples the source in the sandbox and suggests a mapping:
   - an HTTP JSON API → OGC API - Features
@@ -55,7 +67,7 @@ delivers them.
   publishes, and lets you edit a collection, add a provider (J3), duplicate,
   delete or import YAML. An optional *Admin API* target is guarded (ADR-0015).
 
-Catalog breadth (Phase 5) comes next; see [PLAN.md §13](PLAN.md#13-milestones).
+Hardening (Phase 6) comes next; see [PLAN.md §13](PLAN.md#13-milestones).
 
 Background reading, in order:
 1. [PLAN.md](PLAN.md): architecture, schemas, API, sandbox, milestones and risks
@@ -81,7 +93,10 @@ cd pygeoapi-provider-builder
 Install everything else. This installs the Python and Node dependencies,
 checks out the source repositories the docs cite (`make vendor`), installs
 Chromium for the browser tests, pulls `geopython/pygeoapi:0.24.0` and builds the
-sandbox image from it (`make images`, which needs PyPI):
+sandbox image from it (`make images`, which needs PyPI). To test the
+pygeoapi-plugins providers too, `make images-plugins` builds a sandbox with
+them; set `sandbox.image` in `provider-builder.yaml` to
+`provider-builder/sandbox-plugins:0.24.0`:
 
 ```bash
 make setup
@@ -105,6 +120,12 @@ make dev-backend
 
 Open <http://127.0.0.1:8765> and choose **Create a collection**. For example:
 - **CSV:** file `/data/obs.csv`, X column `long`, Y column `lat`, id `id`.
+- **A coverage:** *Raster file*, `/data/CMC_glb_TMP_TGL_2_latlon.15x.15_2020081000_P000.grib2`,
+  native format `GRIB`, media type `application/x-grib2`.
+- **Vector tiles:** *Pre-rendered vector tiles*, Browse to the folder
+  `/data/tiles/ne_110m_lakes`, zoom 0 to 5.
+- **A WMS:** *Maps from a WMS*, URL `http://mockapi:8000/wms`, layers
+  `wells,graticule`.
 - **PostGIS:** host `postgis`, database `test`, user `postgres`, password
   `postgres`, schema `osm`, table `hotosm_bdi_waterways`, id `osm_id`, geometry
   `foo_geom`. The host is `postgis` because that's how the sandbox and the dev

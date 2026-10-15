@@ -739,3 +739,118 @@ check, version and publish it.
 pass its checks yet; per-provider images (PLAN.md §8.2) are a later step. Import
 from a folder or a Git URL takes only repositories with the marker.
 
+
+## ADR-0025: Every registered provider gets a descriptor; known bugs become verdicts
+
+**Context.** Phase 5 (PLAN.md §13) widens Configure from four providers to all
+33 that pygeoapi 0.24.0 registers, plus the org plugins. Hand-written forms
+don't scale, and a form for a provider that's broken upstream would mislead.
+
+**Decision.**
+- **Tier 1** (OGR, ESRI, rasterio, xarray, xarray-edr, MVT-tippecanoe,
+  MVT-proxy, WMSFacade, TinyDBCatalogue) is tested end to end: a golden render,
+  the stock image's `config validate` and `openapi generate`, the Docker probe,
+  and a stock pygeoapi serving each type's own endpoints on the dev stack
+  (`tests/test_compose_integration.py`). Mock services stand in for ArcGIS, a
+  tile server and a WMS.
+- **Tier 2** (the other twenty) gets golden renders and pygeoapi's schema plus
+  the builder's rules for every case, and integration where the data is cheap:
+  TinyDB, the STAC providers, MapScript and MVT-postgresql.
+- **Upstream bugs found on the way are data.** A descriptor's `notes` say what
+  a steward should know, and a `verdict: known-issue` marks what breaks normal
+  use; the catalog card and Connect show it. Each verdict is pinned by a test
+  that fails once upstream fixes it. Examples: xarray's CoverageJSON fails on
+  missing values, as `data.fillna(None)` (`pygeoapi/provider/xarray_.py:386`)
+  then `np.isnan(v)` (`pygeoapi/provider/xarray_.py:401`) meets `None`;
+  MVT-postgresql can't take `options.schemes`, as `self.db_options` (`pygeoapi/provider/sql.py:623-627`) keeps lists;
+  ERDDAP pages with `[offset:limit]`.
+- **The descriptor schema grew where providers needed it:** a field that
+  repeats a base field's key overrides it without a type; two variants may
+  define one key their own way (a folder or a URL); path fields may pick
+  folders; `egress: {kind: url}` declares the hosts of URLs in the config;
+  `package` names an org plugin's pip package.
+- **The drift check reads source, never imports**, so providers whose
+  libraries aren't installed locally are checked, and it scopes each scan to
+  the provider's class, its bases and the helper classes it names.
+
+**Consequences.** The catalog says what works with 0.24.0 rather than what the
+docs claim (TinyDB's CQL, ESRI's token defaults and Oracle's sdo operator
+default all differ from the docs). Providers whose libraries the image lacks
+show the derived image they need (ADR-0027).
+
+## ADR-0026: Test and inspect previews what pygeoapi's API asks of each type
+
+**Context.** The probe loaded coverage, map and tile providers without
+querying them (PLAN.md §6.1 step 4), so a steward learned nothing until
+publishing, and some failures only show when the API calls the provider.
+
+**Decision.**
+- The probe makes the API's own calls: a coverage window as
+  `/coverage?subset=` asks it, the map of the extent with the maps API's
+  keywords, the tiling schemes, service and metadata documents and the first
+  tiles over the extent, an EDR position or location query, a STAC root as
+  `/stac/<id>` lists it.
+- **Each document comes from a fresh instance**, as pygeoapi loads one per
+  request: MVT providers' `get_tiles_service()` replaces the service URL that
+  `get_tiles()` reads, so one instance for both fails where the server doesn't.
+- **Previews need no new libraries in the image.** Coverage windows are drawn
+  from the CoverageJSON pygeoapi returned (so a document whose axes disagree
+  with its values looks wrong here too) and written as PNG with zlib; vector
+  tiles are read with a small protobuf reader for layer names, keys and
+  geometry types. The page shows the probe's tiles on MapLibre through a
+  `probe://` protocol served from memory.
+- Collections with nothing to map (coverages, tiles, maps) skip Map fields; a
+  geographic grid fills "Use the data extent".
+
+**Consequences.** Probe results are larger (tiles are capped at 24 and 3 MB).
+Previews of projected grids show the image without a map.
+
+## ADR-0027: Org plugins by dotted path, tested in a derived image
+
+**Context.** cgs-earth's pygeoapi-plugins 0.6.0 is developed against the
+Internet of Water fork, which registers short names that core 0.24.0 doesn't
+know (PLAN.md §1, item 5).
+
+**Decision.**
+- Plugin descriptors live in `catalog/plugins/` and name classes by their
+  dotted path. They're cited against the vendored plugin source.
+- **The derived image** `provider-builder/sandbox-plugins:0.24.0` (`make
+  images-plugins`) is the sandbox image plus `pygeoapi-plugins==0.6.0`. The
+  verdicts were checked in it with the builder's own probe:
+  PseudoPostgreSQL and MVTPostgresRedis are broken, GeoPandas mangles
+  non-point geometries, SPARQL enriches single items only. Each is pinned in
+  `tests/test_org_plugins.py`.
+- A card whose libraries the image lacks says which derived image the server
+  needs and gives a two-line Dockerfile from the pinned base image; for a
+  plugin, its pinned package brings its own dependencies.
+
+**Consequences.** pip upgrades shapely to 2.2 in the derived image, as the
+plugins require; core pygeoapi stays 0.24.0. Short names from the fork aren't
+mapped on import yet: such configs keep their providers as raw YAML.
+
+## ADR-0028: JSON-LD item templates are generated, written beside the config, and previewed as RDF
+
+**Context.** Geoconnex publishes items as JSON-LD with persistent identifiers.
+pygeoapi 0.24 renders an item with `collections/items/item.jsonld` from the
+collection's `templates.path`; the fork's `template:` key is ignored (notes §8).
+The example templates interpolate raw strings, so a quote in the data breaks
+the JSON, and one uses an undeclared prefix.
+
+**Decision.**
+- A **library** of templates (a schema.org place, a Geoconnex hydrologic
+  location, a gage on the river network) is filled from the probe's fields.
+  The generated Jinja builds the item as a dict and writes it with `tojson`:
+  the output is always JSON, and field names and constants enter only as
+  string literals. Values with template delimiters are refused.
+- A file target may name a `templates_dir`. Publishing writes the template
+  there, before the config that points at it, and sets `templates.path`;
+  exports include the file. The legacy `template:` key is never written.
+- **The preview** renders an item through pygeoapi's own item API in the
+  sandbox, then parses it with rdflib (added to the sandbox image only),
+  listing the triples and the keys no context defines. A remote `@context` is
+  reported, never fetched, so parsing can't reach the network.
+- `uri_field` values must be unique absolute URIs; parameters of the
+  time-series template suggest ODM2 variable names and QUDT units.
+
+**Consequences.** Choosing a template in J2 isn't recovered from an existing
+file: an imported collection shows its templates path and keeps the file.

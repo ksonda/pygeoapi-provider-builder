@@ -363,6 +363,20 @@ and the API (notes §1.7, §3.2).
 - A provider descriptor may override a base field's `default` or `help`, or hide
   it.
 
+*As built in Phase 5* (ADR-0025):
+- A field that repeats a base field's key overrides it and may leave out its
+  `type`; the loader rejects a typeless field with nothing to override.
+- Two variants may define one key their own way (MVT-tippecanoe's `data` is a
+  folder or a URL): each variant's JSON Schema checks it, and the form uses the
+  active variant's field. Importing a config picks the variant its values fit
+  (choices, URL or path, pattern).
+- New field options: `path_kind` (`file`, `folder` or `any`, for a `.zarr`
+  store) and the `yaml` type for values whose shape varies (Parquet's
+  `x_field`). Descriptor options: `egress: {kind: url, keys}`, `package` (an
+  org plugin's pip package), and `stac` probes.
+- Bases now exist for every type: feature, coverage, EDR, tile, map, record
+  and STAC.
+
 ### 5.3 Compilation
 The backend compiles each descriptor, merged with its base, into:
 - a **JSON Schema** (draft 2020-12) over the *flat* form values (dotted keys),
@@ -409,6 +423,12 @@ not the builder's venv. For example: "ready", "missing `psycopg2`", or
 
 SQLiteGPKG could move into Phase 1 cheaply, since success criterion 1 is "I have a
 GeoPackage" (question Q6).
+
+*As built in Phase 5:* the catalog has a descriptor for each of the 33
+providers pygeoapi 0.24.0 registers, and for the 9 usable org plugins. The
+Tier-2 providers whose data is cheap here (TinyDB, FileSystem, Hateoas,
+MapScript, MVT-postgresql) are integration-tested too. Live org-plugin checks
+run in the derived image (ADR-0027).
 
 ## 6. Mode A: Configure
 
@@ -1231,6 +1251,27 @@ passes `ruff`.
 
 **Exit:** every Tier-1 provider finishes J1 without YAML, and pygeoapi serves
 the result in CI.
+*Met (2026-10-15):*
+- **Every Tier-1 provider through J1.** Each has a form with lookups where the
+  source can answer them (OGR layers and fields, the ArcGIS layer's object id
+  field) and a type-specific Test step (ADR-0026). The browser tests take a
+  rasterio coverage, MVT-tippecanoe tiles, an OGR GeoPackage and a JSON-LD
+  template through it (`frontend/e2e/catalog.spec.ts`); the coverage was also
+  published from the UI to the dev stack, which served CoverageJSON for it.
+- **pygeoapi serves them in CI.** `tests/test_compose_integration.py` starts a
+  stock `geopython/pygeoapi:0.24.0` for each of twelve Tier-1 cases plus the
+  cheap Tier-2 ones, and checks each type's own endpoints: items and an item,
+  `/coverage` (JSON and the native format), an EDR position, tile sets and a
+  tile, a map image, a STAC catalog.
+- **Found on the way** (in descriptor notes and verdicts, each pinned by a
+  test): xarray's CoverageJSON fails on missing values and ignores a bare
+  bbox; GDAL can't write GRIB subsets with the docs' COMPLEX_PACKING;
+  ERDDAP pages only once; MVT-postgresql can't take schemes; ESRI's token
+  defaults are swapped and a single-instant datetime fails; TinyDB opens a
+  read-only mount for writing on Docker Desktop; two org plugins are broken.
+- **The rest of the phase:** Tier-2 and org-plugin descriptors with verdicts
+  and a derived image (ADR-0027), the drift check over all 42 descriptors in
+  CI, and the Geoconnex options (ADR-0028).
 
 **Phase 6: hardening**
 - a security review, including sandbox escape attempts
