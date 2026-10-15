@@ -1,0 +1,51 @@
+# Keys every map provider has. The maps API serves the provider's image as
+# `format.mimetype` and reads `format.name` for ?f=, so `format` is required
+# (pygeoapi/api/maps.py:252-262). Without ?crs=, the request uses the provider's
+# storage_crs (pygeoapi/api/maps.py:114).
+descriptor_version: 1
+id: _base/map
+base: true
+provider_type: map
+title: Map provider (common keys)
+source:
+  - pygeoapi/api/maps.py
+  - pygeoapi/provider/base.py
+drift_ignore:
+  - {key: editable, reason: Maps have no transactions, source: 'pygeoapi/provider/base.py:69'}
+  - {key: count, reason: Maps are not counted, source: 'pygeoapi/provider/base.py:70'}
+  - {key: id_field, reason: Maps have no items, source: 'pygeoapi/provider/base.py:72'}
+  - {key: uri_field, reason: Maps have no items, source: 'pygeoapi/provider/base.py:73'}
+  - {key: x_field, reason: Not read by map providers, source: 'pygeoapi/provider/base.py:74'}
+  - {key: y_field, reason: Not read by map providers, source: 'pygeoapi/provider/base.py:75'}
+  - {key: z_field, reason: Not read by map providers, source: 'pygeoapi/provider/base.py:76'}
+  - {key: time_field, reason: Not read by map providers, source: 'pygeoapi/provider/base.py:77'}
+  - {key: title_field, reason: Maps have no items to title, source: 'pygeoapi/provider/base.py:78'}
+  - {key: file_types, reason: Read only by the FileSystem and Azure STAC providers, source: 'pygeoapi/provider/base.py:80'}
+  - {key: include_extra_query_parameters, reason: Only the items API passes extra parameters, source: 'pygeoapi/provider/base.py:81'}
+fields:
+  - key: format.name
+    type: string
+    title: Image format
+    help: The format name, e.g. png, which ?f= selects.
+    default: png
+    required: true
+    step: connect
+    source: pygeoapi/api/maps.py:252
+
+  - key: format.mimetype
+    type: string
+    title: Image media type
+    help: The Content-Type of the image, e.g. image/png.
+    default: image/png
+    required: true
+    step: connect
+    source: pygeoapi/api/maps.py:258
+
+  - key: storage_crs
+    type: crs
+    title: Storage CRS
+    help: The CRS a map is drawn in when the request doesn't ask for one.
+    default: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    advanced: true
+    step: connect
+    source: pygeoapi/api/maps.py:114

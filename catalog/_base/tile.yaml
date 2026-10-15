@@ -1,0 +1,59 @@
+# Keys every tile provider has. Tile providers extend pygeoapi's BaseTileProvider,
+# which does not inherit BaseProvider, so none of BaseProvider's generic keys
+# (id_field, title_field, storage_crs, ...) apply (docs/research/
+# providers-tiles-maps-records-stac.md §0.2). `format` and `options` are
+# effectively required: BaseTileProvider reads both unconditionally.
+descriptor_version: 1
+id: _base/tile
+base: true
+provider_type: tile
+title: Tile provider (common keys)
+source:
+  - pygeoapi/provider/tile.py
+  - pygeoapi/api/tiles.py
+fields:
+  - key: format.name
+    type: string
+    title: Tile format
+    help: The format name tiles are served as, e.g. pbf for Mapbox vector tiles.
+    required: true
+    step: connect
+    source: pygeoapi/provider/tile.py:58
+
+  - key: format.mimetype
+    type: string
+    title: Tile media type
+    help: The Content-Type of each tile, e.g. application/vnd.mapbox-vector-tile.
+    required: true
+    step: connect
+    source: pygeoapi/provider/tile.py:59
+
+  - key: options.zoom.min
+    type: integer
+    title: Lowest zoom level
+    help: Tiles outside the zoom range are refused.
+    required: true
+    min: 0
+    max: 24
+    step: connect
+    source: pygeoapi/provider/tile.py:151
+
+  - key: options.zoom.max
+    type: integer
+    title: Highest zoom level
+    required: true
+    min: 0
+    max: 24
+    step: connect
+    source: pygeoapi/provider/tile.py:151
+
+  - key: options.schemes
+    type: string[]
+    title: Tile matrix sets
+    help: >-
+      The tiling schemes the tiles follow. pygeoapi 0.24 ships WebMercatorQuad
+      and WorldCRS84Quad.
+    choices: [WebMercatorQuad, WorldCRS84Quad]
+    required: true
+    step: connect
+    source: pygeoapi/provider/tile.py:61

@@ -1,0 +1,40 @@
+# Keys every EDR provider has. The collection lists `crs` and `storageCrs` for
+# EDR as for features (pygeoapi/api/collection.py:273-275). Each field (EDR
+# parameter) must carry x-ogc-unit, which the provider supplies, not the config
+# (docs/research/providers-coverage-edr.md §3).
+descriptor_version: 1
+id: _base/edr
+base: true
+provider_type: edr
+title: EDR provider (common keys)
+source:
+  - pygeoapi/provider/base.py
+  - pygeoapi/api/collection.py
+drift_ignore:
+  - {key: editable, reason: EDR has no transactions, source: 'pygeoapi/provider/base.py:69'}
+  - {key: count, reason: EDR responses are not counted, source: 'pygeoapi/provider/base.py:70'}
+  - {key: uri_field, reason: EDR has no items, source: 'pygeoapi/provider/base.py:73'}
+  - {key: x_field, reason: 'Read only by xarray-EDR, whose descriptor declares it', source: 'pygeoapi/provider/base.py:74'}
+  - {key: y_field, reason: 'Read only by xarray-EDR, whose descriptor declares it', source: 'pygeoapi/provider/base.py:75'}
+  - {key: z_field, reason: 'Read only by xarray-EDR, whose descriptor declares it', source: 'pygeoapi/provider/base.py:76'}
+  - {key: time_field, reason: 'Read only by xarray-EDR, whose descriptor declares it', source: 'pygeoapi/provider/base.py:77'}
+  - {key: title_field, reason: EDR has no items to title, source: 'pygeoapi/provider/base.py:78'}
+  - {key: file_types, reason: Read only by the FileSystem and Azure STAC providers, source: 'pygeoapi/provider/base.py:80'}
+  - {key: include_extra_query_parameters, reason: Only the items API passes extra parameters, source: 'pygeoapi/provider/base.py:81'}
+fields:
+  - key: storage_crs
+    type: crs
+    title: Storage CRS
+    help: The coordinate reference system the data is stored in.
+    default: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    advanced: true
+    step: connect
+    source: pygeoapi/api/collection.py:275
+
+  - key: crs
+    type: crs[]
+    title: Supported output CRSs
+    help: CRSs clients may request with ?crs=. Each must be a CRS URI.
+    advanced: true
+    step: map
+    source: pygeoapi/api/collection.py:274

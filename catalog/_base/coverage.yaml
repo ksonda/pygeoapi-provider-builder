@@ -1,0 +1,44 @@
+# Keys every coverage provider has. The coverage API reads `format` for the
+# native output (?f=<format.name>), so it is required: without it every
+# /coverage request is a 500 (docs/research/providers-coverage-edr.md §2).
+# Coverage providers inherit BaseProvider, whose generic feature keys mean
+# nothing for gridded data.
+descriptor_version: 1
+id: _base/coverage
+base: true
+provider_type: coverage
+title: Coverage provider (common keys)
+source:
+  - pygeoapi/api/coverages.py
+  - pygeoapi/provider/base.py
+drift_ignore:
+  - {key: editable, reason: Coverages have no transactions, source: 'pygeoapi/provider/base.py:69'}
+  - {key: count, reason: Coverages are not counted, source: 'pygeoapi/provider/base.py:70'}
+  - {key: id_field, reason: Coverages have no items, source: 'pygeoapi/provider/base.py:72'}
+  - {key: uri_field, reason: Coverages have no items, source: 'pygeoapi/provider/base.py:73'}
+  - {key: x_field, reason: 'Read only by xarray, whose descriptor declares it', source: 'pygeoapi/provider/base.py:74'}
+  - {key: y_field, reason: 'Read only by xarray, whose descriptor declares it', source: 'pygeoapi/provider/base.py:75'}
+  - {key: z_field, reason: Read only by xarray-EDR, source: 'pygeoapi/provider/base.py:76'}
+  - {key: time_field, reason: 'Read only by xarray, whose descriptor declares it', source: 'pygeoapi/provider/base.py:77'}
+  - {key: title_field, reason: Coverages have no items to title, source: 'pygeoapi/provider/base.py:78'}
+  - {key: file_types, reason: Read only by the FileSystem and Azure STAC providers, source: 'pygeoapi/provider/base.py:80'}
+  - {key: include_extra_query_parameters, reason: Only the items API passes extra parameters, source: 'pygeoapi/provider/base.py:81'}
+  - {key: storage_crs, reason: 'Coverages take their CRS from the data; the collection lists no CRS for them', source: 'pygeoapi/provider/base.py:86'}
+fields:
+  - key: format.name
+    type: string
+    title: Native format
+    help: >-
+      The format ?f= asks for to get the data itself rather than CoverageJSON,
+      e.g. GTiff or NetCDF.
+    required: true
+    step: connect
+    source: pygeoapi/api/coverages.py:193
+
+  - key: format.mimetype
+    type: string
+    title: Native media type
+    help: The Content-Type of the native format, e.g. application/tiff.
+    required: true
+    step: connect
+    source: pygeoapi/api/coverages.py:199

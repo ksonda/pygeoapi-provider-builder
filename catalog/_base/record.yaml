@@ -1,0 +1,83 @@
+# Keys every record (catalogue) provider has: BaseProvider's item keys, as for
+# features, but records are never reprojected (pygeoapi/api/itemtypes.py:371-385),
+# so there are no CRS keys (docs/research/providers-tiles-maps-records-stac.md §5.3).
+descriptor_version: 1
+id: _base/record
+base: true
+provider_type: record
+title: Record provider (common keys)
+source:
+  - pygeoapi/provider/base.py
+  - pygeoapi/api/itemtypes.py
+drift_ignore:
+  - {key: x_field, reason: Not read by record providers, source: 'pygeoapi/provider/base.py:74'}
+  - {key: y_field, reason: Not read by record providers, source: 'pygeoapi/provider/base.py:75'}
+  - {key: z_field, reason: Not read by record providers, source: 'pygeoapi/provider/base.py:76'}
+  - {key: file_types, reason: Read only by the FileSystem and Azure STAC providers, source: 'pygeoapi/provider/base.py:80'}
+  - {key: storage_crs, reason: Records are never reprojected, source: 'pygeoapi/provider/base.py:86'}
+fields:
+  - key: id_field
+    type: field
+    title: Identifier field
+    help: The property that uniquely identifies each record.
+    step: connect
+    source: pygeoapi/provider/base.py:72
+
+  - key: title_field
+    type: field
+    title: Title field
+    help: A text property to show as each record's title in HTML pages.
+    choices_from: probe.fields
+    field_types: [string]
+    step: map
+    source: pygeoapi/provider/base.py:78
+
+  - key: time_field
+    type: field
+    title: Time field
+    help: The property holding each record's date or time.
+    choices_from: probe.fields
+    step: map
+    source: pygeoapi/provider/base.py:77
+
+  - key: uri_field
+    type: field
+    title: URI field
+    help: A property holding each record's persistent URI (its JSON-LD @id).
+    choices_from: probe.fields
+    field_types: [string]
+    geoconnex: true
+    step: map
+    source: pygeoapi/provider/base.py:73
+
+  - key: properties
+    type: field[]
+    title: Published properties
+    help: Publish only these properties, in this order. Leave empty to publish them all.
+    choices_from: probe.fields
+    step: map
+    source: pygeoapi/provider/base.py:79
+
+  - key: count
+    type: boolean
+    title: Count matching records
+    default: true
+    advanced: true
+    step: map
+    source: pygeoapi/provider/base.py:70
+
+  - key: include_extra_query_parameters
+    type: boolean
+    title: Pass unknown query parameters to the provider
+    default: false
+    advanced: true
+    step: map
+    source: pygeoapi/provider/base.py:81
+
+  - key: editable
+    type: boolean
+    title: Allow edits (transactions)
+    default: false
+    advanced: true
+    step: map
+    source: pygeoapi/provider/base.py:69

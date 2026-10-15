@@ -21,6 +21,12 @@ sys.modules['check_citations'] = check_citations
 spec.loader.exec_module(check_citations)
 
 HAND_WRITTEN_ORIGINS = {'core', 'plugin'}
+#: Every hand-written descriptor in the repository's catalog, for parametrizing.
+HAND_WRITTEN = sorted(
+    d.id
+    for d in Catalog([REPO / 'catalog']).descriptors.values()
+    if d.raw.get('origin') in HAND_WRITTEN_ORIGINS
+)
 
 
 def test_catalog_files_validate(catalog: Catalog) -> None:
@@ -44,7 +50,7 @@ def _citation_ok(source: str, key: str) -> tuple[bool, str]:
     return (last in window, f'`{last}` not within 3 lines of {source}')
 
 
-@pytest.mark.parametrize('descriptor_id', ['CSV', 'GeoJSON', 'SQLiteGPKG', 'PostgreSQL'])
+@pytest.mark.parametrize('descriptor_id', HAND_WRITTEN)
 def test_every_field_is_cited(catalog: Catalog, descriptor_id: str) -> None:
     d = catalog.get(descriptor_id)
     assert d.raw['origin'] in HAND_WRITTEN_ORIGINS
@@ -62,13 +68,15 @@ def test_every_field_is_cited(catalog: Catalog, descriptor_id: str) -> None:
 
 
 def test_base_fields_are_cited(catalog: Catalog) -> None:
-    for f in catalog.bases['feature']['fields']:
-        ok, why = _citation_ok(f['source'], f['key'])
-        assert ok, why
+    assert set(catalog.bases) >= {'feature', 'coverage', 'edr', 'tile', 'map', 'record'}
+    for base in catalog.bases.values():
+        for f in base['fields']:
+            ok, why = _citation_ok(f['source'], f['key'])
+            assert ok, (base['id'], why)
 
 
 def test_drift_ignores_are_cited(catalog: Catalog) -> None:
-    raws = [catalog.bases['feature'], *(d.raw for d in catalog.descriptors.values())]
+    raws = [*catalog.bases.values(), *(d.raw for d in catalog.descriptors.values())]
     ignores = [i for raw in raws for i in raw.get('drift_ignore', [])]
     assert ignores
     for i in ignores:
@@ -103,7 +111,7 @@ def _strip_defaults(
     return out
 
 
-@pytest.mark.parametrize('descriptor_id', ['CSV', 'GeoJSON', 'SQLiteGPKG', 'PostgreSQL'])
+@pytest.mark.parametrize('descriptor_id', HAND_WRITTEN)
 def test_docs_examples_round_trip(catalog: Catalog, descriptor_id: str) -> None:
     """A docs example -> form state -> render gives the example back.
 
