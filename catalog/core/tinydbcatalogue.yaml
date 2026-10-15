@@ -1,0 +1,61 @@
+descriptor_version: 1
+id: TinyDBCatalogue
+plugin: TinyDBCatalogue
+provider_type: record
+origin: core
+title: TinyDB metadata catalogue
+summary: Publish metadata records kept in a TinyDB JSON file as OGC API - Records.
+ogc_api: [records]
+source: [pygeoapi/provider/tinydb_.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-records.html#tinydbcatalogue
+requires: [tinydb]
+capabilities:
+  bbox: true
+  datetime: true
+  properties: true
+  sortby: true             # by the first sortby key only (tinydb_.py:258-266)
+  select_properties: false # accepted, never applied
+  skip_geometry: false     # accepted, never applied
+  q: true                  # over title and description (tinydb_.py:407-420)
+  hits: true
+  cql: false               # the docs table says yes, but query() never reads filterq
+  transactions: true
+probe: {kind: record}
+notes:
+  - >-
+    Each record must be an OGC API - Records GeoJSON feature with its own id.
+    pygeoapi's tests/load_tinydb_records.py turns ISO 19139 XML files into
+    such a file.
+  - >-
+    pygeoapi opens the file read-only when it can't write to it, so edits
+    (editable) need a file the server may write.
+  - Full-text search (q) looks at each record's title and description.
+fields:
+  - key: data
+    type: path
+    title: TinyDB file
+    help: The TinyDB JSON file that holds the records.
+    extensions: [.tinydb, .db, .json]
+    required: true
+    step: connect
+    source: pygeoapi/provider/tinydb_.py:69
+
+  - key: id_field
+    title: Identifier property
+    help: >-
+      The property that identifies each record in queryables and HTML pages.
+      Records keep their own top-level id, which /items/{id} uses.
+    choices_from: probe.fields
+    field_types: [string, integer]
+    step: map
+
+examples:
+  - id: docs-stac-collection
+    source: docs/source/publishing/stac.rst:428-434
+    provider:
+      type: record
+      name: TinyDBCatalogue
+      data: tests/data/open.canada.ca/sample-records.tinydb
+      id_field: externalId
+      time_field: created
+      title_field: title

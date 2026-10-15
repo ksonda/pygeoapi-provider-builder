@@ -1,0 +1,74 @@
+descriptor_version: 1
+id: rasterio
+plugin: rasterio
+provider_type: coverage
+origin: core
+title: Raster file (rasterio/GDAL)
+summary: >-
+  Publish a raster any GDAL driver reads, such as a GeoTIFF, Cloud Optimized
+  GeoTIFF or GRIB file, as OGC API - Coverages.
+ogc_api: [coverages]
+source: [pygeoapi/provider/rasterio_.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-coverages.html#rasterio
+requires: [rasterio]
+probe: {kind: coverage}
+notes:
+  - >-
+    Each band becomes a field named by its number (1, 2, …). Subsets in the
+    file's own CRS use its axis names, shown when you test.
+  - >-
+    A request with no subset returns every cell as CoverageJSON, so publish
+    large rasters with care.
+fields:
+  - key: data
+    type: path
+    title: Raster file
+    help: The raster file on the server.
+    extensions: [.tif, .tiff, .grib2, .grb2, .grib, .nc, .img, .vrt, .jp2, .asc]
+    required: true
+    step: connect
+    source: pygeoapi/provider/rasterio_.py:58
+
+  - key: format.name
+    help: >-
+      The GDAL driver that writes downloads in the native format, such as
+      GTiff or GRIB (a GDAL raster driver short name).
+    suggest: GTiff
+    source: pygeoapi/provider/rasterio_.py:64
+
+  - key: format.mimetype
+    help: The media type of those downloads, such as image/tiff or application/x-grib2.
+    suggest: image/tiff
+
+  - key: options
+    type: object
+    title: Creation options
+    help: >-
+      GDAL creation options for native-format downloads, such as
+      DATA_ENCODING: COMPLEX_PACKING for GRIB.
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/rasterio_.py:204-207
+
+  - key: options.crs
+    type: string
+    title: The raster's CRS
+    help: >-
+      Only for a file without CRS information, such as EPSG:32633. pygeoapi
+      uses it for bbox requests and native-format downloads.
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/rasterio_.py:139-140
+
+examples:
+  - id: docs-grib
+    source: docs/source/publishing/ogcapi-coverages.rst:43-51
+    provider:
+      type: coverage
+      name: rasterio
+      data: tests/data/CMC_glb_TMP_TGL_2_latlon.15x.15_2020081000_P000.grib2
+      options:
+        DATA_ENCODING: COMPLEX_PACKING
+      format:
+        name: GRIB
+        mimetype: application/x-grib2

@@ -1,0 +1,223 @@
+descriptor_version: 1
+id: OGR
+plugin: OGR
+provider_type: feature
+origin: core
+title: GDAL/OGR vector source
+summary: >-
+  Publish a layer from any vector source GDAL reads: a Shapefile, GeoPackage,
+  GeoJSON, FlatGeobuf or KML file, a WFS, an ArcGIS REST query, and more.
+ogc_api: [features]
+source: [pygeoapi/provider/ogr.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-features.html#ogr
+requires: [osgeo]
+capabilities:
+  bbox: true
+  datetime: false
+  properties: true
+  sortby: false
+  select_properties: false
+  skip_geometry: true
+  q: false
+  hits: true
+  cql: false
+  transactions: false
+probe: {kind: feature}
+introspect: {what: ogr, table_key: layer, source_key: data.source}
+egress: {kind: url, keys: [data.source]}
+hide: [editable, always_xy]
+drift_ignore:
+  - {key: data.source_srs, reason: 'Ignored since pygeoapi 0.15, which only logs a warning: storage_crs and crs replace it', source: 'pygeoapi/provider/ogr.py:143'}
+  - {key: data.target_srs, reason: 'Ignored since pygeoapi 0.15, which only logs a warning: storage_crs and crs replace it', source: 'pygeoapi/provider/ogr.py:143'}
+notes:
+  - >-
+    pygeoapi opens the source again for each request, so a slow web service
+    makes every page slow. Set storage_crs to the source's CRS.
+  - >-
+    Use the PostgreSQL provider for PostGIS tables: OGR's connection string
+    would put the password in the config.
+variants:
+  - id: file
+    title: A file on the server
+    fields:
+      - key: data.source_type
+        type: enum
+        title: File format
+        help: The GDAL driver that reads the file.
+        choices: [GPKG, ESRI Shapefile, GeoJSON, FlatGeobuf, KML, GPX, GML, SQLite, MapInfo File, DXF]
+        required: true
+        step: connect
+        source: pygeoapi/provider/ogr.py:147
+      - key: data.source
+        type: path
+        title: File
+        extensions: [.gpkg, .shp, .geojson, .json, .fgb, .kml, .gpx, .gml, .sqlite, .db, .tab, .dxf]
+        required: true
+        step: connect
+        source: pygeoapi/provider/ogr.py:201
+
+  - id: wfs
+    title: A WFS
+    fields:
+      - key: data.source_type
+        type: enum
+        title: Driver
+        choices: [WFS]
+        suggest: WFS
+        required: true
+        step: connect
+        source: pygeoapi/provider/ogr.py:147
+      - key: data.source
+        type: string
+        title: WFS address
+        help: >-
+          WFS: then the service URL, such as
+          WFS:https://service.example.org/wfs? (GDAL's WFS driver syntax).
+        pattern: '^WFS:https?://'
+        required: true
+        step: connect
+        source: pygeoapi/provider/ogr.py:201
+
+  - id: esrijson
+    title: An ArcGIS REST query
+    help: >-
+      For a layer that doesn't support pygeoapi's ESRI provider (pagination,
+      orderBy and geoJSON). Prefer the ESRI provider when it does.
+    fields:
+      - key: data.source_type
+        type: enum
+        title: Driver
+        choices: [ESRIJSON]
+        suggest: ESRIJSON
+        required: true
+        step: connect
+        source: pygeoapi/provider/ogr.py:147
+      - key: data.source
+        type: url
+        title: Query URL
+        help: >-
+          The layer's query URL with f=json, such as
+          https://host/arcgis/rest/services/x/MapServer/0/query?where=1%3D1&outFields=*&f=json.
+          For large layers, also set paging and the FEATURE_SERVER_PAGING open option.
+        required: true
+        step: connect
+        source: pygeoapi/provider/ogr.py:201
+
+  - id: other
+    title: Another GDAL source
+    help: Any vector driver GDAL has (https://gdal.org/drivers/vector), by its short name.
+    fields:
+      - key: data.source_type
+        type: string
+        title: Driver
+        help: The GDAL driver's short name, such as OAPIF, CSV or VRT.
+        required: true
+        step: connect
+        source: pygeoapi/provider/ogr.py:147
+      - key: data.source
+        type: string
+        title: Source
+        help: >-
+          What the driver opens: a path, a URL or a connection string. Keep
+          passwords out of it: pygeoapi expands ${VARIABLES} from its environment.
+        required: true
+        step: connect
+        source: pygeoapi/provider/ogr.py:201
+
+fields:
+  - key: layer
+    type: string
+    title: Layer
+    help: The layer in the source to publish. A Shapefile's layer is its file name, without .shp.
+    required: true
+    choices_from: introspect.tables
+    step: connect
+    source: pygeoapi/provider/ogr.py:159
+
+  - key: id_field
+    title: Identifier field
+    help: >-
+      The field that identifies each item. GDAL's feature id (often fid) also
+      works: pygeoapi falls back to it.
+    required: true
+    choices_from: introspect.columns
+    source: pygeoapi/provider/ogr.py:152
+
+  - key: data.source_capabilities.paging
+    type: boolean
+    title: The source pages
+    help: >-
+      Turn on for sources that page their results (WFS 2, ArcGIS). pygeoapi
+      then asks for one page at a time.
+    default: false
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/ogr.py:140-141
+
+  - key: geom_field
+    type: string
+    title: Geometry field
+    help: For sources with several geometry fields, the one to publish.
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/ogr.py:149
+
+  - key: data.source_options
+    type: object
+    title: Driver options
+    help: GDAL configuration options for this driver, such as VERSION for WFS.
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/ogr.py:134
+
+  - key: data.gdal_ogr_options
+    type: object
+    title: GDAL options
+    help: Other GDAL configuration options, such as GDAL_HTTP_TIMEOUT.
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/ogr.py:129
+
+  - key: data.open_options
+    type: object
+    title: Open options
+    help: Options GDAL passes when it opens the source, such as FEATURE_SERVER_PAGING.
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/ogr.py:138
+
+examples:
+  - id: docs-shapefile
+    variant: file
+    source: docs/source/publishing/ogcapi-features.rst:311-324
+    provider:
+      type: feature
+      name: OGR
+      data:
+        source_type: ESRI Shapefile
+        source: tests/data/dutch_addresses_shape_4326/inspireadressen.shp
+        source_options:
+          ADJUST_GEOM_TYPE: FIRST_SHAPE
+        gdal_ogr_options:
+          SHPT: POINT
+      id_field: fid
+      layer: inspireadressen
+  - id: docs-esrijson
+    variant: esrijson
+    source: docs/source/publishing/ogcapi-features.rst:352-371
+    provider:
+      type: feature
+      name: OGR
+      data:
+        source_type: ESRIJSON
+        source: https://map.bgs.ac.uk/arcgis/rest/services/GeoIndex_Onshore/boreholes/MapServer/0/query?where=BGS_ID+%3D+BGS_ID&outfields=*&orderByFields=BGS_ID+ASC&f=json
+        source_capabilities:
+          paging: True
+        open_options:
+          FEATURE_SERVER_PAGING: YES
+        gdal_ogr_options:
+          EMPTY_AS_NULL: NO
+          GDAL_CACHEMAX: 64
+          CPL_DEBUG: NO
+      id_field: BGS_ID
+      layer: ESRIJSON

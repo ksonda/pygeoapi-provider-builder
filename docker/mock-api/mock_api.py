@@ -3,7 +3,10 @@
 120 synthetic wells (seeded, so every run is identical) behind one endpoint per
 pagination style, auth type and failure the spec engine has to handle, and a
 NOAA CO-OPS look-alike (``/coops/…``: a station list and the datagetter, with
-CO-OPS's response shapes and errors) for the time-series template. Flask
+CO-OPS's response shapes and errors) for the time-series template. For Configure's
+service providers: an ArcGIS FeatureServer look-alike (``/arcgis/…``, one open
+layer and one behind a token), pygeoapi's own vector tiles as a static
+``{z}/{x}/{y}.pbf`` server (``/tiles/…``), and a WMS GetMap (``/wms``). Flask
 because it's already in the pinned pygeoapi image: the dev stack runs this
 file there with gunicorn, and tests serve it in-process.
 
@@ -18,10 +21,12 @@ import json
 import math
 import os
 import random
+import re
 import threading
 import time
 import zlib
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from flask import Flask, Response, jsonify, request
@@ -356,6 +361,310 @@ def coops_data() -> Response:
     meta = {'id': station['id'], 'name': station['name'], 'lat': str(station['lat']),
             'lon': str(station['lng'])}  # fmt: skip
     return jsonify(metadata=meta, data=data)
+
+
+# --- an ArcGIS REST FeatureServer look-alike, for pygeoapi's ESRI provider -----------------
+
+ARCGIS_LAYER = '/arcgis/rest/services/<service>/FeatureServer/0'
+ARCGIS_SERVICES = {'Wells': False, 'SecureWells': True}  # name -> needs a token
+ARCGIS_MAX_RECORDS = 50
+ARCGIS_FIELDS = [
+    {'name': 'OBJECTID', 'type': 'esriFieldTypeOID', 'alias': 'OBJECTID'},
+    {'name': 'well_id', 'type': 'esriFieldTypeString', 'alias': 'Well ID', 'length': 8},
+    {'name': 'well_name', 'type': 'esriFieldTypeString', 'alias': 'Name', 'length': 64},
+    {'name': 'county_name', 'type': 'esriFieldTypeString', 'alias': 'County', 'length': 32},
+    {'name': 'depth', 'type': 'esriFieldTypeDouble', 'alias': 'Depth (ft)'},
+    {'name': 'status', 'type': 'esriFieldTypeString', 'alias': 'Status', 'length': 16},
+    {'name': 'measured', 'type': 'esriFieldTypeDate', 'alias': 'Last measured', 'length': 8},
+]
+WHERE_TERM = re.compile(
+    r'^\s*(?P<field>[A-Za-z_][A-Za-z0-9_]*)\s*(?P<op>>=|<=|=)\s*'
+    r"(?:TIMESTAMP\s+'(?P<ts>[^']*)'|'(?P<text>(?:[^']|'')*)'|(?P<number>-?\d+(?:\.\d+)?))\s*$"
+)
+
+
+def arcgis_row(i: int, r: dict[str, Any]) -> dict[str, Any]:
+    return {
+        'OBJECTID': i,
+        'well_id': r['well_id'],
+        'well_name': r['well_name'],
+        'county_name': r['county_name'],
+        'depth': r['depth'],
+        'status': r['status'],
+        'measured': r['measured_epoch'] * 1000,
+    }
+
+
+ARCGIS_ROWS = [(arcgis_row(i, r), r['location']) for i, r in enumerate(WELLS, 1)]
+
+
+def arcgis_error(code: int, message: str) -> Response:
+    return jsonify(error={'code': code, 'message': message, 'details': []})  # HTTP 200, as ArcGIS
+
+
+def arcgis_denied(service: str) -> Response | None:
+    if service not in ARCGIS_SERVICES:
+        return arcgis_error(400, 'Invalid URL')
+    if ARCGIS_SERVICES[service]:
+        token = request.args.get('token', '')
+        sent = request.headers.get('X-Esri-Authorization', '') or f'Bearer {token}'
+        if sent != f'Bearer {TOKEN}':
+            return arcgis_error(499, 'Token Required')
+    return None
+
+
+def arcgis_matches(row: dict[str, Any], where: str) -> bool:
+    """The subset of ArcGIS SQL pygeoapi sends: 1 = 1, or terms joined by AND."""
+    if where.strip() in ('', '1 = 1', '1=1'):
+        return True
+    for term in re.split(r'\s+AND\s+', where, flags=re.IGNORECASE):
+        m = WHERE_TERM.match(term)
+        if not m or m['field'] not in row:
+            raise ValueError(f'Unable to perform query: {term}')
+        value = row[m['field']]
+        if m['ts'] is not None:
+            when = datetime.strptime(m['ts'], '%Y-%m-%d %H:%M:%S').replace(tzinfo=UTC)
+            other: Any = int(when.timestamp() * 1000)
+        elif m['text'] is not None:
+            other = m['text'].replace("''", "'")
+            if isinstance(value, int | float) and not isinstance(value, bool):
+                try:
+                    other = float(other)
+                except ValueError:
+                    return False
+        else:
+            other = float(m['number'])
+        if not {'=': value == other, '>=': value >= other, '<=': value <= other}[m['op']]:
+            return False
+    return True
+
+
+@app.get(ARCGIS_LAYER)
+def arcgis_layer(service: str) -> Response:
+    denied = arcgis_denied(service)
+    if denied is not None:
+        return denied
+    lons = [r['longitude'] for r in WELLS]
+    lats = [r['latitude'] for r in WELLS]
+    return jsonify(
+        currentVersion=11.1,
+        id=0,
+        name=service,
+        type='Feature Layer',
+        geometryType='esriGeometryPoint',
+        objectIdField='OBJECTID',
+        displayField='well_name',
+        extent={
+            'xmin': min(lons),
+            'ymin': min(lats),
+            'xmax': max(lons),
+            'ymax': max(lats),
+            'spatialReference': {'wkid': 4326, 'latestWkid': 4326},
+        },  # fmt: skip
+        fields=ARCGIS_FIELDS,
+        maxRecordCount=ARCGIS_MAX_RECORDS,
+        supportedQueryFormats='JSON, geoJSON, PBF',
+        capabilities='Query',
+        advancedQueryCapabilities={
+            'supportsPagination': True,
+            'supportsOrderBy': True,
+            'supportsQueryWithResultType': True,
+        },  # fmt: skip
+    )
+
+
+@app.get(f'{ARCGIS_LAYER}/query')
+def arcgis_query(service: str) -> Response:
+    denied = arcgis_denied(service)
+    if denied is not None:
+        return denied
+    args = request.args
+    try:
+        rows = [(a, g) for a, g in ARCGIS_ROWS if arcgis_matches(a, args.get('where', '1 = 1'))]
+    except ValueError as err:
+        return arcgis_error(400, str(err))
+    if args.get('objectIds'):
+        wanted = {int(v) for v in args['objectIds'].split(',') if v.strip().isdigit()}
+        rows = [(a, g) for a, g in rows if a['OBJECTID'] in wanted]
+    if args.get('geometry') and args.get('geometryType') == 'esriGeometryEnvelope':
+        minx, miny, maxx, maxy = (float(v) for v in args['geometry'].split(','))
+        rows = [
+            (a, g)
+            for a, g in rows
+            if minx <= g['coordinates'][0] <= maxx and miny <= g['coordinates'][1] <= maxy
+        ]
+    if args.get('returnCountOnly') == 'true':
+        return jsonify(count=len(rows))
+    for clause in reversed([c for c in (args.get('orderByFields') or '').split(',') if c.strip()]):
+        field, _, order = clause.strip().partition(' ')
+        if field in rows[0][0] if rows else False:
+            rows.sort(key=lambda ag, f=field: ag[0][f], reverse=order.strip().upper() == 'DESC')
+    offset = number('resultOffset', 0)
+    count = number('resultRecordCount', ARCGIS_MAX_RECORDS, ARCGIS_MAX_RECORDS)
+    page = rows[offset : offset + count]
+    out_fields = [f.strip() for f in (args.get('outFields') or '*').split(',') if f.strip()]
+    geometry = args.get('returnGeometry', 'true') != 'false'
+    features = [
+        {
+            'type': 'Feature',
+            'id': a['OBJECTID'],
+            'geometry': g if geometry else None,
+            'properties': {k: v for k, v in a.items() if '*' in out_fields or k in out_fields},
+        }
+        for a, g in page
+    ]
+    collection: dict[str, Any] = {'type': 'FeatureCollection', 'features': features}
+    if offset + count < len(rows):
+        collection['properties'] = {'exceededTransferLimit': True}
+    if args.get('f', '').lower() != 'geojson':
+        return arcgis_error(400, 'This mock answers queries as f=geoJSON only')
+    return jsonify(collection)
+
+
+@app.post('/arcgis/sharing/rest/generateToken')
+def arcgis_token() -> Response:
+    form = request.form
+    if form.get('username') != USER or form.get('password') != PASSWORD:
+        return arcgis_error(400, 'Unable to generate token. Invalid username or password.')
+    expires = int((time.time() + 3600) * 1000)
+    return jsonify(token=TOKEN, expires=expires, ssl=False)
+
+
+# --- static vector tiles ({z}/{x}/{y}.pbf, as tippecanoe writes them) ----------------------
+
+
+def tiles_dir() -> Path:
+    """pygeoapi's own tile test data: mounted at /opt/tiles, or the repository's copy."""
+    for candidate in (
+        os.environ.get('MOCK_TILES_DIR'),
+        '/opt/tiles',
+        Path(__file__).resolve().parents[2] / 'vendor' / 'pygeoapi' / 'tests' / 'data' / 'tiles',
+    ):
+        if candidate and Path(candidate).is_dir():
+            return Path(candidate)
+    return Path('/nonexistent')
+
+
+@app.get('/')
+def index() -> Response:
+    """MVT providers GET the server root before each tile."""
+    return jsonify(service='provider-builder mock API')
+
+
+@app.get('/tiles/<layer>/metadata.json')
+def tile_metadata(layer: str) -> tuple[Response, int] | Response:
+    path = tiles_dir() / layer / 'metadata.json'
+    if not layer.replace('_', '').isalnum() or not path.is_file():
+        return jsonify(message='not found'), 404
+    return Response(path.read_bytes(), mimetype='application/json')
+
+
+@app.get('/tiles/<layer>/<int:z>/<int:x>/<int:y>.<ext>')
+def tile(layer: str, z: int, x: int, y: int, ext: str) -> tuple[Response, int] | Response:
+    if not layer.replace('_', '').isalnum() or ext not in ('pbf', 'mvt'):
+        return jsonify(message='not found'), 404
+    path = tiles_dir() / layer / str(z) / str(x) / f'{y}.pbf'
+    if not path.is_file():
+        return jsonify(message='no tile'), 404
+    return Response(path.read_bytes(), mimetype='application/vnd.mapbox-vector-tile')
+
+
+# --- a WMS 1.3.0 / 1.1.1 GetMap, for pygeoapi's WMSFacade --------------------------------
+
+WMS_LAYERS = ('wells', 'graticule')
+
+
+def png(width: int, height: int, pixels: bytearray) -> bytes:
+    """An RGBA PNG from raw pixels, without an image library."""
+    stride = width * 4
+    raw = b''.join(b'\x00' + bytes(pixels[y * stride : (y + 1) * stride]) for y in range(height))
+
+    def chunk(tag: bytes, body: bytes) -> bytes:
+        crc = zlib.crc32(tag + body) & 0xFFFFFFFF
+        return len(body).to_bytes(4, 'big') + tag + body + crc.to_bytes(4, 'big')
+
+    header = width.to_bytes(4, 'big') + height.to_bytes(4, 'big') + bytes([8, 6, 0, 0, 0])
+    body = chunk(b'IHDR', header) + chunk(b'IDAT', zlib.compress(raw, 6)) + chunk(b'IEND', b'')
+    return b'\x89PNG\r\n\x1a\n' + body
+
+
+def wms_exception(message: str, code: str = 'InvalidParameterValue') -> Response:
+    body = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<ServiceExceptionReport version="1.3.0" xmlns="http://www.opengis.net/ogc">'
+        f'<ServiceException code="{code}">{message}</ServiceException></ServiceExceptionReport>'
+    )
+    return Response(body, mimetype='text/xml')
+
+
+def to_lonlat(x: float, y: float, crs: str) -> tuple[float, float]:
+    if crs in ('EPSG:3857', 'EPSG:900913'):
+        lon = x / 6378137 * 180 / math.pi
+        lat = math.degrees(2 * math.atan(math.exp(y / 6378137)) - math.pi / 2)
+        return lon, lat
+    return x, y
+
+
+@app.get('/wms')
+def wms() -> Response:
+    args = {k.lower(): v for k, v in request.args.items()}
+    if args.get('service', '').upper() != 'WMS' or args.get('request', '').lower() != 'getmap':
+        return wms_exception('Only GetMap is implemented', 'OperationNotSupported')
+    version = args.get('version', '1.3.0')
+    crs = (args.get('crs') if version == '1.3.0' else args.get('srs')) or 'CRS:84'
+    layers = [name for name in args.get('layers', '').split(',') if name]
+    if not layers or any(name not in WMS_LAYERS for name in layers):
+        return wms_exception(f'Unknown layer: {args.get("layers")}', 'LayerNotDefined')
+    if args.get('format') != 'image/png':
+        return wms_exception(f'Unsupported format: {args.get("format")}', 'InvalidFormat')
+    try:
+        width, height = int(args['width']), int(args['height'])
+        bbox = [float(v) for v in args['bbox'].split(',')]
+    except (KeyError, ValueError):
+        return wms_exception('width, height and bbox are required')
+    if not (0 < width <= 4096 and 0 < height <= 4096 and len(bbox) == 4):
+        return wms_exception('Invalid width, height or bbox')
+    if crs not in ('CRS:84', 'EPSG:4326', 'EPSG:3857', 'EPSG:900913'):
+        return wms_exception(f'Unsupported CRS: {crs}', 'InvalidCRS')
+    if version == '1.3.0' and crs == 'EPSG:4326':  # latitude first
+        bbox = [bbox[1], bbox[0], bbox[3], bbox[2]]
+    (minx, miny), (maxx, maxy) = to_lonlat(bbox[0], bbox[1], crs), to_lonlat(bbox[2], bbox[3], crs)
+    transparent = args.get('transparent', 'FALSE').upper() == 'TRUE'
+    pixels = bytearray(([0, 0, 0, 0] if transparent else [255, 255, 255, 255]) * width * height)
+
+    def put(px: int, py: int, rgba: tuple[int, int, int, int]) -> None:
+        if 0 <= px < width and 0 <= py < height:
+            i = (py * width + px) * 4
+            pixels[i : i + 4] = bytes(rgba)
+
+    def project(lon: float, lat: float) -> tuple[int, int]:
+        if crs in ('EPSG:3857', 'EPSG:900913'):  # draw in the map's own projection
+            lat = max(-85.0, min(85.0, lat))
+            fy = math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
+            fy0 = math.log(math.tan(math.pi / 4 + math.radians(max(-85.0, miny)) / 2))
+            fy1 = math.log(math.tan(math.pi / 4 + math.radians(min(85.0, maxy)) / 2))
+            row = (fy1 - fy) / (fy1 - fy0)
+        else:
+            row = (maxy - lat) / (maxy - miny)
+        return int((lon - minx) / (maxx - minx) * width), int(row * height)
+
+    if 'graticule' in layers:
+        grey = (150, 150, 150, 255)
+        for lon in range(-180, 181, 10):
+            for py in range(height):
+                px, _ = project(lon, 0)
+                put(px, py, grey)
+        for lat in range(-80, 81, 10):
+            _, py = project(0, lat)
+            for px in range(width):
+                put(px, py, grey)
+    if 'wells' in layers:
+        for r in WELLS:
+            cx, cy = project(r['longitude'], r['latitude'])
+            for dx in range(-2, 3):
+                for dy in range(-2, 3):
+                    put(cx + dx, cy + dy, (33, 102, 172, 255))
+    return Response(png(width, height, pixels), mimetype='image/png')
 
 
 if __name__ == '__main__':

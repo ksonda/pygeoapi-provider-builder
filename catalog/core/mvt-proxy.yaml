@@ -1,0 +1,87 @@
+descriptor_version: 1
+id: MVT-proxy
+plugin: MVT-proxy
+provider_type: tile
+origin: core
+title: Vector tiles from another tile server
+summary: >-
+  Publish Mapbox vector tiles from a {z}/{x}/{y} tile server, such as
+  pg_tileserv or martin, as OGC API - Tiles.
+ogc_api: [tiles]
+source: [pygeoapi/provider/mvt_proxy.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-tiles.html#mvt-proxy
+requires: [requests]
+probe: {kind: tile}
+egress: {kind: url, keys: [data]}
+notes:
+  - >-
+    pygeoapi fetches each tile from the upstream server when a client asks
+    for it, after a request to the server's root, and sets no timeout.
+  - >-
+    When the URL path has a dot anywhere, pygeoapi asks for
+    {z}/{x}/{y}.<format name>, whatever extension the template shows.
+  - An upstream 404 or 500 for a tile inside the zoom range becomes an empty tile (HTTP 204).
+fields:
+  - key: data
+    type: url
+    title: Tile URL template
+    help: >-
+      The upstream tile URL with {z}/{x}/{y} in its path, such as
+      http://tiles.example.org/public.countries/{z}/{x}/{y}.pbf. The path
+      before /{z}/{x}/{y} becomes the layer name; a query string is kept.
+    required: true
+    pattern: '^https?://[^/]+/.+/\{z\}/\{x\}/\{y\}'
+    step: connect
+    source:
+      - pygeoapi/provider/mvt_proxy.py:66
+      - pygeoapi/provider/mvt_proxy.py:113
+
+  - key: format.name
+    help: >-
+      The upstream tiles' extension (pbf, mvt), used when the URL path has a
+      dot in it.
+    suggest: pbf
+
+  - key: format.mimetype
+    suggest: application/vnd.mapbox-vector-tile
+
+  - key: options.schemes
+    help: >-
+      Tile servers such as pg_tileserv and martin serve WebMercatorQuad only.
+      Without a scheme, pygeoapi would also list WorldCRS84Quad.
+    suggest: [WebMercatorQuad]
+    source:
+      - pygeoapi/provider/tile.py:61
+      - pygeoapi/provider/base_mvt.py:73-85
+
+examples:
+  - id: docs-pg-tileserv
+    source: docs/source/publishing/ogcapi-tiles.rst:102-114
+    provider:
+      type: tile
+      name: MVT-proxy
+      data: http://localhost:7800/public.ne_50m_admin_0_countries/{z}/{x}/{y}.mvt
+      options:
+        zoom:
+          min: 0
+          max: 15
+        schemes:
+          - WebMercatorQuad
+      format:
+        name: pbf
+        mimetype: application/vnd.mapbox-vector-tile
+  - id: docs-martin
+    source: docs/source/publishing/ogcapi-tiles.rst:120-132
+    provider:
+      type: tile
+      name: MVT-proxy
+      data: http://localhost:3000/ne_50m_admin_0_countries/{z}/{x}/{y}
+      options:
+        zoom:
+          min: 0
+          max: 15
+        schemes:
+          - WebMercatorQuad
+      format:
+        name: pbf
+        mimetype: application/vnd.mapbox-vector-tile

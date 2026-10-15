@@ -1,0 +1,147 @@
+descriptor_version: 1
+id: xarray-edr
+plugin: xarray-edr
+provider_type: edr
+origin: core
+title: NetCDF or Zarr grid for EDR (xarray)
+summary: >-
+  Publish a NetCDF file or a Zarr store of gridded data for OGC API - EDR
+  queries: a time series at a position, or a cube.
+ogc_api: [edr]
+source: [pygeoapi/provider/xarray_edr.py, pygeoapi/provider/xarray_.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-edr.html#xarray-edr
+requires: [xarray, netCDF4, zarr]
+probe: {kind: edr}
+verdict:
+  status: known-issue
+  note: >-
+    In pygeoapi 0.24.0, position and cube responses fail with a server error
+    when the cells asked for include a missing value, such as a point on land
+    in an ocean grid (geopython/pygeoapi#2348, unfixed). Data without missing
+    values is unaffected.
+notes:
+  - >-
+    pygeoapi finds the longitude, latitude and time coordinates by their CF
+    units (degrees_east, degrees_north) and a coordinate named time. Name
+    them yourself when it can't.
+  - Variables without a units attribute are left out.
+  - pygeoapi offers the position and cube queries; z= needs the vertical coordinate named.
+drift_ignore:
+  - {key: id_field, reason: A grid has no locations or items to identify, source: 'pygeoapi/provider/base.py:72'}
+  - key: options.s3
+    reason: >-
+      Data in S3 (s3:// paths) isn't offered yet: the sandbox can't reach S3 to
+      test it. Such configs keep their options when imported.
+    source: pygeoapi/provider/xarray_.py:79-82
+fields:
+  - key: data
+    type: path
+    path_kind: any
+    title: NetCDF file or Zarr store
+    help: A NetCDF file, or a Zarr store (a .zarr folder), on the server.
+    extensions: [.nc, .nc4, .netcdf, .cdf, .zarr]
+    required: true
+    step: connect
+    source: pygeoapi/provider/xarray_.py:70
+
+  - key: format.name
+    type: string
+    title: Format name
+    help: Not used by pygeoapi's EDR API; the docs examples set it.
+    advanced: true
+    drift: passthrough
+    step: connect
+    source: docs/source/publishing/ogcapi-edr.rst:63-65
+
+  - key: format.mimetype
+    type: string
+    title: Format media type
+    help: Not used by pygeoapi's EDR API; the docs examples set it.
+    advanced: true
+    drift: passthrough
+    step: connect
+    source: docs/source/publishing/ogcapi-edr.rst:63-65
+
+  - key: options.squeeze
+    type: boolean
+    title: Drop single-value dimensions
+    help: Removes dimensions with one value, such as a single depth, after opening.
+    default: false
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/xarray_.py:66
+
+  - key: options.zarr
+    type: object
+    title: Zarr options
+    help: Options for opening a Zarr store, such as consolidated true.
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/xarray_.py:67
+
+  - key: x_field
+    type: string
+    title: Longitude (x) coordinate
+    help: The x coordinate's name in the data, when pygeoapi can't tell it from its units.
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/xarray_.py:441-442
+
+  - key: y_field
+    type: string
+    title: Latitude (y) coordinate
+    help: The y coordinate's name in the data, when pygeoapi can't tell it from its units.
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/xarray_.py:443-444
+
+  - key: time_field
+    type: string
+    title: Time coordinate
+    help: The time coordinate's name, when it isn't called time.
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/xarray_.py:445-446
+
+  - key: z_field
+    type: string
+    title: Vertical (z) coordinate
+    help: The vertical coordinate's name, for z= in position and cube queries.
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/xarray_edr.py:108-109
+
+  - key: storage_crs
+    type: crs
+    title: Storage CRS
+    help: >-
+      The grid's CRS. Leave empty to read it from the data's CF grid mapping
+      (WGS 84 when there is none).
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/xarray_.py:105-106
+
+examples:
+  - id: docs-netcdf
+    source: docs/source/publishing/ogcapi-edr.rst:50-65
+    provider:
+      type: edr
+      name: xarray-edr
+      data: tests/data/coads_sst.nc
+      x_field: lon
+      y_field: lat
+      z_field: z
+      time_field: time
+      storage_crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+      format:
+        name: netcdf
+        mimetype: application/x-netcdf
+  - id: docs-zarr
+    source: docs/source/publishing/ogcapi-edr.rst:67-73
+    provider:
+      type: edr
+      name: xarray-edr
+      data: tests/data/analysed_sst.zarr
+      format:
+        name: zarr
+        mimetype: application/zip

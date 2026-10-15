@@ -1,0 +1,117 @@
+descriptor_version: 1
+id: ESRI
+plugin: ESRI
+provider_type: feature
+origin: core
+title: ArcGIS Feature or Map Service layer
+summary: Publish one layer of an ArcGIS Feature Service or Map Service as OGC API - Features.
+ogc_api: [features]
+source: [pygeoapi/provider/esri.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-features.html#esri-feature-service
+requires: [requests]
+capabilities:
+  bbox: true
+  datetime: true      # intervals only: a single instant fails (esri.py:331)
+  properties: true
+  sortby: true
+  select_properties: true
+  skip_geometry: true
+  q: false
+  hits: true
+  cql: false
+  transactions: false
+probe: {kind: feature}
+introspect: {what: esri, source_key: data}
+egress: {kind: url, keys: [data, token_service]}
+hide: [editable, always_xy]
+notes:
+  - >-
+    pygeoapi needs a layer that supports pagination, orderBy and geoJSON
+    output, and refuses others when it loads.
+  - >-
+    A datetime filter works with intervals (2020-01-01/2021-01-01); a single
+    instant fails with a server error in pygeoapi 0.24.
+  - >-
+    For a layer that isn't public, give the username, password and token
+    service together: pygeoapi's own default token service
+    (https://www.arcgis.com) can't issue tokens.
+fields:
+  - key: data
+    type: url
+    title: Layer URL
+    help: >-
+      One layer of a service, ending in /FeatureServer/<n> or /MapServer/<n>,
+      such as https://services.arcgis.com/…/FeatureServer/0.
+    pattern: '/(Feature|Map)Server/[0-9]+/?$'
+    required: true
+    step: connect
+    source: pygeoapi/provider/esri.py:63
+
+  - key: id_field
+    title: Identifier field
+    help: >-
+      Usually the layer's object id field. With OBJECTID, objectid or fid,
+      pygeoapi looks items up by object id; with another field, by a query on it.
+    required: true
+    source: pygeoapi/provider/esri.py:72-75
+
+  - key: username
+    type: string
+    title: ArcGIS username
+    help: For a layer that isn't shared publicly. Give the password and token service too.
+    step: connect
+    source: pygeoapi/provider/esri.py:65
+
+  - key: password
+    type: secret
+    title: ArcGIS password
+    env_name: ESRI_PASSWORD
+    step: connect
+    source: pygeoapi/provider/esri.py:66
+
+  - key: token_service
+    type: url
+    title: Token service URL
+    help: >-
+      Where pygeoapi logs in: the generateToken URL, such as
+      https://www.arcgis.com/sharing/rest/generateToken for ArcGIS Online or
+      https://<your server>/portal/sharing/rest/generateToken.
+    step: connect
+    source: pygeoapi/provider/esri.py:67
+
+  - key: referer
+    type: string
+    title: Referer
+    help: The referer the token is issued for, usually your portal's address.
+    default: https://www.arcgis.com/sharing/rest/generateToken
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/esri.py:68
+
+examples:
+  - id: docs-arcgis-online
+    source: docs/source/publishing/ogcapi-features.rst:158-170
+    provider:
+      type: feature
+      name: ESRI
+      data: https://sampleserver5.arcgisonline.com/arcgis/rest/services/NYTimes_Covid19Cases_USCounties/MapServer/0
+      id_field: objectid
+      time_field: date_in_your_device_time_zone
+      crs: 4326
+      username: username
+      password: password
+      token_service: https://your.server.com/arcgis/sharing/rest/generateToken
+      referer: https://your.server.com
+  - id: docs-self-hosted
+    source: docs/source/publishing/ogcapi-features.rst:174-186
+    provider:
+      type: feature
+      name: ESRI
+      data: https://your.server.com/arcgis/rest/services/your-layer/MapServer/0
+      id_field: objectid
+      time_field: date_in_your_device_time_zone
+      crs: 4326
+      username: username
+      password: password
+      token_service: https://your.server.com/arcgis/sharing/rest/generateToken
+      referer: https://your.server.com

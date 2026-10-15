@@ -1,0 +1,79 @@
+descriptor_version: 1
+id: MVT-tippecanoe
+plugin: MVT-tippecanoe
+provider_type: tile
+origin: core
+title: Pre-rendered vector tiles (tippecanoe)
+summary: >-
+  Publish Mapbox vector tiles rendered ahead of time, such as tippecanoe
+  output, from a folder or a static web server, as OGC API - Tiles.
+ogc_api: [tiles]
+source: [pygeoapi/provider/mvt_tippecanoe.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-tiles.html#mvt-tippecanoe
+requires: [requests]
+probe: {kind: tile}
+egress: {kind: url, keys: [data]}
+notes:
+  - >-
+    pygeoapi serves the tile files as they are: render them first, for example
+    with tippecanoe -e <folder>. It reads the folder's metadata.json too.
+  - Only the WebMercatorQuad tiling scheme is offered, whatever the configuration says.
+  - >-
+    From a web server, pygeoapi requests the server's root before every tile
+    and sets no timeout.
+hide: [options.schemes]
+variants:
+  - id: folder
+    title: A folder on the server
+    fields:
+      - key: data
+        type: path
+        path_kind: folder
+        title: Tiles folder
+        help: >-
+          The folder holding the tiles as {z}/{x}/{y} files, and tippecanoe's
+          metadata.json. Its name becomes the tile layer's name.
+        required: true
+        step: connect
+        source: pygeoapi/provider/mvt_tippecanoe.py:103
+
+  - id: url
+    title: A web server or bucket
+    fields:
+      - key: data
+        type: url
+        title: Tile URL template
+        help: >-
+          The tiles' URL with {z}/{x}/{y} in its path, such as
+          https://tiles.example.org/lakes/{z}/{x}/{y}.pbf. The path before
+          /{z}/{x}/{y} names the layer, and metadata.json should sit there too.
+        pattern: '^https?://[^/]+/.+/\{z\}/\{x\}/\{y\}'
+        required: true
+        step: connect
+        source: pygeoapi/provider/mvt_tippecanoe.py:76
+
+fields:
+  - key: format.name
+    help: >-
+      The tile files' extension in a folder (pbf for {z}/{x}/{y}.pbf). From a
+      web server, the extension comes from the URL template.
+    suggest: pbf
+
+  - key: format.mimetype
+    suggest: application/vnd.mapbox-vector-tile
+
+examples:
+  - id: docs-directory
+    variant: folder
+    source: docs/source/publishing/ogcapi-tiles.rst:43-55
+    provider:
+      type: tile
+      name: MVT-tippecanoe
+      data: tests/data/tiles/ne_110m_lakes
+      options:
+        zoom:
+          min: 0
+          max: 5
+      format:
+        name: pbf
+        mimetype: application/vnd.mapbox-vector-tile
