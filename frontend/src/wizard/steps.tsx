@@ -15,6 +15,7 @@ import type {
 import { MapView } from '../components/MapView'
 import { CopyButton, ExplainedError, FindingList, SampleTable, Spinner, YamlView } from '../components/common'
 import { DescriptorForm } from '../forms/DescriptorForm'
+import { CoveragePreview, EdrPreview, MapPreview, probeSummary, TilePreview } from './previews'
 import { current, runSecrets, useWizard, type StepId, type WizardState } from './state'
 
 export interface StepProps {
@@ -29,7 +30,9 @@ export interface StepProps {
 export function choicesFor(state: WizardState, f: UiField): string[] | null {
   const intro = state.introspection?.ok ? state.introspection.result : null
   const values = current(state)?.values ?? {}
-  const table = intro?.tables?.find((t) => t.name === values.table)
+  // The table (or layer, for OGR) whose columns fill the pickers; the only one when there's one.
+  const chosen = values[state.detail?.introspect?.table_key ?? 'table']
+  const table = intro?.tables?.find((t) => t.name === chosen) ?? (intro?.tables?.length === 1 ? intro.tables[0] : undefined)
   switch (f.choices_from) {
     case 'introspect.columns':
       return intro?.columns?.map((c) => c.name) ?? table?.columns.map((c) => c.name) ?? null
@@ -203,6 +206,11 @@ export function BackendStep() {
                   <li key={c.id} className={`card${selected ? ' selected' : ''}`}>
                     <h4>{c.title}</h4>
                     <p>{c.summary}</p>
+                    {c.verdict?.status === 'known-issue' && (
+                      <p className="small warning-text">
+                        <strong>Known issue:</strong> {c.verdict.note}
+                      </p>
+                    )}
                     {blocked && <p className="muted small">This collection already has a {c.provider_type} provider, and pygeoapi only uses the first one of each type.</p>}
                     <p className="chips" aria-label="Capabilities">
                       {Object.entries(c.capabilities)
@@ -246,6 +254,13 @@ export function BackendStep() {
 
 // ------------------------------------------------------------------ connect
 
+const LOOKUP_LABELS: Record<string, string> = {
+  sql: 'tables and columns',
+  sqlite: 'tables and columns',
+  ogr: 'layers and fields',
+  esri: 'fields',
+}
+
 function introspectionReady(state: WizardState): boolean {
   const d = state.detail
   const values = current(state)?.values ?? {}
@@ -255,7 +270,10 @@ function introspectionReady(state: WizardState): boolean {
     if (variant === 'dsn') return Boolean(state.testSecrets.data)
     return Boolean(values['data.host'] && values['data.dbname'] && values['data.user'] && state.testSecrets['data.password'])
   }
-  return typeof values.data === 'string' && values.data.startsWith('/')
+  const source = values[d.introspect.source_key ?? 'data']
+  if (typeof source !== 'string') return false
+  // A server path, a URL, or a GDAL source such as WFS:https://…
+  return source.startsWith('/') || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(source)
 }
 
 export function ConnectStep(props: StepProps) {
@@ -264,7 +282,8 @@ export function ConnectStep(props: StepProps) {
   const [busy, setBusy] = useState(false)
   const ready = introspectionReady(state)
   const p = current(state)
-  const key = JSON.stringify([p?.values?.data, p?.values?.['data.host'], p?.values?.['data.dbname'], p?.values?.['data.user'], p?.variant, state.testSecrets])
+  const sourceKey = state.detail?.introspect?.source_key ?? 'data'
+  const key = JSON.stringify([p?.values?.[sourceKey], p?.values?.['data.source_type'], p?.values?.['data.host'], p?.values?.['data.dbname'], p?.values?.['data.user'], p?.variant, state.testSecrets])
 
   const lookUp = useCallback(async () => {
     if (!p) return
@@ -291,8 +310,14 @@ export function ConnectStep(props: StepProps) {
   }, [ready, lookUp])
 
   const intro = state.introspection
+  const verdict = state.detail?.verdict
   return (
     <>
+      {verdict?.status === 'known-issue' && (
+        <p className="notice warning">
+          <strong>Known issue in pygeoapi 0.24:</strong> {verdict.note}
+        </p>
+      )}
       {state.detail?.notes.length ? (
         <ul className="notice info">
           {state.detail.notes.map((n) => (
@@ -322,13 +347,13 @@ export function ConnectStep(props: StepProps) {
       ) : null}
       <div className="lookup">
         {busy ? (
-          <Spinner label="Looking up tables and columns in the sandbox…" />
+          <Spinner label={`Looking up ${LOOKUP_LABELS[state.detail?.introspect?.what ?? ''] ?? 'columns'} in the sandbox…`} />
         ) : intro?.ok ? (
           <p className="ok-text" role="status">
             Found{' '}
             {intro.result?.tables
-              ? `${intro.result.tables.length} table(s)`
-              : `${intro.result?.columns?.length ?? 0} column(s)`}
+              ? `${intro.result.tables.length} ${state.detail?.introspect?.what === 'ogr' ? 'layer' : 'table'}(s)`
+              : `${intro.result?.columns?.length ?? 0} ${state.detail?.introspect?.what === 'esri' ? 'field' : 'column'}(s)`}
             . Pick them from the lists above.
           </p>
         ) : intro && !intro.ok ? (
@@ -336,7 +361,7 @@ export function ConnectStep(props: StepProps) {
         ) : null}
         {state.detail?.introspect && (
           <button type="button" onClick={() => void lookUp()} disabled={!ready || busy}>
-            Look up {state.detail.introspect.what === 'sql' || state.detail.introspect.what === 'sqlite' ? 'tables and columns' : 'columns'}
+            Look up {LOOKUP_LABELS[state.detail.introspect.what] ?? 'columns'}
           </button>
         )}
       </div>
@@ -345,6 +370,16 @@ export function ConnectStep(props: StepProps) {
 }
 
 // --------------------------------------------------------------------- test
+
+/** What the probe does after loading the provider, by provider type. */
+const TEST_INTRO: Record<string, string> = {
+  feature: 'reads its fields and a few items.',
+  record: 'reads its fields and a few records.',
+  coverage: 'asks for a window of the first band as CoverageJSON, as /coverage?subset= does.',
+  map: "asks for a map of the collection's extent, as /map does.",
+  tile: 'lists its tiling schemes and fetches the first tiles over the extent.',
+  edr: 'lists its query types and parameters, and runs one query.',
+}
 
 export function TestStep() {
   const { state, dispatch } = useWizard()
@@ -372,9 +407,14 @@ export function TestStep() {
   }, [])
 
   const r = probe?.ok ? probe.result : null
+  const kind = r?.provider_type ?? state.detail?.provider_type
+  const summary = r ? probeSummary(r) : null
+  const items = kind === 'feature' || kind === 'record'
   return (
     <>
-      <p>pygeoapi loads the provider with its own <code>load_plugin</code> in a sandbox, then reads its fields and a few items.</p>
+      <p>
+        pygeoapi loads the provider with its own <code>load_plugin</code> in a sandbox, then {TEST_INTRO[kind ?? 'feature'] ?? TEST_INTRO.feature}
+      </p>
       {busy && <Spinner label="Testing the connection in the sandbox…" />}
       {probe && !probe.ok && !busy && (
         <>
@@ -393,8 +433,14 @@ export function TestStep() {
         <>
           <div className="notice ok" role="status">
             <p>
-              <strong>pygeoapi loaded the provider</strong> and returned {r.sample?.features.length ?? 0} item(s)
-              {typeof r.sample?.numberMatched === 'number' ? ` of ${r.sample.numberMatched}` : ''}.
+              <strong>pygeoapi loaded the provider</strong>{' '}
+              {summary ?? (
+                <>
+                  and returned {r.sample?.features.length ?? 0} item(s)
+                  {typeof r.sample?.numberMatched === 'number' ? ` of ${r.sample.numberMatched}` : ''}
+                </>
+              )}
+              .
             </p>
             <p className="muted small">
               Tested with {probe?.runner === 'docker' ? 'the sandbox image (geopython/pygeoapi:0.24.0 plus the spec engine)' : 'a local pygeoapi 0.24.0, without the sandbox'} in {probe?.ms} ms
@@ -407,6 +453,12 @@ export function TestStep() {
               need unique ids for /items/&#123;id&#125;.
             </p>
           )}
+          {kind === 'coverage' && <CoveragePreview r={r} />}
+          {kind === 'map' && <MapPreview r={r} />}
+          {kind === 'tile' && <TilePreview r={r} />}
+          {kind === 'edr' && <EdrPreview r={r} />}
+          {items && (
+          <>
           <h3>Fields</h3>
           <div className="table-wrap" tabIndex={0} role="region" aria-label="Fields">
           <table className="compact">
@@ -428,6 +480,8 @@ export function TestStep() {
             </tbody>
           </table>
           </div>
+          </>
+          )}
           {r.sample && (
             <div className="two-col">
               <SampleTable sample={r.sample} />

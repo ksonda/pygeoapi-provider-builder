@@ -3,22 +3,11 @@
 // keyboard alternative (the numeric inputs in the Describe step).
 import 'maplibre-gl/dist/maplibre-gl.css'
 
-import {
-  Map as MlMap,
-  NavigationControl,
-  setWorkerUrl,
-  type GeoJSONSource,
-  type LngLat,
-  type MapMouseEvent,
-  type StyleSpecification,
-} from 'maplibre-gl'
-// MapLibre 6 runs in an ES-module worker; Vite bundles it and hands us its URL.
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
+import { Map as MlMap, NavigationControl, type GeoJSONSource, type LngLat, type MapMouseEvent, type StyleSpecification } from 'maplibre-gl'
 import { useEffect, useRef, useState } from 'react'
 
 import type { FeatureCollection } from '../api/types'
-
-setWorkerUrl(workerUrl)
+import './maplibre'
 
 type Bbox = [number, number, number, number]
 

@@ -24,6 +24,9 @@ notes:
     them yourself when it can't.
   - Variables without a units attribute are left out.
   - >-
+    pygeoapi 0.24 ignores a bbox on its own and returns the whole grid; it
+    applies only with a subset or datetime. Subset by the axes instead.
+  - >-
     A request with no subset returns the whole grid, every time step
     included, as CoverageJSON.
 drift_ignore:
@@ -65,7 +68,9 @@ fields:
   - key: options.zarr
     type: object
     title: Zarr options
-    help: Options for opening a Zarr store, such as consolidated true.
+    help: >-
+      Options for opening a Zarr store. consolidated true needs the store's
+      consolidated metadata (a .zmetadata file), or opening fails.
     advanced: true
     step: connect
     source: pygeoapi/provider/xarray_.py:67

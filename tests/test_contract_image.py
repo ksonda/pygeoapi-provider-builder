@@ -13,8 +13,8 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from dockerutil import IMAGE, REPO
-from forms import CASES
+from dockerutil import IMAGE, REPO, copy_fixtures
+from forms import CASES, FILE_CASES
 from provider_builder.render import FormState
 from provider_builder.runner import DockerRunner
 from provider_builder.service import Service
@@ -22,21 +22,12 @@ from provider_builder.settings import DataRoot, SandboxSettings, Settings, Targe
 
 pytestmark = pytest.mark.docker
 
-DATA = REPO / 'vendor' / 'pygeoapi' / 'tests' / 'data'
 BASE = REPO / 'backend' / 'tests' / 'fixtures' / 'pygeoapi.config.yml'
-FILE_CASES = ['csv', 'geojson', 'sqlitegpkg']
 
 
 @pytest.fixture
 def workdir(tmp_path: Path) -> Path:
-    (tmp_path / 'data').mkdir()
-    for name in ('obs.csv', 'ne_110m_lakes.geojson', 'poi_portugal.gpkg'):
-        shutil.copy(DATA / name, tmp_path / 'data' / name)
-        (tmp_path / 'data' / name).chmod(0o666)
-    # pygeoapi's GeoPackage support writes when it loads (SpatiaLite's AutoGPKGStart
-    # creates virtual tables), and the CLI runs as the sandbox user 10001. Linux
-    # enforces the host's ownership on the bind mount; Docker Desktop doesn't.
-    (tmp_path / 'data').chmod(0o777)
+    copy_fixtures(tmp_path / 'data')
     (tmp_path / 'config').mkdir()
     shutil.copy(BASE, tmp_path / 'config' / 'pygeoapi.config.yml')
     return tmp_path
@@ -141,10 +132,24 @@ def test_openapi_check_job_matches_the_cli(service: Service) -> None:
 
 @pytest.mark.parametrize('name', FILE_CASES)
 def test_docker_probe(service: Service, name: str) -> None:
+    """The probe asks each provider type what pygeoapi's API asks it, in the sandbox."""
     result = service.probe(FormState.model_validate(CASES[name]()), 0, {})
-    assert result['ok'], result.get('explanation')
+    assert result['ok'], (result.get('explanation'), (result.get('error') or {}).get('traceback'))
     assert result['runner'] == 'docker'
-    assert result['result']['sample']['features']
+    r = result['result']
+    kind = r['provider_type']
+    if kind in ('feature', 'record'):
+        assert r['sample']['features']
+    elif kind == 'coverage':
+        assert r['coverage']['problems'] == [] and r['coverage']['metadata_missing'] == []
+        assert r['preview']['data'] and r['preview']['width'] > 1
+    elif kind == 'tile':
+        assert r['tile']['problems'] == [] and r['preview']['layers']
+        assert any(r['preview']['tiles'].values())
+    elif kind == 'edr':
+        assert r['edr']['problems'] == [] and r['edr']['series']['count'] > 1
+    else:  # pragma: no cover - a new kind needs its own check
+        raise AssertionError(kind)
 
 
 def test_gpkg_probe_leaves_the_file_untouched(service: Service, workdir: Path) -> None:

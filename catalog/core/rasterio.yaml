@@ -19,6 +19,9 @@ notes:
   - >-
     A request with no subset returns every cell as CoverageJSON, so publish
     large rasters with care.
+  - >-
+    GDAL can't write GRIB subsets with DATA_ENCODING COMPLEX_PACKING (the docs
+    example's option): such downloads fail. SIMPLE_PACKING, or no option, works.
 fields:
   - key: data
     type: path

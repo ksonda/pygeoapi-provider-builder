@@ -41,7 +41,7 @@ function stepErrors(state: WizardState, step: StepId): Record<string, string> {
       return Object.fromEntries(Object.entries(all).filter(([k]) => keys.has(k)))
     }
     case 'test':
-      return state.probe?.ok ? {} : { probe: 'The provider must load and return items before you continue.' }
+      return state.probe?.ok ? {} : { probe: 'pygeoapi must load the provider and answer the test before you continue.' }
     case 'describe': {
       const r = state.form.resource
       const out: Record<string, string> = {}
@@ -68,7 +68,7 @@ export function Wizard({ settings, initialDescriptor, load }: { settings: Public
   const { state, dispatch } = useWizard()
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loading, setLoading] = useState(Boolean(load))
-  const STEPS = stepsFor(state.mode)
+  const STEPS = stepsFor(state.mode, state.detail)
   const heading = useRef<HTMLHeadingElement>(null)
   const [showErrors, setShowErrors] = useState(false)
   const [reviewBlocking, setReviewBlocking] = useState<boolean | null>(null)

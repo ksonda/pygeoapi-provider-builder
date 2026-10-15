@@ -118,6 +118,49 @@ export interface FieldStats {
   distinct: number
 }
 
+/** A coverage window or a map, as a PNG (or the map's own format), base64-encoded. */
+export interface ImagePreview {
+  mimetype: string
+  data: string
+  width: number
+  height: number
+  bbox?: number[] | null
+  /** Coverages: the band drawn, its value range and unit, and the colour ramp. */
+  parameter?: string
+  min?: number | null
+  max?: number | null
+  unit?: string | null
+  ramp?: number[][]
+}
+
+export interface TileLayer {
+  name: string
+  features: number
+  keys: string[]
+  geometry_types: string[]
+}
+
+/** The first tiles over the extent, base64-encoded by z/x/y (null: an empty tile). */
+export interface TilesPreview {
+  scheme: string
+  mimetype: string
+  minzoom: number
+  maxzoom: number
+  bbox: number[]
+  tiles: Record<string, string | null>
+  layers: TileLayer[]
+}
+
+/** A CoverageJSON document's type, axes (first, last, count) and parameters. */
+export interface CoverageSummary {
+  type?: string | null
+  domainType?: string | null
+  coverages?: number
+  axes: Record<string, { count: number | null; first: unknown; last: unknown }>
+  parameters: Record<string, { label?: string | null; unit?: string | null }>
+  ranges: string[]
+}
+
 export interface ProbeData {
   provider_type: string
   provider_class: string
@@ -125,13 +168,49 @@ export interface ProbeData {
   fields_cached: boolean
   sample?: FeatureCollection
   sample_stats?: Record<string, FieldStats>
-  extent?: { from: 'full' | 'sample' | 'locations'; bbox: number[] | null; temporal: string[] | null }
+  extent?: { from: 'full' | 'sample' | 'locations'; bbox: number[] | null; temporal: string[] | null } | null
   id_stats?: { count: number; nulls: number; duplicates: number }
   timings: Record<string, number>
   note?: string
   /** EDR providers: the query types they offer and their parameters. */
   query_types?: string[]
   parameters?: string[]
+  /** EDR providers: one query as the API makes it. */
+  edr?: {
+    query: Record<string, unknown>
+    problems: string[]
+    domain?: CoverageSummary | null
+    series?: { parameter: string; count: number; values: unknown[]; times: string[] | null } | null
+  }
+  coverage?: {
+    axes: string[]
+    crs?: string | null
+    bbox?: number[] | null
+    width?: number | null
+    height?: number | null
+    resx?: number | null
+    resy?: number | null
+    time_range?: string[] | null
+    restime?: string | null
+    metadata_missing: string[]
+    query: Record<string, unknown>
+    problems: string[]
+    domain?: CoverageSummary | null
+  }
+  map?: { query: Record<string, unknown>; bytes: number | null; problems: string[] }
+  tile?: {
+    tile_type?: string | null
+    format: string
+    mimetype: string
+    layer?: string | null
+    schemes: string[]
+    zoom: { min?: number; max?: number }
+    problems: string[]
+    service_links?: number
+    metadata?: Record<string, unknown>
+    preview_scheme?: string
+  }
+  preview?: ImagePreview | TilesPreview | null
 }
 
 export interface IntrospectColumn {
@@ -147,6 +226,8 @@ export interface IntrospectTable {
   schema?: string
   kind?: string
   columns: IntrospectColumn[]
+  /** OGR: the layer's feature count, -1 when GDAL would have to scan it. */
+  count?: number
 }
 
 export interface IntrospectData {
@@ -154,6 +235,14 @@ export interface IntrospectData {
   tables?: IntrospectTable[]
   features_have_id?: boolean
   count?: number
+  /** OGR: the driver GDAL opened the source with. */
+  driver?: string
+  /** ESRI: the layer's object id field, geometry type, page size and extent. */
+  object_id_field?: string | null
+  geometry_type?: string | null
+  max_record_count?: number | null
+  bbox?: number[] | null
+  problems?: string[]
 }
 
 export interface FsEntry {

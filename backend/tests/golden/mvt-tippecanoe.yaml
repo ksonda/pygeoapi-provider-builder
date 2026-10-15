@@ -1,0 +1,21 @@
+lakes-tiles:
+    type: collection
+    title: Lakes as vector tiles
+    description: Lakes as vector tiles (pygeoapi test data)
+    keywords:
+        - test
+    extents:
+        spatial:
+            bbox: [-180.0, -90.0, 180.0, 90.0]
+            crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    providers:
+        - type: tile
+          name: MVT-tippecanoe
+          data: /data/tiles/ne_110m_lakes
+          format:
+              name: pbf
+              mimetype: application/vnd.mapbox-vector-tile
+          options:
+              zoom:
+                  min: 0
+                  max: 5

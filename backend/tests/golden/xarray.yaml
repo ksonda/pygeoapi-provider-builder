@@ -1,0 +1,22 @@
+analysed-sst:
+    type: collection
+    title: Analysed sea surface temperature
+    description: Analysed sea surface temperature (pygeoapi test data)
+    keywords:
+        - test
+    extents:
+        spatial:
+            bbox: [-28, 40, -27, 41]
+            crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+        temporal:
+            begin: 2005-12-01T09:00:00Z
+            end: 2006-01-01T09:00:00Z
+    providers:
+        - type: coverage
+          name: xarray
+          data: /data/analysed_sst.zarr
+          format:
+              name: zarr
+              mimetype: application/zip
+          options:
+              squeeze: true

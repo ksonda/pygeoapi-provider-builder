@@ -1,0 +1,17 @@
+esri-wells:
+    type: collection
+    title: Wells from ArcGIS
+    description: Wells from ArcGIS (pygeoapi test data)
+    keywords:
+        - test
+    extents:
+        spatial:
+            bbox: [-117.2, 42.0, -111.1, 48.9]
+            crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    providers:
+        - type: feature
+          name: ESRI
+          data: http://mockapi:8000/arcgis/rest/services/Wells/FeatureServer/0
+          id_field: OBJECTID
+          title_field: well_name
+          time_field: measured

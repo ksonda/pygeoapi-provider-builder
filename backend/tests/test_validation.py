@@ -195,6 +195,32 @@ def test_rule_violations(change: dict[str, Any], code: str) -> None:
     assert code in rules(resource)
 
 
+VECTOR_TILES = {
+    'type': 'tile',
+    'name': 'MVT-tippecanoe',
+    'data': '/data/tiles/lakes',
+    'options': {'zoom': {'min': 0, 'max': 5}},
+    'format': {'name': 'pbf', 'mimetype': 'application/vnd.mapbox-vector-tile'},
+}
+
+
+def test_a_tile_or_map_only_collection_is_allowed() -> None:
+    """pygeoapi's own test config has a map-only collection; tiles alone get a warning."""
+    tiles_only = rules({**GOOD, 'providers': [VECTOR_TILES]})
+    assert 'rule.default-provider' not in tiles_only and 'rule.tile-items' in tiles_only
+    wms = {
+        'type': 'map',
+        'name': 'WMSFacade',
+        'data': 'https://wms.example.org/wms',
+        'options': {'layer': 'x'},
+        'format': {'name': 'png', 'mimetype': 'image/png'},
+    }
+    map_only = rules({**GOOD, 'providers': [wms]})
+    assert not {'rule.default-provider', 'rule.tile-items'} & set(map_only)
+    with_items = rules({**GOOD, 'providers': [GOOD['providers'][0], VECTOR_TILES]})
+    assert not {'rule.default-provider', 'rule.tile-items'} & set(with_items)
+
+
 @pytest.mark.parametrize('rid', ['my lakes', 'a?b', '-lead', 'items', ''])
 def test_bad_ids(rid: str) -> None:
     config = merged(rid, GOOD)

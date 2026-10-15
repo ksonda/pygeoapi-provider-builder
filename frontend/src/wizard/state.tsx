@@ -43,11 +43,14 @@ export interface WizardState {
   acknowledge: string[]
 }
 
-/** The steps each mode walks through. */
-export function stepsFor(mode: Mode): (typeof STEPS)[number][] {
-  if (mode.kind === 'edit' && mode.addProvider) return STEPS.filter((s) => s.id !== 'start')
-  if (mode.kind === 'edit') return STEPS.filter((s) => s.id !== 'start' && s.id !== 'backend')
-  return [...STEPS]
+/** The steps each mode walks through. A provider with nothing to map (tiles, maps) skips Map fields. */
+export function stepsFor(mode: Mode, detail?: DescriptorDetail | null): (typeof STEPS)[number][] {
+  const map = detail?.ui.groups.find((g) => g.id === 'map')
+  const nothingToMap = Boolean(detail) && !map?.keys.length && !map?.advanced.length
+  const steps = STEPS.filter((s) => !(nothingToMap && s.id === 'fields'))
+  if (mode.kind === 'edit' && mode.addProvider) return steps.filter((s) => s.id !== 'start')
+  if (mode.kind === 'edit') return steps.filter((s) => s.id !== 'start' && s.id !== 'backend')
+  return steps
 }
 
 const CRS84 = 'http://www.opengis.net/def/crs/OGC/1.3/CRS84'
@@ -164,7 +167,8 @@ function syncEnvNames(state: WizardState): WizardState {
 
 function suggestId(state: WizardState, key: string, value: unknown): WizardState {
   if (state.idEdited || typeof value !== 'string' || !value) return state
-  if (key !== 'data' && key !== 'table') return state
+  const tableKey = state.detail?.introspect?.table_key ?? 'table'
+  if (key !== 'data' && key !== tableKey) return state
   const p = provider(state)
   if (key === 'data' && state.detail && activeFields(state.detail, p.variant).data?.type !== 'path') return state
   const id = slug(value.split('/').pop() ?? value)
@@ -240,8 +244,22 @@ export function reducer(state: WizardState, action: Action): WizardState {
     }
     case 'testSecret':
       return { ...state, testSecrets: { ...state.testSecrets, [action.key]: action.value }, probe: null }
-    case 'introspection':
-      return { ...state, introspection: action.result }
+    case 'introspection': {
+      const next = { ...state, introspection: action.result }
+      const found = action.result?.ok ? action.result.result : null
+      const d = state.detail
+      if (!found || !d?.introspect) return next
+      // Prefill what has one answer: the only table or layer, then its key column.
+      const p = provider(next)
+      const values = { ...(p.values ?? {}) }
+      const tableKey = d.introspect.table_key ?? 'table'
+      const only = found.tables?.length === 1 ? found.tables[0] : undefined
+      if (d.ui.fields[tableKey] && values[tableKey] === undefined && only) values[tableKey] = only.name
+      const table = found.tables?.find((t) => t.name === values[tableKey])
+      const pk = (found.columns ?? table?.columns ?? []).find((c) => c.pk)
+      if (d.ui.fields.id_field && values.id_field === undefined && pk) values.id_field = pk.name
+      return withProvider(next, { ...p, values })
+    }
     case 'probe':
       return { ...state, probe: action.result }
     case 'resource':

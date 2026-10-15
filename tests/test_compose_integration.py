@@ -18,8 +18,8 @@ from pathlib import Path
 
 import httpx
 import pytest
-from dockerutil import IMAGE, NETWORK, REPO
-from forms import CASES
+from dockerutil import IMAGE, NETWORK, REPO, copy_fixtures
+from forms import CASES, FILE_CASES, MOCK_CASES
 from provider_builder.images import STABLE_TAG
 from provider_builder.render import FormState
 from provider_builder.runner import DockerRunner
@@ -30,14 +30,15 @@ pytestmark = pytest.mark.compose
 
 DATA = REPO / 'vendor' / 'pygeoapi' / 'tests' / 'data'
 BASE = REPO / 'backend' / 'tests' / 'fixtures' / 'pygeoapi.config.yml'
-SECRETS = {'PYGEOAPI_WATERWAYS_DB_PASSWORD': 'postgres'}
+SECRETS = {
+    'PYGEOAPI_WATERWAYS_DB_PASSWORD': 'postgres',
+    'PYGEOAPI_SECURE_WELLS_ESRI_PASSWORD': 'test-password',  # the mock API's test login
+}
 
 
 @pytest.fixture
 def workdir(tmp_path: Path) -> Path:
-    (tmp_path / 'data').mkdir()
-    for name in ('obs.csv', 'ne_110m_lakes.geojson', 'poi_portugal.gpkg'):
-        shutil.copy(DATA / name, tmp_path / 'data' / name)
+    copy_fixtures(tmp_path / 'data')
     (tmp_path / 'config').mkdir()
     shutil.copy(BASE, tmp_path / 'config' / 'pygeoapi.config.yml')
     return tmp_path
@@ -147,6 +148,67 @@ def test_pygeoapi_serves_the_export(service: Service, serve: callable, name: str
     assert html.status_code == 200
     jsonld = httpx.get(f'{base}/collections/{rid}/items?f=jsonld&limit=2', timeout=30)
     assert jsonld.status_code == 200 and '@context' in json.loads(jsonld.text)
+
+
+#: What to ask pygeoapi for each Tier-1 case: (path and query, what must come back).
+TIER1_CHECKS: dict[str, list[tuple[str, str]]] = {
+    'rasterio': [
+        ('/coverage?f=json&bbox=-10,-10,10,10', 'covjson'),
+        ('/coverage?f=GRIB&bbox=-10,-10,10,10', 'bytes'),
+    ],
+    'xarray': [
+        (
+            '/coverage?f=json&properties=analysed_sst&subset=lon(-27.6:-27.4),lat(40.4:40.6)',
+            'covjson',
+        ),
+        ('/coverage?f=zarr', 'bytes'),
+        # geopython/pygeoapi#2348 (the descriptor's verdict): sea_ice_fraction has missing values.
+        ('/coverage?f=json', 'known-issue'),
+    ],
+    'xarray-edr': [('/position?coords=POINT(-150 0)&parameter-name=SST&f=json', 'covjson')],
+    'mvt-tippecanoe': [
+        ('/tiles?f=json', 'tilesets'),
+        ('/tiles/WebMercatorQuad/0/0/0?f=mvt', 'bytes'),
+    ],
+    'mvt-proxy': [('/tiles?f=json', 'tilesets'), ('/tiles/WebMercatorQuad/1/0/0?f=mvt', 'bytes')],
+    'wmsfacade': [('/map?f=png', 'png')],
+}
+
+
+@pytest.mark.parametrize(
+    'name', [n for n in FILE_CASES + MOCK_CASES if n not in ('csv', 'sqlitegpkg')]
+)
+def test_pygeoapi_serves_each_tier1_provider(service: Service, serve: callable, name: str) -> None:
+    """The Phase 5 exit criterion: a form-built collection of each Tier-1 provider is served."""
+    form, merged = publish(service, name)
+    base = serve(merged, SECRETS)
+    url = f'{base}/collections/{form.resource_id}'
+    collection = httpx.get(f'{url}?f=json', timeout=60)
+    assert collection.status_code == 200, collection.text[-2000:]
+    kind = form.providers[0].descriptor
+    checks = TIER1_CHECKS.get(name)
+    if checks is None:  # features and records: items, and one item by its id
+        items = httpx.get(f'{url}/items?f=json&limit=2', timeout=60)
+        assert items.status_code == 200, items.text[-2000:]
+        features = items.json()['features']
+        assert len(features) == 2, (kind, items.text[:500])
+        one = httpx.get(f'{url}/items/{features[0]["id"]}?f=json', timeout=60)
+        assert one.status_code == 200 and one.json()['id'] == features[0]['id'], one.text[-1000:]
+        return
+    for path, expect in checks:
+        resp = httpx.get(f'{url}{path}', timeout=120)
+        if expect == 'known-issue':  # fails until upstream fixes it; then drop the verdict
+            assert resp.status_code == 500, (path, 'fixed upstream? update the verdict')
+            continue
+        assert resp.status_code == 200, (path, resp.text[-2000:])
+        if expect == 'covjson':
+            assert resp.json()['type'] in ('Coverage', 'CoverageCollection'), path
+        elif expect == 'tilesets':
+            assert resp.json()['tilesets'], path
+        elif expect == 'png':
+            assert resp.content.startswith(b'\x89PNG'), path
+        else:
+            assert len(resp.content) > 100, (path, len(resp.content))
 
 
 def test_postgis_probe_and_wrong_password(service: Service) -> None:

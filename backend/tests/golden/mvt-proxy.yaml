@@ -1,0 +1,23 @@
+lakes-proxy:
+    type: collection
+    title: Lakes from a tile server
+    description: Lakes from a tile server (pygeoapi test data)
+    keywords:
+        - test
+    extents:
+        spatial:
+            bbox: [-180.0, -90.0, 180.0, 90.0]
+            crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    providers:
+        - type: tile
+          name: MVT-proxy
+          data: http://mockapi:8000/tiles/ne_110m_lakes/{z}/{x}/{y}.pbf
+          format:
+              name: pbf
+              mimetype: application/vnd.mapbox-vector-tile
+          options:
+              schemes:
+                  - WebMercatorQuad
+              zoom:
+                  min: 0
+                  max: 5

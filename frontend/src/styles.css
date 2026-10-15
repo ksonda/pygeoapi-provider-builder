@@ -65,6 +65,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 1.25rem 1rem 4rem; overflow-w
 .small { font-size: 0.875rem; }
 .lead { font-size: 1.2rem; }
 .ok-text { color: var(--ok); }
+.warning-text { color: var(--warn); }
 .error-text { color: var(--err); margin: 0.25rem 0 0; }
 
 button, select, input, textarea {
@@ -280,3 +281,15 @@ ol.publish-steps > li.error strong { color: var(--err); }
 .code-files button.current { font-weight: 700; text-decoration: underline; }
 .button-row { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 @media (max-width: 760px) { .code-layout { grid-template-columns: minmax(0, 1fr); } }
+
+/* Test-step previews: a coverage window or a map image, its legend, an EDR series. */
+.coverage-preview, .map-preview { margin: 0; }
+.coverage-preview img, .map-preview img {
+  display: block; max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: var(--radius);
+  background: repeating-conic-gradient(var(--surface-2) 0% 25%, var(--surface) 0% 50%) 50% / 16px 16px;
+}
+.coverage-preview img { width: 100%; image-rendering: pixelated; }
+.legend { margin-top: 0.5rem; max-width: 320px; }
+.legend-bar { height: 12px; border-radius: 4px; border: 1px solid var(--border); }
+.legend-labels { display: flex; justify-content: space-between; color: var(--muted); }
+.sparkline { color: var(--accent); display: block; margin: 0.5rem 0; }

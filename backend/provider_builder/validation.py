@@ -401,19 +401,48 @@ def _r_one_per_type(ctx: RuleContext) -> Iterator[tuple[str, str | None, str | N
         seen.setdefault(t, n)
 
 
-def _r_default(ctx: RuleContext) -> Iterator[tuple[str, str | None, str | None]]:
+DATA_TYPES = ('feature', 'record', 'coverage', 'edr')
+
+
+def _default_provider(ctx: RuleContext) -> dict[str, Any] | None:
     providers = _resource(ctx).get('providers') or []
-    if not providers:
+    return next((p for p in providers if p.get('default')), providers[0]) if providers else None
+
+
+def _r_default(ctx: RuleContext) -> Iterator[tuple[str, str | None, str | None]]:
+    """A tile or map provider may describe a collection only when it has no data provider."""
+    providers = _resource(ctx).get('providers') or []
+    default = _default_provider(ctx)
+    if default is None:
         yield ('A collection needs at least one provider.', None, '/providers')
         return
-    default = next((p for p in providers if p.get('default')), providers[0])
-    if default.get('type') in ('tile', 'map'):
+    has_data = any(p.get('type') in DATA_TYPES for p in providers)
+    if default.get('type') in ('tile', 'map') and has_data:
         yield (
             'A tile or map provider must not be the default; put the data provider first '
             'or mark it default: true.',
             None,
             '/providers',
         )
+
+
+def _w_tile_items(ctx: RuleContext) -> Iterator[tuple[str, str | None, str | None]]:
+    """pygeoapi describes a vector-tile-first collection as having items, which fail."""
+    providers = _resource(ctx).get('providers') or []
+    default = _default_provider(ctx)
+    if default is None or default.get('type') != 'tile':
+        return
+    if any(p.get('type') in ('feature', 'record') for p in providers):
+        return
+    if str((default.get('format') or {}).get('name', '')).lower() in ('png', 'jpeg'):
+        return
+    yield (
+        'pygeoapi lists an items link for a collection described by vector tiles, but '
+        '/items fails without a feature provider.',
+        'Add a feature provider for the same data (Collections → Add a provider) to make '
+        'the link work, or ignore this if clients only use the tiles.',
+        '/providers',
+    )
 
 
 def _r_format(ctx: RuleContext) -> Iterator[tuple[str, str | None, str | None]]:
@@ -577,6 +606,7 @@ RULES: list[Rule] = [
         'rule.one-provider-per-type', 'error', 'pygeoapi/provider/__init__.py:51', _r_one_per_type
     ),
     Rule('rule.default-provider', 'error', 'pygeoapi/provider/__init__.py:81', _r_default),
+    Rule('rule.tile-items', 'warning', 'pygeoapi/api/collection.py:243', _w_tile_items),
     Rule('rule.format', 'error', 'pygeoapi/api/collection.py:82', _r_format),
     Rule('rule.crs-list', 'error', 'pygeoapi/crs.py:111', _r_crs),
     Rule(

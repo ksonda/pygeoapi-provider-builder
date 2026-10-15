@@ -39,11 +39,10 @@ def test_output_loads_in_pygeoapi(
     for env in result.env:
         monkeypatch.setenv(env.name, 'secret-value')
     loaded = yaml_load(io.StringIO(result.yaml))
-    expected = json.loads(
-        json.dumps(result.resource, default=str)
-        .replace('${PYGEOAPI_WATERWAYS_DB_PASSWORD}', 'secret-value')
-        .replace('${PYGEOAPI_DRAINS_DB_DSN}', 'secret-value')
-    )
+    text = json.dumps(result.resource, default=str)
+    for env in result.env:
+        text = text.replace('${' + env.name + '}', 'secret-value')
+    expected = json.loads(text)
     got = json.loads(json.dumps(loaded[form.resource_id], default=str))
     assert got == expected
 

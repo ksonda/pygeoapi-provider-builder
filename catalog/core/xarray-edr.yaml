@@ -74,7 +74,9 @@ fields:
   - key: options.zarr
     type: object
     title: Zarr options
-    help: Options for opening a Zarr store, such as consolidated true.
+    help: >-
+      Options for opening a Zarr store. consolidated true needs the store's
+      consolidated metadata (a .zmetadata file), or opening fails.
     advanced: true
     step: connect
     source: pygeoapi/provider/xarray_.py:67

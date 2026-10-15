@@ -1,0 +1,19 @@
+cmc-temperature:
+    type: collection
+    title: CMC 2 m air temperature
+    description: CMC 2 m air temperature (pygeoapi test data)
+    keywords:
+        - test
+    extents:
+        spatial:
+            bbox: [-180.0, -90.0, 180.0, 90.0]
+            crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    providers:
+        - type: coverage
+          name: rasterio
+          data: /data/CMC_glb_TMP_TGL_2_latlon.15x.15_2020081000_P000.grib2
+          format:
+              name: GRIB
+              mimetype: application/x-grib2
+          options:
+              DATA_ENCODING: SIMPLE_PACKING

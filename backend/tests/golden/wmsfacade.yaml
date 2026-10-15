@@ -1,0 +1,19 @@
+wells-map:
+    type: collection
+    title: Wells as a map
+    description: Wells as a map (pygeoapi test data)
+    keywords:
+        - test
+    extents:
+        spatial:
+            bbox: [-118, 41, -110, 49.5]
+            crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    providers:
+        - type: map
+          name: WMSFacade
+          data: http://mockapi:8000/wms
+          options:
+              layer: wells,graticule
+          format:
+              name: png
+              mimetype: image/png

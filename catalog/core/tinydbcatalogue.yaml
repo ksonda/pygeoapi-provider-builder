@@ -20,7 +20,7 @@ capabilities:
   hits: true
   cql: false               # the docs table says yes, but query() never reads filterq
   transactions: true
-probe: {kind: record}
+probe: {kind: record, copy_data: true}  # TinyDB opens a file it thinks it may write for writing
 notes:
   - >-
     Each record must be an OGC API - Records GeoJSON feature with its own id.

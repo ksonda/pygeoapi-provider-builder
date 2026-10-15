@@ -178,6 +178,7 @@ def _probe_edr(
         result['note'] = (
             'This EDR provider has no locations query, so there is no sample of items.'
         )
+        result['extent'] = _grid_extent(getattr(provider, '_coverage_properties', None) or {})
         _edr_sample(provider, result, None, timings)
         return result
     t0 = time.perf_counter()
@@ -346,7 +347,32 @@ def _probe_coverage(
     info['domain'] = _coverage_summary(doc)
     result['coverage'] = _jsonable(info)
     result['preview'] = previews.coverage_image(doc, fields[0] if fields else None)
+    result['extent'] = _grid_extent(props)
     return result
+
+
+GEOGRAPHIC = {
+    CRS84,
+    'http://www.opengis.net/def/crs/EPSG/0/4326',
+    'https://www.opengis.net/def/crs/EPSG/0/4326',
+}
+
+
+def _grid_extent(props: dict[str, Any]) -> dict[str, Any] | None:
+    """A grid's extent for the collection, when its CRS is longitude/latitude."""
+    bbox, crs = props.get('bbox'), props.get('bbox_crs')
+    if crs not in GEOGRAPHIC or not isinstance(bbox, list | tuple) or len(bbox) != 4:
+        return None
+    try:
+        x1, y1, x2, y2 = (float(v) for v in bbox)
+    except (TypeError, ValueError):
+        return None
+    box = [min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2)]
+    if not (box[0] >= -180 and box[2] <= 180 and box[1] >= -90 and box[3] <= 90):
+        return None  # 0-360 longitudes, or not degrees: leave the extent to the user
+    time_range = props.get('time_range')
+    temporal = [str(t) for t in time_range] if isinstance(time_range, list | tuple) else None
+    return {'from': 'full', 'bbox': box, 'temporal': temporal}
 
 
 def _coverage_window(props: dict[str, Any], axes: list[str]) -> dict[str, list[Any]]:
