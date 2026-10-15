@@ -580,7 +580,16 @@ def _r_geoconnex(ctx: RuleContext) -> Iterator[tuple[str, str | None, str | None
             continue
         values = [str(v) for v in stats[uf].get('values', [])]
         bad = [v for v in values if not re.match(r'^https?://[^/\s]+/', v)]
-        if bad or stats[uf].get('nulls'):
+        filled = int(stats[uf].get('count', 0)) - int(stats[uf].get('nulls', 0))
+        repeats = filled - int(stats[uf].get('distinct', filled))
+        if repeats > 0 and not bad:
+            yield (
+                f'uri_field {uf!r} must identify each item, but {repeats} sample value(s) '
+                "repeat another item's.",
+                None,
+                f'/providers/{n}/values/uri_field',
+            )
+        elif bad or stats[uf].get('nulls'):
             yield (
                 f'uri_field {uf!r} must hold an absolute URI for every item; '
                 f'the sample has {bad[0]!r}.'
@@ -595,6 +604,63 @@ def _r_geoconnex(ctx: RuleContext) -> Iterator[tuple[str, str | None, str | None
                 'Fine if you are not registering with Geoconnex.',
                 f'/providers/{n}/values/uri_field',
             )
+
+
+def jsonld_findings(
+    form: FormState, has_templates_dir: bool, fields: dict[str, Any] | None
+) -> list[Finding]:
+    """The collection's JSON-LD template choice (Geoconnex options)."""
+    from . import jsonld
+
+    choice = form.resource.jsonld_template
+    if choice is None:
+        return []
+    pointer = '/resource/jsonld_template'
+    out: list[Finding] = []
+
+    def finding(severity: Severity, code: str, message: str, hint: str | None = None) -> None:
+        out.append(
+            Finding(
+                layer='descriptor',
+                severity=severity,
+                code=code,
+                message=message,
+                hint=hint,
+                pointer=pointer,
+                source='pygeoapi/linked_data.py:255',
+            )
+        )
+
+    try:
+        jsonld.generate(choice.id, choice.slots)
+    except jsonld.TemplateError as err:
+        finding('error', 'jsonld.template', str(err))
+        return out
+    template = jsonld.LIBRARY[choice.id]
+    for slot in template.slots:
+        value = choice.slots.get(slot.id)
+        if slot.kind == 'field' and value and fields is not None and value not in fields:
+            finding(
+                'warning',
+                'jsonld.field',
+                f'{slot.title}: {value!r} is not one of the fields the provider lists.',
+            )
+    if not has_templates_dir and not form.resource.templates_path:
+        finding(
+            'warning',
+            'jsonld.where',
+            "This target has no templates folder, so the template isn't written for you.",
+            'Put item.jsonld at <templates path>/collections/items/item.jsonld on the server, '
+            'and set the templates path.',
+        )
+    if not any(p.values.get('uri_field') for p in form.providers):
+        finding(
+            'warning',
+            'jsonld.uri',
+            "Without a uri_field, each item's @id is its pygeoapi URL, not a persistent "
+            'identifier such as a Geoconnex PID.',
+        )
+    return out
 
 
 RULES: list[Rule] = [
@@ -635,7 +701,9 @@ def rule_findings(ctx: RuleContext) -> list[Finding]:
     for rule in RULES:
         for message, hint, pointer in rule.check(ctx):
             severity = rule.severity
-            if rule.code == 'rule.geoconnex-uri' and 'must hold' in message:
+            if rule.code == 'rule.geoconnex-uri' and (
+                'must hold' in message or 'must identify' in message
+            ):
                 severity = 'error'
             findings.append(
                 Finding(

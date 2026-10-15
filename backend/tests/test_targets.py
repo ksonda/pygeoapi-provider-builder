@@ -24,7 +24,7 @@ from provider_builder import configedit as ce
 from provider_builder.app import create_app
 from provider_builder.runner import SubprocessRunner
 from provider_builder.service import Service
-from provider_builder.settings import Settings, Target
+from provider_builder.settings import Settings, Target, TemplatesDir
 
 
 class FakePygeoapi(ThreadingHTTPServer):
@@ -612,3 +612,42 @@ properties:
     )
     gate = next(s for s in result['steps'] if s['name'] == 'openapi')
     assert gate['ok'], gate
+
+
+def test_publishing_a_jsonld_template_writes_it_where_the_config_points(
+    ops_client: TestClient, settings: Settings
+) -> None:
+    """Geoconnex options: templates.path in the config, item.jsonld in the target's folder."""
+    target = next(t for t in settings.targets if t.id == 'file')
+    target.templates_dir = TemplatesDir(
+        host_path=settings.root / 'templates', server_path='/srv/pygeoapi/templates'
+    )
+    form = csv_form()
+    form['resource']['jsonld_template'] = {
+        'id': 'geoconnex-location',
+        'slots': {'name': 'stn_id', 'within': 'https://geoconnex.us/ref/states/08'},
+    }
+    etag = ops_client.get('/api/targets/file/config').json()['etag']
+    result = publish(
+        ops_client, target='file', action='add', resource_id='obs', form=form, etag=etag
+    )
+    assert result['ok'], result['steps']
+    assert 'JSON-LD template' in result['steps'][2]['message']
+    template = settings.root / 'templates' / 'obs' / 'collections' / 'items' / 'item.jsonld'
+    assert 'HY_HydroLocation' in template.read_text()
+    config = yaml.safe_load(target.base_config.read_text())
+    assert config['resources']['obs']['templates'] == {'path': '/srv/pygeoapi/templates/obs'}
+    assert 'template' not in config['resources']['obs']  # never the fork's legacy key
+
+
+def test_a_bad_jsonld_choice_blocks_and_a_missing_folder_warns(ops_client: TestClient) -> None:
+    form = csv_form()
+    form['resource']['jsonld_template'] = {'id': 'geoconnex-location', 'slots': {}}
+    found = ops_client.post('/api/validate', json={'form': form, 'target': 'file'}).json()
+    codes = {f['code']: f['severity'] for f in found['findings']}
+    assert codes.get('jsonld.template') == 'error'
+    form['resource']['jsonld_template']['slots'] = {'name': 'stn_id'}
+    found = ops_client.post('/api/validate', json={'form': form, 'target': 'file'}).json()
+    codes = {f['code']: f['severity'] for f in found['findings']}
+    assert 'jsonld.template' not in codes
+    assert codes.get('jsonld.where') == 'warning' and codes.get('jsonld.uri') == 'warning'

@@ -383,6 +383,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jsonld/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Jsonld Preview */
+        post: operations["jsonld_preview_api_jsonld_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jsonld/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Jsonld Templates
+         * @description The JSON-LD item templates the Describe step offers (Geoconnex options).
+         */
+        get: operations["jsonld_templates_api_jsonld_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/openapi-check": {
         parameters: {
             query?: never;
@@ -1016,6 +1053,8 @@ export interface components {
             fragment_yaml: string;
             /** Instructions */
             instructions: string[];
+            /** Jsonld Template */
+            jsonld_template?: string | null;
             /** Merged Filename */
             merged_filename: string;
             /** Merged Yaml */
@@ -1183,6 +1222,33 @@ export interface components {
             result?: unknown;
             /** Status */
             status: string;
+        };
+        /**
+         * JsonLdChoice
+         * @description A JSON-LD template from the library and what fills its slots (jsonld.py).
+         */
+        JsonLdChoice: {
+            /** Id */
+            id: string;
+            /**
+             * Slots
+             * @default {}
+             */
+            slots?: {
+                [key: string]: string;
+            };
+        };
+        /** JsonLdPreviewRequest */
+        JsonLdPreviewRequest: {
+            form: components["schemas"]["FormState"];
+            /**
+             * Test Secrets
+             * @description ENV_NAME -> value
+             * @default {}
+             */
+            test_secrets?: {
+                [key: string]: string;
+            };
         };
         /** Link */
         Link: {
@@ -1444,6 +1510,7 @@ export interface components {
              *     }
              */
             extents?: components["schemas"]["Extents"];
+            jsonld_template?: components["schemas"]["JsonLdChoice"] | null;
             /**
              * Keywords
              * @default []
@@ -2515,6 +2582,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jsonld_preview_api_jsonld_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["JsonLdPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    jsonld_templates_api_jsonld_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
                 };
             };
         };

@@ -38,6 +38,8 @@ backups/
 /docker/pygeoapi/pygeoapi.env
 # The dev stack's live config: publishes edit it; make stack-up copies the seed when missing
 /docker/pygeoapi/pygeoapi.config.yml
+# Collections' JSON-LD templates that publishes write
+/docker/pygeoapi/templates/
 # Backups and the publish log (settings: state_dir)
 /.provider-builder/
 frontend/test-results/

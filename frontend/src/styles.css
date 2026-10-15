@@ -294,3 +294,7 @@ ol.publish-steps > li.error strong { color: var(--err); }
 .legend-labels { display: flex; justify-content: space-between; color: var(--muted); }
 .sparkline { color: var(--accent); display: block; margin: 0.5rem 0; }
 .grid-facts td { overflow-wrap: anywhere; }
+/* Linked data: template slots and the RDF preview. */
+.linked-data .slots { border-left: 3px solid var(--border); padding-left: 0.75rem; margin: 0.5rem 0; }
+.triples td { overflow-wrap: anywhere; }
+.jsonld-preview pre { max-height: 24rem; overflow: auto; background: var(--surface-2); padding: 0.5rem; border-radius: var(--radius); }

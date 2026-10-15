@@ -742,7 +742,8 @@ def _property_stats(features: list[dict[str, Any]]) -> dict[str, dict[str, Any]]
     stats: dict[str, dict[str, Any]] = {}
     for feature in features:
         for key, value in (feature.get('properties') or {}).items():
-            s = stats.setdefault(key, {'nulls': 0, 'values': [], 'types': set()})
+            s = stats.setdefault(key, {'count': 0, 'nulls': 0, 'values': [], 'types': set()})
+            s['count'] += 1
             if value in (None, ''):
                 s['nulls'] += 1
             else:
@@ -1377,8 +1378,148 @@ def httpx_host(url: str) -> str:
     return (urlsplit(url).hostname or '').lower()
 
 
+# --------------------------------------------------------------- JSON-LD preview
+
+#: Triples shown, and the size of the JSON-LD returned.
+MAX_TRIPLES = 200
+MAX_JSONLD_CHARS = 100_000
+
+
+def jsonld_preview(job: dict[str, Any]) -> dict[str, Any]:
+    """One item as pygeoapi serves it with ``?f=jsonld``, and the RDF it says.
+
+    The item comes from pygeoapi's own item API, in-process
+    (``pygeoapi/api/itemtypes.py:1027``), with ``job['template']`` as the
+    collection's ``collections/items/item.jsonld`` when given. The result is
+    parsed as JSON, then as RDF with rdflib. A remote ``@context`` is never
+    fetched: the preview says so instead.
+    """
+    from pygeoapi.api import API, APIRequest
+    from pygeoapi.api.itemtypes import get_collection_item
+    from pygeoapi.plugin import load_plugin
+    from werkzeug.test import EnvironBuilder
+
+    from .checks import one_collection_config
+
+    rid, body = _resource(job)
+    body = dict(body)
+    if job.get('template'):
+        root = tempfile.mkdtemp(prefix='jsonld-')
+        items = Path(root, 'collections', 'items')
+        items.mkdir(parents=True)
+        (items / 'item.jsonld').write_text(str(job['template']), encoding='utf-8')
+        body['templates'] = {'path': root}
+    providers = [dict(p) for p in body.get('providers') or []]
+    index = next(
+        (i for i, p in enumerate(providers) if p.get('type') in ('feature', 'record')), None
+    )
+    if index is None:
+        raise ValueError('JSON-LD items need a feature or record provider')
+    pdef = providers[index]
+    if job.get('copy_data') and isinstance(pdef.get('data'), str) and os.path.isfile(pdef['data']):
+        copy = os.path.join(
+            tempfile.mkdtemp(prefix='jsonld-data-'), os.path.basename(pdef['data'])
+        )
+        shutil.copyfile(pdef['data'], copy)
+        pdef['data'] = copy
+        providers[index] = pdef
+        body['providers'] = providers
+    item_id = job.get('item_id')
+    if item_id in (None, ''):
+        features = load_plugin('provider', pdef).query(**_api_query_kwargs(limit=1))['features']
+        if not features:
+            raise ValueError('The provider returned no item to preview')
+        item_id = features[0]['id']
+    config = one_collection_config(rid, body)
+    api = API(config, {})
+    path = f'/collections/{rid}/items/{item_id}'
+    request = EnvironBuilder(path=path, query_string='f=jsonld').get_request()
+    _headers, status, content = get_collection_item(
+        api, APIRequest.from_flask(request, api.locales), rid, str(item_id)
+    )
+    text = content.decode('utf-8') if isinstance(content, bytes) else str(content)
+    result: dict[str, Any] = {
+        'item_id': str(item_id),
+        'status': int(status),
+        'jsonld': text[:MAX_JSONLD_CHARS],
+        'triples': [],
+        'triple_count': 0,
+        'dropped': [],
+        'problems': [],
+    }
+    if int(status) != 200:
+        result['problems'].append(f'pygeoapi answered HTTP {int(status)} for {path}?f=jsonld.')
+        return result
+    try:
+        doc = json.loads(text)
+    except ValueError as err:
+        result['problems'].append(f'The template output is not valid JSON: {err}')
+        return result
+    contexts = doc.get('@context') if isinstance(doc, dict) else None
+    remote = (
+        [c for c in contexts or [] if isinstance(c, str)] if isinstance(contexts, list) else []
+    )
+    if isinstance(contexts, str):
+        remote = [contexts]
+    if remote:
+        result['problems'].append(
+            f'The @context refers to {remote[0]}: the preview never fetches remote contexts.'
+        )
+        return result
+    result['dropped'] = _undefined_terms(doc)
+    try:
+        from rdflib import Graph
+    except ImportError:
+        result['problems'].append('rdflib is not in this sandbox image, so there are no triples.')
+        return result
+    graph = Graph()
+    try:
+        graph.parse(data=text, format='json-ld')
+    except Exception as err:  # noqa: BLE001 - shown to the user as the preview's finding
+        result['problems'].append(f'rdflib could not read it as JSON-LD: {err}')
+        return result
+    triples = sorted((str(s), str(p), str(o)) for s, p, o in graph)
+    result['triple_count'] = len(triples)
+    result['triples'] = [list(t) for t in triples[:MAX_TRIPLES]]
+    return result
+
+
+def _undefined_terms(doc: Any) -> list[str]:
+    """Keys no @context defines: JSON-LD processors drop them without a word."""
+    terms: set[str] = set()
+
+    def collect(context: Any) -> None:
+        if isinstance(context, list):
+            for c in context:
+                collect(c)
+        elif isinstance(context, dict):
+            terms.update(k for k in context if not k.startswith('@'))
+
+    def walk(node: Any, found: set[str]) -> None:
+        if isinstance(node, list):
+            for n in node:
+                walk(n, found)
+        elif isinstance(node, dict):
+            collect(node.get('@context'))
+            for key, value in node.items():
+                if key.startswith('@'):
+                    continue
+                prefix, sep, _rest = key.partition(':')
+                defined = key in terms or (
+                    sep and (prefix in terms or prefix in ('http', 'https'))
+                )
+                if not defined:
+                    found.add(key)
+                walk(value, found)
+
+    found: set[str] = set()
+    walk(doc, found)
+    return sorted(found)
+
+
 JOBS: dict[str, JobFn] = {
     'probe': probe,
+    'jsonld_preview': jsonld_preview,
     'harness': harness,
     'sample': sample,
     'sql_sample': sql_sample,

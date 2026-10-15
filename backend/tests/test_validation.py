@@ -275,3 +275,17 @@ def test_geoconnex_uri_field(values: list[str], severity: str | None) -> None:
     )
     found = [f for f in rule_findings(ctx) if f.code == 'rule.geoconnex-uri']
     assert [f.severity for f in found] == ([severity] if severity else [])
+
+
+def test_a_repeated_uri_field_value_is_an_error() -> None:
+    """Every item needs its own URI: it becomes the item's @id and links (notes §8)."""
+    resource = {**GOOD, 'providers': [{**GOOD['providers'][0], 'uri_field': 'uri'}]}
+    stats = {'values': ['https://geoconnex.us/ref/gages/1'], 'nulls': 0, 'count': 5, 'distinct': 4}
+    ctx = RuleContext(
+        config=merged('obs', resource),
+        resource_id='obs',
+        probe_fields=[{'uri': {'type': 'string'}}],
+        probe_samples=[{'uri': stats}],
+    )
+    [found] = [f for f in rule_findings(ctx) if f.code == 'rule.geoconnex-uri']
+    assert found.severity == 'error' and '1 sample value(s) repeat' in found.message

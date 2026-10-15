@@ -43,7 +43,10 @@ fields:
   - key: uri_field
     type: field
     title: URI field
-    help: A property holding each record's persistent URI (its JSON-LD @id).
+    help: >-
+      A property holding each record's persistent URI, such as a Geoconnex PID.
+      pygeoapi uses it as the record's JSON-LD @id and in its links, so every
+      value must be a unique absolute URI.
     choices_from: probe.fields
     field_types: [string]
     geoconnex: true

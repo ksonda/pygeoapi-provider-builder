@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -13,7 +14,7 @@ import yaml
 from pydantic import BaseModel
 from pygeoapi_spec_providers.spec import Problem
 
-from . import egress, yamlio
+from . import egress, jsonld, yamlio
 from .catalog import Catalog, Descriptor, card, compile_descriptor
 from .errors import explain
 from .fs import PathError, list_dir, resolve_server_path
@@ -30,12 +31,13 @@ from .render import (
     variant_of,
 )
 from .runner import Outcome, Runner, make_runner
-from .settings import Settings
+from .settings import Settings, Target
 from .suggest import suggest
 from .validation import (
     Finding,
     RuleContext,
     descriptor_findings,
+    jsonld_findings,
     rule_findings,
     schema_findings,
 )
@@ -76,6 +78,8 @@ class ExportResult(BaseModel):
     env: list[EnvVar]
     instructions: list[str]
     validation: ValidateResult
+    #: The collection's JSON-LD item template, when it has one (Geoconnex options).
+    jsonld_template: str | None = None
 
 
 #: pip names of the import names descriptors require that the pinned image lacks.
@@ -106,6 +110,27 @@ def derived_image(missing: list[str], package: dict[str, Any] | None) -> dict[st
             f'RUN /venv/bin/python3 -m pip install --no-cache-dir {" ".join(packages)}\n'
         ),
     }
+
+
+def with_templates_path(form: FormState, target: Target) -> FormState:
+    """A JSON-LD template's collection points at the target's templates directory."""
+    if form.resource.jsonld_template is None or target.templates_dir is None:
+        return form
+    path = f'{target.templates_dir.server_path.rstrip("/")}/{form.resource_id}'
+    return form.model_copy(
+        update={'resource': form.resource.model_copy(update={'templates_path': path})}
+    )
+
+
+def jsonld_file(form: FormState, target: Target) -> tuple[Path, str] | None:
+    """Where a collection's JSON-LD template goes on a target, and its text."""
+    choice = form.resource.jsonld_template
+    if choice is None or target.templates_dir is None:
+        return None
+    path = (
+        target.templates_dir.host_path / form.resource_id / 'collections' / 'items' / 'item.jsonld'
+    )
+    return path, jsonld.generate(choice.id, choice.slots)
 
 
 class Service:
@@ -417,8 +442,10 @@ class Service:
     def render(self, form: FormState, target_id: str | None = None) -> RenderResult:
         indent = 4
         if target_id:
-            base = self.settings.target(target_id).base_config.read_text(encoding='utf-8')
+            target = self.settings.target(target_id)
+            base = target.base_config.read_text(encoding='utf-8')
             indent = yamlio.detect_mapping_indent(base)
+            form = with_templates_path(form, target)
         return render(form, self.catalog, mapping_indent=indent)
 
     def merged_text(self, form: FormState, target_id: str) -> str:
@@ -435,6 +462,12 @@ class Service:
         env: dict[str, str] | None = None,
     ) -> ValidateResult:
         findings = descriptor_findings(form, self.catalog)
+        first = next((p for p in probes or [] if p), None)
+        findings += jsonld_findings(
+            form,
+            self.settings.target(target_id).templates_dir is not None,
+            first.fields if first else None,
+        )
         rendered = self.render(form, target_id)
         merged: str | None = None
         try:
@@ -497,6 +530,20 @@ class Service:
                 'Docker image does both when the container restarts, for example: '
                 'docker compose restart pygeoapi.'
             )
+        template = None
+        choice = form.resource.jsonld_template
+        if choice is not None:
+            try:
+                template = jsonld.generate(choice.id, choice.slots)
+            except jsonld.TemplateError:
+                template = None  # a finding in validation already says why
+            if template is not None:
+                where = form.resource.templates_path or '<templates path>'
+                steps.insert(
+                    1,
+                    f'Save the JSON-LD template as {where}/collections/items/item.jsonld '
+                    'on the server.',
+                )
         if target.server_url:
             steps.append(
                 f'Then open {target.server_url.rstrip("/")}/collections/{form.resource_id}/items'
@@ -508,7 +555,62 @@ class Service:
             env=rendered.env,
             instructions=steps,
             validation=validation,
+            jsonld_template=template,
         )
+
+    def jsonld_preview(self, form: FormState, test_secrets: dict[str, str]) -> dict[str, Any]:
+        """An item's JSON-LD and triples, as pygeoapi serves it with the chosen template."""
+        index = next(
+            (
+                i
+                for i, p in enumerate(form.providers)
+                if p.descriptor != RAW_DESCRIPTOR
+                and self.catalog.get(p.descriptor).provider_type in ('feature', 'record')
+            ),
+            None,
+        )
+        if index is None:
+            return {
+                'ok': False,
+                'explanation': {
+                    'code': 'no-items',
+                    'message': 'JSON-LD items need a feature or record provider.',
+                    'hint': None,
+                },
+            }
+        p = form.providers[index]
+        d = self.catalog.get(p.descriptor)
+        template = None
+        if form.resource.jsonld_template is not None:
+            choice = form.resource.jsonld_template
+            try:
+                template = jsonld.generate(choice.id, choice.slots)
+            except jsonld.TemplateError as err:
+                return {
+                    'ok': False,
+                    'explanation': {'code': 'jsonld', 'message': str(err), 'hint': None},
+                }
+        rendered = render(form, self.catalog)
+        pdef = rendered.resource['providers'][index]
+        try:
+            self._check_paths(pdef, d, variant_of(p))
+        except PathError as err:
+            return {
+                'ok': False,
+                'explanation': {'code': 'path', 'message': str(err), 'hint': None},
+            }
+        job = {
+            'kind': 'jsonld_preview',
+            'resource_yaml': rendered.yaml,
+            'template': template,
+            'copy_data': bool(d.raw.get('probe', {}).get('copy_data')),
+            'python_path': self.python_path_for(d),
+        }
+        secrets = self._secrets(p, test_secrets)
+        out = self.runner.run(job, secrets, egress=self.egress_for(pdef, d, secrets))
+        res = self._outcome(out, d, pdef)
+        res['template'] = template
+        return res
 
     def verify(self, target_id: str, resource_id: str) -> dict[str, Any]:
         """Check the live endpoints on a configured target (its URL is trusted config)."""

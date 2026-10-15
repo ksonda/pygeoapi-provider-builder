@@ -7,3 +7,6 @@ h11==0.16.0
 anyio==4.15.1
 python-jsonpath==2.2.1
 sqlglot==30.22.0
+# The harness's JSON-LD preview parses items as RDF (Geoconnex options); never
+# needed by a production pygeoapi.
+rdflib==7.6.0

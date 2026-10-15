@@ -19,6 +19,10 @@ targets:
     reload_command: [docker, compose, -f, docker/compose.yaml, up, -d, --no-deps,
                      --force-recreate, --wait, pygeoapi]
     verify_timeout_s: 90
+    # Collections' JSON-LD templates (Geoconnex options): docker/pygeoapi is /config there.
+    templates_dir:
+      host_path: docker/pygeoapi/templates     # gitignored, written by publishes
+      server_path: /config/templates
 
 catalogs: [catalog]
 

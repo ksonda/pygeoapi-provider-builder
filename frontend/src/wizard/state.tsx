@@ -65,6 +65,7 @@ export function emptyResource(): ResourceState {
     extents: { spatial: { bbox: [-180, -90, 180, 90], crs: CRS84 }, temporal: null },
     linked_data_context: null,
     templates_path: null,
+    jsonld_template: null,
   }
 }
 

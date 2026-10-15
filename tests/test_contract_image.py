@@ -177,3 +177,20 @@ def test_catalog_availability_in_the_image(service: Service) -> None:
     service.check_sandbox()
     assert service.sandbox_versions == {'pygeoapi': '0.24.0', 'python': '3.12.3'}
     assert all(c['availability']['status'] == 'ready' for c in service.cards())
+
+
+def test_jsonld_preview_renders_through_pygeoapi(service: Service) -> None:
+    """Geoconnex options: an item via pygeoapi's item API with the template, then its RDF."""
+    form = CASES['csv']()
+    form['resource']['jsonld_template'] = {
+        'id': 'geoconnex-location',
+        'slots': {'name': 'stn_id', 'within': 'https://geoconnex.us/ref/states/08'},
+    }
+    result = service.jsonld_preview(FormState.model_validate(form), {})
+    assert result['ok'], (result.get('explanation'), (result.get('error') or {}).get('traceback'))
+    preview = result['result']
+    assert preview['status'] == 200 and preview['problems'] == [] and preview['dropped'] == []
+    predicates = {p for _s, p, _o in preview['triples']}
+    assert 'https://schema.org/geoWithin' in predicates
+    default = service.jsonld_preview(FormState.model_validate(CASES['csv']()), {})['result']
+    assert 'value' in default['dropped']  # pygeoapi's default leaves properties undefined

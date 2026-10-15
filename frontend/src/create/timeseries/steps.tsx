@@ -24,6 +24,7 @@ import { MapView } from '../../components/MapView'
 import { FieldError, Failure, HarnessPanel, SavePanel, described, type CreateStepProps } from '../shared'
 import { SqlConnectionFields, connectionSource } from '../sql/connection'
 import { KeyValueList } from '../steps'
+import { ODM2_VARIABLE, ODM2_VARIABLES, QUDT_UNIT, QUDT_UNITS, qudtForSymbol } from './vocab'
 import {
   buildTsSpec,
   fromHttpSuggestions,
@@ -424,14 +425,26 @@ export function TsParametersStep({ errors, showErrors }: CreateStepProps) {
               <label>
                 Observed property URI
                 <span className="muted small"> e.g. an ODM2 variable name</span>
-                <input value={p.observedProperty} placeholder="http://vocabulary.odm2.org/variablename/…" onChange={(e) => setRow(i, { observedProperty: e.target.value })} />
+                <input
+                  value={p.observedProperty}
+                  list="odm2-variables"
+                  placeholder={`${ODM2_VARIABLE}…`}
+                  onChange={(e) => setRow(i, { observedProperty: e.target.value })}
+                />
               </label>
               <label>
                 Unit URI
                 <span className="muted small"> e.g. a QUDT unit</span>
-                <input value={p.unitUri} placeholder="http://qudt.org/vocab/unit/M" onChange={(e) => setRow(i, { unitUri: e.target.value })} />
+                <input value={p.unitUri} list="qudt-units" placeholder={`${QUDT_UNIT}M`} onChange={(e) => setRow(i, { unitUri: e.target.value })} />
               </label>
             </div>
+            {!p.unitUri && qudtForSymbol(p.symbol) && (
+              <p>
+                <button type="button" className="small" onClick={() => setRow(i, { unitUri: qudtForSymbol(p.symbol) ?? '' })}>
+                  Use {qudtForSymbol(p.symbol)} for {p.symbol}
+                </button>
+              </p>
+            )}
           </details>
           {state.parameters.length > 1 && (
             <button type="button" onClick={() => setRows(state.parameters.filter((_, j) => j !== i))}>
@@ -440,6 +453,16 @@ export function TsParametersStep({ errors, showErrors }: CreateStepProps) {
           )}
         </fieldset>
       ))}
+      <datalist id="odm2-variables">
+        {ODM2_VARIABLES.map(([term, name]) => (
+          <option key={term} value={`${ODM2_VARIABLE}${term}/`} label={name} />
+        ))}
+      </datalist>
+      <datalist id="qudt-units">
+        {QUDT_UNITS.map(([code, label]) => (
+          <option key={code} value={`${QUDT_UNIT}${code}`} label={label} />
+        ))}
+      </datalist>
       <p>
         <button type="button" onClick={() => setRows([...state.parameters, { ...EMPTY }])}>
           Add a parameter

@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import __version__
+from . import __version__, jsonld
 from .catalog import CatalogError
 from .eject import EjectRequest
 from .fs import PathError
@@ -44,6 +44,10 @@ class IntrospectRequest(TestSecrets):
 class ProbeRequest(TestSecrets):
     form: FormState
     provider_index: int = 0
+
+
+class JsonLdPreviewRequest(TestSecrets):
+    form: FormState
 
 
 class RenderRequest(BaseModel):
@@ -243,6 +247,8 @@ def create_app(
                     'kind': t.kind,
                     'server_url': t.server_url,
                     'base_config': t.base_config.name,
+                    # Where JSON-LD templates go on the server (the host path stays private).
+                    'templates_path': t.templates_dir.server_path if t.templates_dir else None,
                 }
                 for t in settings.targets
             ],
@@ -292,6 +298,16 @@ def create_app(
         job = svc.jobs.submit(
             'probe', lambda: svc.probe(req.form, req.provider_index, req.test_secrets)
         )
+        return JobCreated(job_id=job.id)
+
+    @app.get('/api/jsonld/templates', tags=['mode-a'])
+    def jsonld_templates() -> list[dict[str, Any]]:
+        """The JSON-LD item templates the Describe step offers (Geoconnex options)."""
+        return jsonld.library()
+
+    @app.post('/api/jsonld/preview', status_code=202, tags=['mode-a'])
+    def jsonld_preview(req: JsonLdPreviewRequest) -> JobCreated:
+        job = svc.jobs.submit('jsonld', lambda: svc.jsonld_preview(req.form, req.test_secrets))
         return JobCreated(job_id=job.id)
 
     @app.post('/api/openapi-check', status_code=202, tags=['mode-a'])

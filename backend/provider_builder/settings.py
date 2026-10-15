@@ -32,6 +32,25 @@ class DataRoot(BaseModel):
         return v.rstrip('/') or '/'
 
 
+class TemplatesDir(BaseModel):
+    """A directory for collections' own templates, as the builder and the server see it.
+
+    Publishing a collection with a JSON-LD template writes
+    ``<host_path>/<collection id>/collections/items/item.jsonld`` and sets the
+    collection's ``templates.path`` to ``<server_path>/<collection id>``.
+    """
+
+    host_path: Path = Field(description='Path on the machine running the builder')
+    server_path: str = Field(description='Absolute path of the same directory on the server')
+
+    @field_validator('server_path')
+    @classmethod
+    def _absolute(cls, v: str) -> str:
+        if not v.startswith('/'):
+            raise ValueError('server_path must be absolute')
+        return v.rstrip('/') or '/'
+
+
 class Target(BaseModel):
     """Where a resource is published (PLAN.md §6.4).
 
@@ -68,6 +87,10 @@ class Target(BaseModel):
     keep_backups: int = 20
     admin_url: str | None = Field(
         default=None, description='admin: the Admin API base; default <server_url>/admin'
+    )
+    templates_dir: TemplatesDir | None = Field(
+        default=None,
+        description="file: where collections' JSON-LD templates go (Geoconnex options)",
     )
 
 
@@ -147,6 +170,8 @@ def load_settings(path: Path | None = None) -> Settings:
         for key in ('base_config', 'openapi', 'pid_file'):
             if t.get(key):
                 t[key] = rel(t[key])
+        if t.get('templates_dir'):
+            t['templates_dir']['host_path'] = rel(t['templates_dir']['host_path'])
     raw['state_dir'] = rel(raw.get('state_dir', '.provider-builder'))
     raw['catalogs'] = [rel(c) for c in raw.get('catalogs', ['catalog'])]
     workspace = raw.setdefault('workspace', {})

@@ -36,7 +36,7 @@ from .render import (
     form_from_resource,
     render,
 )
-from .service import ProbeSummary
+from .service import ProbeSummary, jsonld_file, with_templates_path
 from .settings import Target
 from .validation import Finding, RuleContext, descriptor_findings, rule_findings, schema_findings
 
@@ -287,7 +287,8 @@ class TargetOps:
             if req.form is None:
                 raise TargetError('A form is needed to add or update a resource.')
             indent = ce.detect_style(text).mapping_indent
-            rendered = render(req.form, self.svc.catalog, mapping_indent=indent)
+            form = with_templates_path(req.form, target)  # where a JSON-LD template goes
+            rendered = render(form, self.svc.catalog, mapping_indent=indent)
             env = rendered.env
             new_id = req.form.resource_id
             if req.action == 'add':
@@ -463,13 +464,18 @@ class TargetOps:
                     )
                 if target.openapi is not None and openapi_text:
                     atomic_write(target.openapi, openapi_text)
+                template = jsonld_file(req.form, target) if req.form else None
+                if template is not None:  # before the config that points at it
+                    template[0].parent.mkdir(parents=True, exist_ok=True)
+                    atomic_write(template[0], template[1])
                 atomic_write(target.base_config, after)
         except ConflictError as err:
             steps.append(Step(name='write', ok=False, message=str(err), detail=err.diff))
             return result(False, conflict=True)
-        steps.append(
-            Step(name='write', ok=True, message=f'Wrote {target.base_config.name}.', detail=backup)
-        )
+        written = f'Wrote {target.base_config.name}'
+        if req.form and jsonld_file(req.form, target) is not None:
+            written += ' and the JSON-LD template'
+        steps.append(Step(name='write', ok=True, message=f'{written}.', detail=backup))
         entry = LogEntry(
             id=new_id(),
             time=_now_iso(),

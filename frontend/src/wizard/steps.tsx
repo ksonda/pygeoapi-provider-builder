@@ -15,6 +15,7 @@ import type {
 import { MapView } from '../components/MapView'
 import { CopyButton, ExplainedError, FindingList, SampleTable, Spinner, YamlView } from '../components/common'
 import { DescriptorForm } from '../forms/DescriptorForm'
+import { LinkedDataPanel } from './linkedData'
 import { CoveragePreview, EdrPreview, MapPreview, probeSummary, StacPreview, TilePreview } from './previews'
 import { current, runSecrets, useWizard, type StepId, type WizardState } from './state'
 
@@ -680,6 +681,8 @@ export function DescribeStep(props: StepProps) {
         )}
         <p className="help">RFC 3339 timestamps, e.g. 2000-10-30T18:24:39Z. Leave End empty for open-ended.</p>
       </fieldset>
+
+      {(state.detail?.provider_type === 'feature' || state.detail?.provider_type === 'record') && <LinkedDataPanel settings={props.settings} />}
     </>
   )
 }
@@ -795,15 +798,15 @@ export function PublishStep({ settings }: StepProps) {
       .catch((e: unknown) => setError(String(e)))
   }, [state])
 
-  const download = () => {
-    if (!result) return
-    const url = URL.createObjectURL(new Blob([result.merged_yaml], { type: 'application/yaml' }))
+  const save = (text: string, name: string, type: string) => {
+    const url = URL.createObjectURL(new Blob([text], { type }))
     const a = document.createElement('a')
     a.href = url
-    a.download = result.merged_filename
+    a.download = name
     a.click()
     URL.revokeObjectURL(url)
   }
+  const download = () => result && save(result.merged_yaml, result.merged_filename, 'application/yaml')
 
   const check = async () => {
     setVerify('running')
@@ -833,6 +836,11 @@ export function PublishStep({ settings }: StepProps) {
           Download {result.merged_filename}
         </button>
         <CopyButton text={result.fragment_yaml} label="Copy the collection's YAML" />
+        {result.jsonld_template && (
+          <button type="button" onClick={() => save(result.jsonld_template ?? '', 'item.jsonld', 'application/ld+json')}>
+            Download item.jsonld
+          </button>
+        )}
       </p>
       <h3>What's left</h3>
       <ol>

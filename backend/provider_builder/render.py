@@ -61,6 +61,13 @@ class Extents(BaseModel):
     temporal: Temporal | None = None
 
 
+class JsonLdChoice(BaseModel):
+    """A JSON-LD template from the library and what fills its slots (jsonld.py)."""
+
+    id: str
+    slots: dict[str, str] = {}
+
+
 class ResourceState(BaseModel):
     #: stac-collection for STAC providers (FileSystem, Hateoas, Azure): render sets it.
     type: Literal['collection', 'stac-collection'] = 'collection'
@@ -71,6 +78,8 @@ class ResourceState(BaseModel):
     extents: Extents = Extents()
     linked_data_context: list[dict[str, Any]] | None = None
     templates_path: str | None = None
+    #: The item JSON-LD template to write to templates_path (Geoconnex options).
+    jsonld_template: JsonLdChoice | None = None
 
 
 class FormState(BaseModel):

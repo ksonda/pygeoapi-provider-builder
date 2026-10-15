@@ -281,7 +281,7 @@ export interface Health {
 
 export interface PublicSettings {
   data_roots: { name: string; server_path: string }[]
-  targets: { id: string; title: string; kind: string; server_url?: string | null; base_config: string }[]
+  targets: { id: string; title: string; kind: string; server_url?: string | null; base_config: string; templates_path?: string | null }[]
   geoconnex: boolean
   runner: string
 }

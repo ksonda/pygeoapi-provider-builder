@@ -256,6 +256,17 @@
             "title": "Instructions",
             "type": "array"
           },
+          "jsonld_template": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Jsonld Template"
+          },
           "merged_filename": {
             "title": "Merged Filename",
             "type": "string"
@@ -617,6 +628,49 @@
           "finished"
         ],
         "title": "JobInfo",
+        "type": "object"
+      },
+      "JsonLdChoice": {
+        "description": "A JSON-LD template from the library and what fills its slots (jsonld.py).",
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "slots": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "title": "Slots",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "JsonLdChoice",
+        "type": "object"
+      },
+      "JsonLdPreviewRequest": {
+        "properties": {
+          "form": {
+            "$ref": "#/components/schemas/FormState"
+          },
+          "test_secrets": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {},
+            "description": "ENV_NAME -> value",
+            "title": "Test Secrets",
+            "type": "object"
+          }
+        },
+        "required": [
+          "form"
+        ],
+        "title": "JsonLdPreviewRequest",
         "type": "object"
       },
       "Link": {
@@ -1143,6 +1197,16 @@
                 "crs": "http://www.opengis.net/def/crs/OGC/1.3/CRS84"
               }
             }
+          },
+          "jsonld_template": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JsonLdChoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "keywords": {
             "anyOf": [
@@ -2822,6 +2886,74 @@
         "summary": "Job Events",
         "tags": [
           "jobs"
+        ]
+      }
+    },
+    "/api/jsonld/preview": {
+      "post": {
+        "operationId": "jsonld_preview_api_jsonld_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JsonLdPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobCreated"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Jsonld Preview",
+        "tags": [
+          "mode-a"
+        ]
+      }
+    },
+    "/api/jsonld/templates": {
+      "get": {
+        "description": "The JSON-LD item templates the Describe step offers (Geoconnex options).",
+        "operationId": "jsonld_templates_api_jsonld_templates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Jsonld Templates Api Jsonld Templates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Jsonld Templates",
+        "tags": [
+          "mode-a"
         ]
       }
     },
