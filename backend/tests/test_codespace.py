@@ -255,7 +255,8 @@ def test_import_from_git(client: TestClient, settings: Any, tmp_path: Any) -> No
     assert clone.status_code == 200, clone.text
     assert clone.json()['remote'] == f'file://{source}'
     (source / 'README.md').write_text('# Changed upstream\n')
-    subprocess.run(['git', '-C', str(source), 'commit', '-qam', 'Change'], check=True)
+    identity = ['-c', 'user.name=Test', '-c', 'user.email=test@localhost']  # CI has none
+    subprocess.run(['git', '-C', str(source), *identity, 'commit', '-qam', 'Change'], check=True)
     pulled = client.post('/api/code/cloned-provider/pull')
     assert pulled.status_code == 200, pulled.text
     readme = client.get('/api/code/cloned-provider/files/README.md').json()['content']
