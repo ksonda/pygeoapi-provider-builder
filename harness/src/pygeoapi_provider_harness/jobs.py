@@ -624,7 +624,7 @@ def _probe_tile(
             except ProviderTileNotFoundError:
                 content = None
             key = f'{z}/{x}/{y}'
-            if content is None:
+            if not content:  # None (HTTP 204) or no bytes: an empty tile
                 tiles[key] = None
                 continue
             raw = previews.gunzip(bytes(content))

@@ -86,8 +86,9 @@ def test_drift_ignores_are_cited(catalog: Catalog) -> None:
 
 def test_examples_are_cited_and_exist(catalog: Catalog) -> None:
     for d in catalog.descriptors.values():
-        assert d.raw.get('examples'), f'{d.id} has no example from the pygeoapi docs'
-        for ex in d.raw['examples']:
+        if d.raw.get('origin') == 'core':  # some org plugins document no configuration at all
+            assert d.raw.get('examples'), f'{d.id} has no example from the pygeoapi docs'
+        for ex in d.raw.get('examples', []):
             m = check_citations.CITATION.match(ex['source'])
             assert m, ex['source']
             path = check_citations.resolve(m['repo'], m['path'])
@@ -119,7 +120,7 @@ def test_docs_examples_round_trip(catalog: Catalog, descriptor_id: str) -> None:
     ${ENV} placeholders instead of values.
     """
     d = catalog.get(descriptor_id)
-    for ex in d.raw['examples']:
+    for ex in d.raw.get('examples', []):
         variant = ex.get('variant')
         state = form_values_from_provider(d, ex['provider'], variant)
         assert state.extra == {}, f'{ex["id"]}: keys the descriptor does not know: {state.extra}'

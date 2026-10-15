@@ -1,0 +1,68 @@
+descriptor_version: 1
+id: pygeoapi-plugins/GeoPandas
+plugin: pygeoapi_plugins.provider.geopandas_.GeoPandasProvider
+provider_type: feature
+origin: plugin
+title: Any file GeoPandas reads (pygeoapi-plugins)
+summary: Publish a CSV, GeoPackage, GeoJSON or other file GeoPandas reads, loaded into memory, as OGC API - Features.
+source: [pygeoapi-plugins:pygeoapi_plugins/provider/geopandas_.py]
+docs: https://github.com/cgs-earth/pygeoapi-plugins#readme
+package: {name: pygeoapi-plugins, version: 0.6.0, docs: 'https://github.com/cgs-earth/pygeoapi-plugins'}
+requires: [pygeoapi_plugins]
+ogc_api: [features]
+capabilities:
+  bbox: true
+  datetime: true
+  properties: true
+  sortby: true
+  select_properties: true
+  skip_geometry: true
+  q: false
+  hits: true
+  cql: false
+  transactions: false
+probe: {kind: feature}
+egress: {kind: url, keys: [data]}
+verdict:
+  status: known-issue
+  note: >-
+    Checked with pygeoapi 0.24.0: points work, but other geometries come out
+    with their coordinates as a JSON string, and /items/{id} has no geometry.
+    Counts (hits) ignore bbox and datetime.
+notes:
+  - Needs pygeoapi-plugins in the server's image (a derived image FROM geopython/pygeoapi:0.24.0). pygeoapi 0.24 knows the plugin only by its dotted path.
+  - >-
+    The whole file is loaded into memory when pygeoapi starts. Edits (editable)
+    change only that copy, never the file.
+fields:
+  - key: data
+    type: string
+    title: File or URL
+    help: A file on the server (/data/stations.csv) or a URL GeoPandas can read.
+    required: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/geopandas_.py:235
+  - key: id_field
+    title: Identifier column
+    help: The one column GeoPandas needs named; its values become strings.
+    required: true
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/geopandas_.py:251
+  - key: geometry.x_field
+    type: string
+    title: X column
+    help: For CSV points, the longitude column. Give both columns or neither.
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/geopandas_.py:193-197
+  - key: geometry.y_field
+    type: string
+    title: Y column
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/geopandas_.py:193-197
+examples:
+  - id: readme
+    source: pygeoapi-plugins:README.md:119-124
+    provider:
+      type: feature
+      name: pygeoapi_plugins.provider.geopandas_.GeoPandasProvider
+      data: https://www.hydroshare.org/resource/3295a17b4cc24d34bd6a5c5aaf753c50/data/contents/hu02.gpkg
+      id_field: id

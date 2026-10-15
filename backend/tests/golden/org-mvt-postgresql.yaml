@@ -1,0 +1,34 @@
+waterways-thinned:
+    type: collection
+    title: pygeoapi-plugins/MVT-PostgreSQL test
+    description: pygeoapi-plugins/MVT-PostgreSQL test (pygeoapi test data)
+    keywords:
+        - test
+    extents:
+        spatial:
+            bbox: [29.0, -4.5, 30.9, -2.3]
+            crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    providers:
+        - type: tile
+          name: pygeoapi_plugins.provider.mvt_postgresql.MVTPostgreSQLProvider_
+          data:
+              host: postgis
+              dbname: test
+              user: postgres
+              password: ${PYGEOAPI_WATERWAYS_DB_PASSWORD}
+              search_path:
+                  - osm
+                  - public
+          table: hotosm_bdi_waterways
+          id_field: osm_id
+          geom_field: foo_geom
+          disable_at_z: 10
+          min_pixel: 256
+          format:
+              name: pbf
+              mimetype: application/vnd.mapbox-vector-tile
+          storage_crs: http://www.opengis.net/def/crs/EPSG/0/4326
+          options:
+              zoom:
+                  min: 8
+                  max: 15

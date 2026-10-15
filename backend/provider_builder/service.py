@@ -17,6 +17,7 @@ from . import egress, yamlio
 from .catalog import Catalog, Descriptor, card, compile_descriptor
 from .errors import explain
 from .fs import PathError, list_dir, resolve_server_path
+from .images import BASE_IMAGE
 from .jobs import JobManager
 from .render import (
     RAW_DESCRIPTOR,
@@ -75,6 +76,36 @@ class ExportResult(BaseModel):
     env: list[EnvVar]
     instructions: list[str]
     validation: ValidateResult
+
+
+#: pip names of the import names descriptors require that the pinned image lacks.
+PIP_NAMES = {
+    'azure.storage.blob': 'azure-storage-blob',
+    'opensearchpy': 'opensearch-py',
+    'pymysql': 'pymysql',
+    'oracledb': 'oracledb',
+    'pyarrow': 'pyarrow',
+    'geopandas': 'geopandas',
+}
+
+
+def derived_image(missing: list[str], package: dict[str, Any] | None) -> dict[str, Any]:
+    """What a server's image needs for a provider whose libraries are missing (PLAN.md §5.4).
+
+    An org plugin's own pinned package brings its dependencies; for a core provider,
+    the libraries it imports. The Dockerfile derives from the pinned pygeoapi image.
+    """
+    if package:
+        packages = [f'{package["name"]}=={package["version"]}']
+    else:
+        packages = [PIP_NAMES.get(m, m.split('.')[0]) for m in missing]
+    return {
+        'packages': packages,
+        'dockerfile': (
+            f'FROM {BASE_IMAGE}\n'
+            f'RUN /venv/bin/python3 -m pip install --no-cache-dir {" ".join(packages)}\n'
+        ),
+    }
 
 
 class Service:
@@ -150,6 +181,8 @@ class Service:
         else:
             missing = [m for m in requires if m != own and not self.availability.get(m, False)]
             c['availability'] = {'status': 'missing' if missing else 'ready', 'missing': missing}
+            if missing:
+                c['availability']['install'] = derived_image(missing, d.raw.get('package'))
         return c
 
     def detail(self, descriptor_id: str) -> dict[str, Any]:

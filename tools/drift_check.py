@@ -25,6 +25,9 @@ from typing import Any
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
+#: Packages whose classes are scanned: pygeoapi, and the org plugins (vendored source).
+SCANNED = ('pygeoapi.', 'pygeoapi_plugins.')
+PLUGIN_SOURCES = [ROOT / 'vendor' / 'pygeoapi-plugins']
 
 #: Variables that hold provider_def['data'] across function boundaries.
 ALIAS_HINTS = {'connection_data': ('data',), 'conn_dic': ('data',), 'conn_dict': ('data',)}
@@ -63,11 +66,27 @@ def _target(node: ast.AST) -> str | None:
     return None
 
 
-def scan(source: str) -> dict[str, set[int]]:
-    """Dotted provider_def keys read in a module, with line numbers."""
+def scan(source: str, class_name: str | None = None) -> dict[str, set[int]]:
+    """Dotted provider_def keys read in a module, with line numbers.
+
+    With ``class_name``, only that class, the module's functions and the classes
+    it names (a helper such as Oracle's DatabaseConnection) count, not unrelated
+    sibling classes (pygeoapi-plugins keeps several providers per module).
+    """
     tree = ast.parse(source)
+    if class_name is not None:
+        target = next(
+            (n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == class_name), None
+        )
+        named = {n.id for n in ast.walk(target) if isinstance(n, ast.Name)} if target else set()
+        tree.body = [
+            n
+            for n in tree.body
+            if not isinstance(n, ast.ClassDef) or n.name == class_name or n.name in named
+        ]
     aliases: dict[str, tuple[str, ...]] = {
         'provider_def': (),
+        '_provider_def': (),  # a copy (pygeoapi_plugins/provider/sparql.py:89)
         'self.data': ('data',),
         'self.options': ('options',),
         **ALIAS_HINTS,
@@ -139,7 +158,7 @@ def _source(module: str) -> Path:
     return Path(spec.origin)
 
 
-def class_sources(module: str, name: str) -> list[Path]:
+def class_sources(module: str, name: str) -> list[tuple[Path, str]]:
     """The source files of a class and its pygeoapi base classes, read statically.
 
     Static, so a provider whose own imports aren't installed here (GDAL,
@@ -159,7 +178,7 @@ def class_sources(module: str, name: str) -> list[Path]:
             for alias in node.names:
                 imported[alias.asname or alias.name] = (source, alias.name)
     local = {n.name for n in tree.body if isinstance(n, ast.ClassDef)}
-    found = [path]
+    found = [(path, name)]
     for node in tree.body:
         if not (isinstance(node, ast.ClassDef) and node.name == name):
             continue
@@ -172,7 +191,7 @@ def class_sources(module: str, name: str) -> list[Path]:
                 source, real = module, base.id
             else:
                 continue
-            if source.startswith('pygeoapi.'):
+            if source.startswith(SCANNED):
                 found += [p for p in class_sources(source, real) if p not in found]
     return found
 
@@ -184,9 +203,9 @@ def code_keys(plugin: str) -> dict[str, set[str]]:
     dotted = PLUGINS['provider'].get(plugin, plugin)
     module, cls_name = dotted.rsplit('.', 1)
     found: dict[str, set[str]] = defaultdict(set)
-    for path in class_sources(module, cls_name):
-        for key, lines in scan(path.read_text(encoding='utf-8')).items():
-            rel = path.as_posix().split('site-packages/')[-1]
+    for path, name in class_sources(module, cls_name):
+        for key, lines in scan(path.read_text(encoding='utf-8'), name).items():
+            rel = path.as_posix().split('site-packages/')[-1].split('vendor/pygeoapi-plugins/')[-1]
             found[key] |= {f'{rel}:{n}' for n in lines}
     return found
 
@@ -205,7 +224,12 @@ def descriptor_keys(catalog: Path, raw: dict[str, Any]) -> tuple[set[str], set[s
 
 def check(catalog: Path, ids: list[str]) -> int:
     problems = 0
-    for path in sorted((catalog / 'core').glob('*.yaml')):
+    for source in PLUGIN_SOURCES:  # read, never installed or imported
+        if source.is_dir() and str(source) not in sys.path:
+            sys.path.append(str(source))
+    paths = sorted((catalog / 'core').glob('*.yaml'))
+    paths += sorted((catalog / 'plugins').rglob('*.yaml'))
+    for path in paths:
         raw = yaml.safe_load(path.read_text())
         if ids and raw['id'] not in ids:
             continue

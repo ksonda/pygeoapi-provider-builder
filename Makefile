@@ -4,7 +4,7 @@ NPM := npm --prefix frontend
 COMPOSE := docker compose -f docker/compose.yaml
 IMAGE := geopython/pygeoapi:0.24.0
 
-.PHONY: help setup vendor images check check-fast lint types check-docs drift test-unit test-docker \
+.PHONY: help setup vendor images images-plugins check check-fast lint types check-docs drift test-unit test-docker \
 	frontend api-types api-types-update e2e fixtures stack-up stack-reset-config stack-down dev-backend dev-frontend
 
 ## List the targets.
@@ -22,6 +22,10 @@ setup:
 ## The sandbox image (pinned pygeoapi + the spec engine's dependencies), tagged by content.
 images:
 	$(PYTHON) tools/images.py
+
+## The sandbox image plus pygeoapi-plugins 0.6.0, to test org plugins (set sandbox.image to it).
+images-plugins: images
+	docker build -t provider-builder/sandbox-plugins:0.24.0 docker/sandbox-plugins
 
 ## Check out the source repositories the docs cite, at pinned commits.
 vendor:
@@ -57,7 +61,7 @@ test-unit:
 	$(BIN)/pytest backend/tests harness/tests runtime/tests -q
 
 ## Contract tests in the pinned image, and integration tests on the dev stack.
-test-docker: stack-up
+test-docker: stack-up images-plugins
 	PB_REQUIRE_DOCKER=1 $(BIN)/pytest tests -q
 
 ## Lint, type-check and build the frontend (the backend serves frontend/dist).

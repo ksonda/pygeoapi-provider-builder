@@ -371,4 +371,5 @@ def card(d: Descriptor) -> dict[str, Any]:
         'verdict': raw.get('verdict'),
         'version': raw.get('version'),
         'env': raw.get('env', []),
+        'package': raw.get('package'),
     }

@@ -1,0 +1,31 @@
+descriptor_version: 1
+id: pygeoapi-plugins/FileSystemXML
+plugin: pygeoapi_plugins.provider.filesystem_xml.FileSystemXMLProvider
+provider_type: stac
+origin: plugin
+title: Sitemap XML files as STAC (pygeoapi-plugins)
+summary: Publish a folder of sitemap XML files as a browsable STAC catalog, each sitemap listing its pages as links.
+source: [pygeoapi-plugins:pygeoapi_plugins/provider/filesystem_xml.py]
+docs: https://github.com/cgs-earth/pygeoapi-plugins#readme
+package: {name: pygeoapi-plugins, version: 0.6.0, docs: 'https://github.com/cgs-earth/pygeoapi-plugins'}
+requires: [pygeoapi_plugins]
+ogc_api: [stac]
+probe: {kind: stac}
+notes:
+  - Needs pygeoapi-plugins in the server's image (a derived image FROM geopython/pygeoapi:0.24.0). pygeoapi 0.24 knows the plugin only by its dotted path.
+  - Made for the sitemap files the plugins' SitemapGenerator process writes; _sitemap.xml is listed first.
+fields:
+  - key: data
+    type: path
+    path_kind: folder
+    title: Folder
+    required: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/filesystem_xml.py:63
+  - key: file_types
+    type: string[]
+    title: File types
+    suggest: [.xml]
+    required: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/filesystem_xml.py:102

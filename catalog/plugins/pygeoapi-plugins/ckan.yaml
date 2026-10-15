@@ -1,0 +1,73 @@
+descriptor_version: 1
+id: pygeoapi-plugins/CKAN
+plugin: pygeoapi_plugins.provider.ckan.CKANProvider
+provider_type: feature
+origin: plugin
+title: CKAN datastore resource (pygeoapi-plugins)
+summary: Publish one resource of a CKAN datastore as OGC API - Features.
+source: [pygeoapi-plugins:pygeoapi_plugins/provider/ckan.py]
+docs: https://github.com/cgs-earth/pygeoapi-plugins#readme
+package: {name: pygeoapi-plugins, version: 0.6.0, docs: 'https://github.com/cgs-earth/pygeoapi-plugins'}
+requires: [pygeoapi_plugins]
+ogc_api: [features]
+capabilities:
+  bbox: false
+  datetime: false
+  properties: true
+  sortby: true
+  select_properties: true
+  skip_geometry: true
+  q: true
+  hits: true
+  cql: false
+  transactions: false
+probe: {kind: feature}
+egress: {kind: url, keys: [data]}
+notes:
+  - Needs pygeoapi-plugins in the server's image (a derived image FROM geopython/pygeoapi:0.24.0). pygeoapi 0.24 knows the plugin only by its dotted path.
+  - >-
+    bbox and datetime filters are ignored. An unknown item id is a server
+    error rather than a 404, and field types are CKAN's (text, numeric).
+fields:
+  - key: data
+    type: url
+    title: datastore_search URL
+    help: The CKAN instance's datastore_search action, such as https://catalog.example.org/api/3/action/datastore_search.
+    pattern: 'datastore_search'
+    required: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/ckan.py:207
+  - key: resource_id
+    type: string
+    title: Resource id
+    help: The CKAN resource's id (a UUID).
+    required: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/ckan.py:61
+  - key: id_field
+    title: Identifier field
+    help: Often _id, CKAN's own row id.
+    required: true
+  - key: x_field
+    type: string
+    title: Longitude field
+    required: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/ckan.py:290
+  - key: y_field
+    type: string
+    title: Latitude field
+    required: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/ckan.py:291
+examples:
+  - id: readme
+    source: pygeoapi-plugins:README.md:26-33
+    provider:
+      type: feature
+      name: pygeoapi_plugins.provider.ckan.CKANProvider
+      data: https://catalog.newmexicowaterdata.org/api/3/action/datastore_search
+      resource_id: 08369d21-520b-439e-97e3-5ecb50737887
+      id_field: _id
+      x_field: LONDD
+      y_field: LATDD

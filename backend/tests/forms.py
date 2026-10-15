@@ -511,6 +511,114 @@ TIER2: dict[str, Any] = {
     ),
 }
 
+# --- Org plugins (pygeoapi-plugins 0.6.0): golden renders; verdicts are pinned in Docker ---
+
+PG_FIELDS = {
+    'data.host': 'postgis',
+    'data.dbname': 'test',
+    'data.user': 'postgres',
+    'data.search_path': ['osm', 'public'],
+    'table': 'hotosm_bdi_waterways',
+    'id_field': 'osm_id',
+    'geom_field': 'foo_geom',
+}
+PG_SECRET = {'data.password': {'env': 'PYGEOAPI_WATERWAYS_DB_PASSWORD'}}
+MVT_PLUGIN = PG_FIELDS | {
+    'storage_crs': 'http://www.opengis.net/def/crs/EPSG/0/4326',
+    'options.zoom.min': 8,  # the plugin thins out small features at low zooms
+    'options.zoom.max': 15,
+    'format.name': 'pbf',
+    'format.mimetype': 'application/vnd.mapbox-vector-tile',
+}
+BURUNDI = [29.0, -4.5, 30.9, -2.3]
+
+ORG: dict[str, Any] = {
+    'org-ckan': lambda: tier2(
+        'pygeoapi-plugins/CKAN',
+        'nm-reservoirs',
+        {
+            'data': 'https://catalog.newmexicowaterdata.org/api/3/action/datastore_search',
+            'resource_id': '08369d21-520b-439e-97e3-5ecb50737887',
+            'id_field': '_id',
+            'x_field': 'LONDD',
+            'y_field': 'LATDD',
+        },
+    ),
+    'org-geopandas': lambda: tier2(
+        'pygeoapi-plugins/GeoPandas',
+        'obs-geopandas',
+        {
+            'data': '/data/obs.csv',
+            'id_field': 'id',
+            'geometry.x_field': 'long',
+            'geometry.y_field': 'lat',
+        },
+        [-122, 43, -75, 49],
+    ),
+    'org-sparql': lambda: tier2(
+        'pygeoapi-plugins/SPARQL',
+        'obs-sparql',
+        {
+            'sparql_provider': 'CSV',
+            'data': '/data/obs.csv',
+            'id_field': 'id',
+            'geometry.x_field': 'long',
+            'geometry.y_field': 'lat',
+            'sparql_query.endpoint': 'https://graph.geoconnex.us/repositories/iow',
+            'sparql_query.bind.name': 'uri',
+            'sparql_query.bind.variable': '?subject',
+            'sparql_query.where': '[{predicate: "schema:name", object: "?name"}]',
+            'sparql_query.prefixes': {'schema': '<https://schema.org/>'},
+        },
+        [-122, 43, -75, 49],
+    ),
+    'org-pseudo-postgresql': lambda: tier2(
+        'pygeoapi-plugins/PsuedoPostgreSQL',
+        'waterways-pseudo',
+        PG_FIELDS,
+        BURUNDI,
+        variant='fields',
+        secrets=PG_SECRET,
+    ),  # fmt: skip
+    'org-mvt-postgresql': lambda: tier2(
+        'pygeoapi-plugins/MVT-PostgreSQL',
+        'waterways-thinned',
+        MVT_PLUGIN | {'disable_at_z': 10, 'min_pixel': 256},
+        BURUNDI,
+        variant='fields',
+        secrets=PG_SECRET,
+    ),
+    'org-mvt-cache-fs': lambda: tier2(
+        'pygeoapi-plugins/MVT-PostgresCacheFS',
+        'waterways-cached',
+        MVT_PLUGIN | {'cache_directory': '/tmp/pb-mvt-cache'},
+        BURUNDI,
+        variant='fields',
+        secrets=PG_SECRET,
+    ),
+    'org-mvt-cache-postgres': lambda: tier2(
+        'pygeoapi-plugins/MVT-PostgresCache',
+        'waterways-db-cached',
+        MVT_PLUGIN | {'mvt_table': 'pb_waterways_mvt'},
+        BURUNDI,
+        variant='fields',
+        secrets=PG_SECRET,
+    ),
+    'org-mvt-cache-redis': lambda: tier2(
+        'pygeoapi-plugins/MVTPostgresRedis',
+        'waterways-redis',
+        MVT_PLUGIN | {'redis_host': 'redis'},
+        BURUNDI,
+        variant='fields',
+        secrets=PG_SECRET,
+    ),
+    'org-filesystem-xml': lambda: tier2(
+        'pygeoapi-plugins/FileSystemXML',
+        'sitemaps',
+        {'data': '/data/sitemaps', 'file_types': ['.xml']},
+    ),
+}
+
 CASES = {
     'csv': csv_form,
     'geojson': geojson_form,
@@ -529,6 +637,7 @@ CASES = {
     'wmsfacade': wms_form,
     'tinydbcatalogue': tinydb_form,
     **TIER2,
+    **ORG,
 }
 #: Cases whose data is a file in the test data (no network to load): Tier 1, and the
 #: Tier-2 ones whose libraries the pinned image has.

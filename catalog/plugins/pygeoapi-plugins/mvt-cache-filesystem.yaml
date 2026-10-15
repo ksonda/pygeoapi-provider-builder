@@ -1,0 +1,242 @@
+descriptor_version: 1
+id: pygeoapi-plugins/MVT-PostgresCacheFS
+plugin: pygeoapi_plugins.provider.mvt_cache.MVTPostgresFilesystem
+provider_type: tile
+origin: plugin
+title: Vector tiles from PostGIS, cached in files (pygeoapi-plugins)
+summary: Render vector tiles from a PostGIS table and keep low-zoom tiles in a folder on the server.
+source: [pygeoapi-plugins:pygeoapi_plugins/provider/mvt_cache.py]
+docs: https://github.com/cgs-earth/pygeoapi-plugins#readme
+package: {name: pygeoapi-plugins, version: 0.6.0, docs: 'https://github.com/cgs-earth/pygeoapi-plugins'}
+requires: [pygeoapi_plugins]
+ogc_api: [tiles]
+probe: {kind: tile}
+introspect: {what: sql, dialect: postgresql}
+egress: {kind: sql, default_port: 5432}
+hide: [options.schemes]
+drift_ignore:
+  - {key: count, reason: Tiles are not counted, source: 'pygeoapi/provider/base.py:70'}
+  - {key: file_types, reason: Read only by the FileSystem and Azure STAC providers, source: 'pygeoapi/provider/base.py:80'}
+  - {key: time_field, reason: Tiles have no time filter, source: 'pygeoapi/provider/base.py:77'}
+  - {key: x_field, reason: Not read by tile providers, source: 'pygeoapi/provider/base.py:74'}
+  - {key: y_field, reason: Not read by tile providers, source: 'pygeoapi/provider/base.py:75'}
+  - {key: z_field, reason: Not read by tile providers, source: 'pygeoapi/provider/base.py:76'}
+  - {key: data.database, reason: Undocumented alias of data.dbname; the form writes dbname, source: 'pygeoapi/provider/sql.py:607'}
+  - {key: data.query, reason: Stored but never used by pygeoapi, source: 'pygeoapi/provider/sql.py:609'}
+notes:
+  - Needs pygeoapi-plugins in the server's image (a derived image FROM geopython/pygeoapi:0.24.0). pygeoapi 0.24 knows the plugin only by its dotted path.
+  - The cache is never cleared, so delete the folder after the data changes.
+variants:
+  - id: fields
+    title: Connection details
+    fields:
+      - key: data.host
+        type: string
+        title: Host
+        required: true
+        help: The database host as the pygeoapi server sees it.
+        step: connect
+        source: pygeoapi/provider/sql.py:604
+      - key: data.port
+        type: integer
+        title: Port
+        default: 5432
+        min: 1
+        max: 65535
+        step: connect
+        source: pygeoapi/provider/sql.py:605
+      - key: data.dbname
+        type: string
+        title: Database
+        required: true
+        step: connect
+        source: pygeoapi/provider/sql.py:607
+      - key: data.user
+        type: string
+        title: User
+        required: true
+        step: connect
+        source: pygeoapi/provider/sql.py:603
+      - key: data.password
+        type: secret
+        title: Password
+        required: true
+        env_name: DB_PASSWORD
+        step: connect
+        source: pygeoapi/provider/sql.py:610
+      - key: data.search_path
+        type: string[]
+        title: Schemas to search
+        help: Schemas searched in order for the table; the first match wins.
+        default: [public]
+        step: connect
+        source: pygeoapi/provider/sql.py:615
+  - id: dsn
+    title: Connection string
+    help: A SQLAlchemy URL such as postgresql://user:password@host:5432/dbname.
+    fields:
+      - key: data
+        type: secret
+        title: Connection string
+        required: true
+        format: postgresql-dsn
+        env_name: DB_DSN
+        step: connect
+        source: pygeoapi/provider/sql.py:597
+      - key: options.search_path
+        type: string[]
+        title: Schemas to search
+        default: [public]
+        step: connect
+        drift: passthrough
+        source: pygeoapi/provider/sql.py:616
+fields:
+  - key: table
+    type: string
+    title: Table or view
+    required: true
+    help: A table, view or materialized view name, without the schema.
+    choices_from: introspect.tables
+    step: connect
+    source: pygeoapi/provider/sql.py:115
+
+  - key: id_field
+    type: field
+    title: Identifier column
+    help: A unique column. pygeoapi treats it as the primary key, so views work too.
+    required: true
+    choices_from: introspect.columns
+    step: connect
+    source: pygeoapi/provider/sql.py:116
+
+  - key: geom_field
+    type: field
+    title: Geometry column
+    help: If the column doesn't exist, items are published without geometry.
+    default: geom
+    choices_from: introspect.geometry_columns
+    step: connect
+    source: pygeoapi/provider/sql.py:117
+
+  - key: options.connect_timeout
+    type: integer
+    title: Connect timeout
+    unit: s
+    min: 1
+    advanced: true
+    step: connect
+    drift: passthrough
+    source: pygeoapi/resources/schemas/config/pygeoapi-config-0.x.yml:725
+
+  - key: options.pool_size
+    type: integer
+    title: Connection pool size
+    default: 5
+    min: 1
+    advanced: true
+    step: connect
+    drift: passthrough
+    source: pygeoapi/provider/sql.py:636
+
+  - key: options.pool_timeout
+    type: integer
+    title: Pool timeout
+    unit: s
+    default: 30
+    advanced: true
+    step: connect
+    drift: passthrough
+    source: pygeoapi/provider/sql.py:639
+
+  - key: layer
+    type: string
+    title: Layer name
+    help: The vector tile layer's name; the table's name when empty.
+    advanced: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/mvt_postgresql.py:93
+  - key: disable_at_z
+    type: integer
+    title: Thin out below zoom
+    default: 6
+    advanced: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/mvt_postgresql.py:94
+  - key: simplify_geometry
+    type: boolean
+    title: Simplify geometries
+    default: true
+    advanced: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/mvt_postgresql.py:95
+  - key: simplify_method
+    type: enum
+    title: Simplification
+    choices: [ST_Simplify, ST_SimplifyPreserveTopology, ST_SimplifyVW, ST_SnapToGrid]
+    default: ST_SimplifyPreserveTopology
+    advanced: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/mvt_postgresql.py:97-98
+  - key: tile_threshold
+    type: string
+    title: Low-zoom filter
+    help: An ECQL filter for zooms below the threshold; {z} is the zoom.
+    advanced: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/mvt_postgresql.py:111
+  - key: min_pixel
+    type: integer
+    title: Smallest feature
+    default: 512
+    advanced: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/mvt_postgresql.py:116
+  - key: tile_limit
+    type: integer
+    title: Features per tile
+    help: 0 for no limit.
+    default: 0
+    advanced: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/mvt_postgresql.py:119
+  - key: tile_size
+    type: number
+    title: Tile size limit (MB)
+    help: 0 for no limit.
+    default: 0
+    advanced: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/mvt_postgresql.py:131
+  - key: format.name
+    suggest: pbf
+  - key: format.mimetype
+    suggest: application/vnd.mapbox-vector-tile
+  - key: storage_crs
+    type: crs
+    title: Storage CRS
+    help: The geometry column's CRS.
+    default: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    step: connect
+    source: pygeoapi/provider/base.py:86
+  - key: disable_cache_at_z
+    type: integer
+    title: Cache below zoom
+    default: 6
+    advanced: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/mvt_cache.py:65
+  - key: cache_directory
+    type: string
+    title: Cache folder
+    default: /tmp/mvt_cache
+    advanced: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/mvt_cache.py:198-199
+  - key: pre_cache
+    type: boolean
+    title: Render the cache at start
+    help: Renders every cacheable tile when pygeoapi starts, which can take a long time.
+    default: false
+    advanced: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/mvt_cache.py:202

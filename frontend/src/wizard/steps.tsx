@@ -221,6 +221,19 @@ export function BackendStep() {
                           </span>
                         ))}
                     </p>
+                    {c.availability.install && (
+                      <details className="small">
+                        <summary>
+                          Needs a derived image with {c.availability.install.packages.join(', ')}
+                        </summary>
+                        <p className="muted">
+                          The sandbox and the server's image lack {c.availability.missing.join(', ')}. Build the server's image from this, and point the
+                          builder's sandbox.image at one like it to test here:
+                        </p>
+                        <pre className="mono">{c.availability.install.dockerfile}</pre>
+                        <CopyButton text={c.availability.install.dockerfile} label="Copy the Dockerfile" />
+                      </details>
+                    )}
                     <p className="card-foot">
                       <span className={`badge ${c.availability.status}`}>
                         {c.availability.status === 'ready'

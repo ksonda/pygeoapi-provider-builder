@@ -1,0 +1,129 @@
+descriptor_version: 1
+id: pygeoapi-plugins/SPARQL
+plugin: pygeoapi_plugins.provider.sparql.SPARQLProvider
+provider_type: feature
+origin: plugin
+title: Features enriched from a SPARQL endpoint (pygeoapi-plugins)
+summary: Wrap another feature provider and add properties from a SPARQL endpoint, such as the Geoconnex graph, to each item.
+source: [pygeoapi-plugins:pygeoapi_plugins/provider/sparql.py]
+docs: https://github.com/cgs-earth/pygeoapi-plugins#readme
+package: {name: pygeoapi-plugins, version: 0.6.0, docs: 'https://github.com/cgs-earth/pygeoapi-plugins'}
+requires: [pygeoapi_plugins]
+ogc_api: [features]
+capabilities:
+  bbox: true
+  datetime: true
+  properties: true
+  sortby: true
+  select_properties: true
+  skip_geometry: true
+  q: false
+  hits: true
+  cql: false
+  transactions: false
+probe: {kind: feature}
+egress: {kind: url, keys: [data, sparql_query.endpoint]}
+verdict:
+  status: known-issue
+  note: >-
+    Only single items (/items/{id}) are enriched; /items lists the wrapped
+    provider's features unchanged. Wrapping GeoPandas breaks queries (its
+    arguments arrive in the wrong order), and there's no CRS support.
+notes:
+  - Needs pygeoapi-plugins in the server's image (a derived image FROM geopython/pygeoapi:0.24.0). pygeoapi 0.24 knows the plugin only by its dotted path.
+  - The wrapped provider's own keys (id_field, geometry, table, …) go in this provider too.
+  - Every single-item request makes a live SPARQL query.
+drift_ignore:
+  - {key: sparql_query.convert, reason: Read but never used, source: 'pygeoapi-plugins:pygeoapi_plugins/provider/sparql.py:97'}
+fields:
+  - key: sparql_provider
+    type: string
+    title: Wrapped provider
+    help: The feature provider that reads the data, such as CSV, GeoJSON or SQLiteGPKG.
+    required: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/sparql.py:90
+  - key: data
+    type: string
+    title: Data
+    help: The wrapped provider's data, such as /data/stations.csv.
+    required: true
+    step: connect
+    source: pygeoapi/provider/base.py:65
+  - key: id_field
+    title: Identifier field
+    required: true
+  - key: geometry.x_field
+    type: string
+    title: X column (CSV)
+    step: connect
+    drift: passthrough
+    source: pygeoapi/provider/csv_.py:61
+  - key: geometry.y_field
+    type: string
+    title: Y column (CSV)
+    step: connect
+    drift: passthrough
+    source: pygeoapi/provider/csv_.py:62
+  - key: sparql_query.endpoint
+    type: url
+    title: SPARQL endpoint
+    help: Such as https://graph.geoconnex.us/repositories/iow.
+    required: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/sparql.py:98
+  - key: sparql_query.bind.name
+    type: string
+    title: Subject property
+    help: The item property that holds the subject's IRI, or prefix:field.
+    required: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/sparql.py:117-118
+  - key: sparql_query.bind.variable
+    type: string
+    title: Subject variable
+    help: The SPARQL variable for the subject, such as ?subject.
+    required: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/sparql.py:117-119
+  - key: sparql_query.where
+    type: yaml
+    title: Triple patterns
+    help: 'A list of {predicate, object} (subject defaults to the variable) or "S P O" strings.'
+    required: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/sparql.py:122
+  - key: sparql_query.prefixes
+    type: object
+    title: Prefixes
+    help: Prefix to IRI, such as schema → <https://schema.org/>. They replace the built-in ones.
+    advanced: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/sparql.py:112-114
+  - key: sparql_query.select
+    type: string
+    title: SELECT
+    default: '*'
+    advanced: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/sparql.py:102
+  - key: sparql_query.filter
+    type: string[]
+    title: Filters
+    help: FILTER or BIND clauses added to the WHERE block.
+    advanced: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/sparql.py:132
+  - key: sparql_query.groupby
+    type: string
+    title: GROUP BY
+    advanced: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/sparql.py:133-134
+  - key: sparql_query.limit
+    type: integer
+    title: LIMIT
+    min: 1
+    advanced: true
+    step: connect
+    source: pygeoapi-plugins:pygeoapi_plugins/provider/sparql.py:104-105

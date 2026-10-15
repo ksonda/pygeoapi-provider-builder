@@ -6,6 +6,8 @@ export type ProviderType = 'feature' | 'coverage' | 'record' | 'map' | 'tile' | 
 export interface Availability {
   status: 'ready' | 'missing' | 'unknown'
   missing: string[]
+  /** What the server's image needs: pip packages, and a Dockerfile deriving from the pinned image. */
+  install?: { packages: string[]; dockerfile: string } | null
 }
 
 export interface CatalogCard {
@@ -24,6 +26,8 @@ export interface CatalogCard {
   version?: string | null
   /** Variables the provider reads itself (a created provider's spec placeholders). */
   env?: { name: string; secret?: boolean; help?: string }[]
+  /** Org plugins: the pip package that provides them. */
+  package?: { name: string; version: string; docs?: string } | null
   availability: Availability
 }
 

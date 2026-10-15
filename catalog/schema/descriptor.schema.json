@@ -76,6 +76,13 @@
       }
     },
     "notes": {"type": "array", "items": {"type": "string"}},
+    "package": {
+      "description": "The pip package that provides an org plugin; the server's image needs it (PLAN.md §5.4)",
+      "type": "object",
+      "required": ["name", "version"],
+      "additionalProperties": false,
+      "properties": {"name": {"type": "string"}, "version": {"type": "string"}, "docs": {"type": "string"}}
+    },
     "verdict": {
       "type": "object",
       "required": ["status"],
