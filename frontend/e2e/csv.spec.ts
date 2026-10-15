@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test'
 import { expectAccessible, next, startWizard } from './helpers'
 
 test('publish a CSV file as a collection @mobile', async ({ page }) => {
-  await startWizard(page, /CSV file/)
+  await startWizard(page, 'CSV file')
 
   // Connect: blocked until the required fields are filled.
   await next(page)

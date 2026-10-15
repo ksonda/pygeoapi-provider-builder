@@ -78,6 +78,9 @@ class Probe(BaseProvider):
 
     def get_fields(self):
         return self._fields
+
+    def query(self, **kwargs):
+        return None  # the probe asks a map provider for an image; this one has none
 """
 
 

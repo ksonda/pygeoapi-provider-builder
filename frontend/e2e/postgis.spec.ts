@@ -7,7 +7,7 @@ import { expectAccessible, next, startWizard } from './helpers'
 test.skip(!process.env.E2E_STACK, 'needs the dev stack (make stack-up), E2E_STACK=1')
 
 test('a wrong password gets a friendly error, then the table publishes', async ({ page }) => {
-  await startWizard(page, /PostgreSQL/)
+  await startWizard(page, 'PostgreSQL / PostGIS table or view')
   await page.getByRole('textbox', { name: 'Host', exact: true }).fill('postgis')
   await page.getByRole('textbox', { name: 'Database', exact: true }).fill('test')
   await page.getByRole('textbox', { name: 'User', exact: true }).fill('postgres')

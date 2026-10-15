@@ -5,12 +5,17 @@ export async function next(page: Page) {
   await page.getByRole('button', { name: /^(Next|Publish)$/ }).click()
 }
 
-export async function startWizard(page: Page, backend: RegExp) {
+/** A catalog card by its exact title: titles share words (CSV file, TinyDB GeoJSON file). */
+export function catalogCard(page: Page, title: string) {
+  return page.getByRole('listitem').filter({ has: page.getByRole('heading', { name: title, exact: true }) })
+}
+
+export async function startWizard(page: Page, backend: string) {
   await page.goto('/')
   await page.getByRole('button', { name: 'Create a collection' }).click()
   await expect(page.getByRole('heading', { name: /Step 1 of 8: Start/ })).toBeFocused()
   await next(page)
-  const card = page.getByRole('listitem').filter({ has: page.getByRole('heading', { name: backend }) })
+  const card = catalogCard(page, backend)
   await card.getByRole('button', { name: 'Use this' }).click()
   await expect(card.getByRole('button', { name: 'Selected' })).toBeVisible()
   await next(page)

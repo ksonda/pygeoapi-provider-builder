@@ -6,7 +6,7 @@ import { expect, test } from '@playwright/test'
 import { expectAccessible, next, startWizard } from './helpers'
 
 test('a raster as a coverage, previewed from its CoverageJSON', async ({ page }) => {
-  await startWizard(page, /Raster file \(rasterio/)
+  await startWizard(page, 'Raster file (rasterio/GDAL)')
   await page.getByRole('textbox', { name: 'Raster file', exact: true }).fill('/data/CMC_glb_TMP_TGL_2_latlon.15x.15_2020081000_P000.grib2')
   await page.getByRole('textbox', { name: 'Native format', exact: true }).fill('GRIB')
   await page.getByRole('textbox', { name: 'Native media type', exact: true }).fill('application/x-grib2')
@@ -33,7 +33,7 @@ test('a raster as a coverage, previewed from its CoverageJSON', async ({ page })
 })
 
 test('pre-rendered vector tiles from a folder, on a map of the probe’s tiles', async ({ page }) => {
-  await startWizard(page, /Pre-rendered vector tiles/)
+  await startWizard(page, 'Pre-rendered vector tiles (tippecanoe)')
   await page.getByRole('button', { name: 'Browse…' }).click()
   const browser = page.getByRole('dialog', { name: 'Choose a folder' })
   await browser.getByRole('button', { name: '📁 tiles/' }).click()
@@ -50,7 +50,7 @@ test('pre-rendered vector tiles from a folder, on a map of the probe’s tiles',
 })
 
 test('an OGR GeoPackage: the lookup fills the layer and the identifier', async ({ page }) => {
-  await startWizard(page, /GDAL\/OGR vector source/)
+  await startWizard(page, 'GDAL/OGR vector source')
   await page.getByRole('combobox', { name: 'File format', exact: true }).selectOption('GPKG')
   await page.getByRole('textbox', { name: 'File', exact: true }).fill('/data/dutch_addresses_4326.gpkg')
   await expect(page.getByText('Found 1 layer(s)')).toBeVisible()
@@ -61,7 +61,7 @@ test('an OGR GeoPackage: the lookup fills the layer and the identifier', async (
 })
 
 test('a Geoconnex JSON-LD template, previewed as RDF', async ({ page }) => {
-  await startWizard(page, /CSV file/)
+  await startWizard(page, 'CSV file')
   await page.getByRole('textbox', { name: 'CSV file', exact: true }).fill('/data/obs.csv')
   await expect(page.getByText('Found 6 column(s)')).toBeVisible()
   await page.getByRole('combobox', { name: 'X (longitude) column', exact: true }).selectOption('long')

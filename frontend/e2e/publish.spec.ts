@@ -4,7 +4,7 @@
 // target is the throwaway pygeoapi from global-setup.ts.
 import { expect, test, type Page } from '@playwright/test'
 
-import { expectAccessible, next } from './helpers'
+import { catalogCard, expectAccessible, next } from './helpers'
 import { URL } from './server'
 
 test.skip(!process.env.E2E_STACK, 'needs Docker and the sandbox (make stack-up), E2E_STACK=1')
@@ -28,7 +28,7 @@ test('publish a CSV collection to a file target', async ({ page }) => {
   await page.getByRole('combobox', { name: 'Publish to' }).selectOption({ label: 'E2E file target' })
   await expect(page.getByText(/Publishing edits that file in place/)).toBeVisible()
   await next(page)
-  const card = page.getByRole('listitem').filter({ has: page.getByRole('heading', { name: /CSV file/ }) })
+  const card = catalogCard(page, 'CSV file')
   await card.getByRole('button', { name: 'Use this' }).click()
   await next(page)
   await page.getByRole('textbox', { name: 'CSV file', exact: true }).fill('/data/obs.csv')
@@ -86,7 +86,7 @@ test('J3: a second feature provider is explained, not offered', async ({ page })
   await page.getByRole('button', { name: 'Add a provider to obs' }).click()
   await expect(page.getByRole('heading', { name: /Step 1 of 7: Choose a backend/ })).toBeVisible()
   await expect(page.getByText(/pygeoapi uses the first provider of each type/).first()).toBeVisible()
-  const card = page.getByRole('listitem').filter({ has: page.getByRole('heading', { name: /GeoJSON file/ }) })
+  const card = catalogCard(page, 'GeoJSON file')
   await expect(card.getByText('This collection already has a feature provider')).toBeVisible()
   await expect(card.getByRole('button', { name: 'Use this' })).toBeDisabled()
 })
