@@ -31,7 +31,11 @@ ruff check . && ruff format --check .
 ```
 
 `pygeoapi-provider-harness` isn't on PyPI yet: install it from the Provider
-Builder's repository (`pip install path/to/provider-builder/harness`).
+Builder's repository, with read access to it:
+
+```bash
+pip install "git+{{ source_repository }}#subdirectory=harness"
+```
 
 ## Deploy
 

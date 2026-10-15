@@ -32,6 +32,8 @@ import pygeoapi
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from pydantic import BaseModel, Field
 
+from . import SOURCE_REPOSITORY
+
 REPO = Path(__file__).resolve().parents[2]
 TEMPLATES = REPO / 'scaffold_templates'
 SCAFFOLD_VERSION = 1
@@ -217,6 +219,7 @@ def context(req: ScaffoldRequest) -> dict[str, Any]:
         'methods': methods_for(req.provider_type),
         'base_imports': sorted(base, key=lambda n: (n != 'BaseProvider', n)),
         'pygeoapi_version': pygeoapi.__version__,
+        'source_repository': SOURCE_REPOSITORY,
         'ogc_api': OGC_API[req.provider_type],
         'data_example': DATA_EXAMPLES[req.style],
         'data_help': DATA_HELP[req.style],

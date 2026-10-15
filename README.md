@@ -74,6 +74,8 @@ Desktop is still recommended.
 
 ```bash
 brew install uv node
+git clone https://github.com/ksonda/pygeoapi-provider-builder.git
+cd pygeoapi-provider-builder
 ```
 
 Install everything else. This installs the Python and Node dependencies,

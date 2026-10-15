@@ -44,6 +44,7 @@ import pygeoapi
 import yaml
 from pygeoapi_spec_providers import __version__ as RUNTIME_VERSION  # noqa: N812
 
+from . import SOURCE_REPOSITORY
 from .codespace import git
 from .images import BASE_IMAGE
 from .workspace import PLACEHOLDER, WorkspaceError, generated_descriptor, spec_env
@@ -149,6 +150,9 @@ pygeoapi-spec-providers isn't on PyPI yet, so its source is in `vendor/`:
 ```bash
 /venv/bin/python3 -m pip install vendor/pygeoapi-spec-providers .
 ```
+
+Or install it from the Provider Builder's repository, with read access to it:
+`pip install "git+{SOURCE_REPOSITORY}#subdirectory=runtime"`.
 
 `Dockerfile.test` builds a test image that way, `FROM geopython/pygeoapi:{pygeoapi.__version__}`.
 `harness.json` is the contract checklist this version passed.

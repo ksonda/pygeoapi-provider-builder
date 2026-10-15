@@ -67,7 +67,7 @@ from pygeoapi_spec_providers.timeseries import (
     sub_spec,
 )
 
-from . import egress
+from . import SOURCE_REPOSITORY, egress
 from .scaffold import CLASS, PACKAGE, SLUG, TEMPLATES, default_class, default_package, ruff
 from .scaffold import environment as scaffold_environment
 from .workspace import HIDDEN, capabilities_for
@@ -1289,6 +1289,7 @@ def eject_files(
         'spec_version': markdown(spec_version),
         'date': Code(today),
         'pygeoapi_version': Code(pygeoapi.__version__),
+        'source_repository': Code(SOURCE_REPOSITORY),
         'provider_yaml': Code(provider_yaml.rstrip('\n')),
         'env_names': markdown(', '.join(f'`{n}`' for n in env_names)) if env_names else None,
         'env': literal(env_names),
