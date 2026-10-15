@@ -1,0 +1,89 @@
+descriptor_version: 1
+id: ERDDAPTabledap
+plugin: ERDDAPTabledap
+provider_type: feature
+origin: core
+title: ERDDAP tabledap dataset
+summary: Publish observations from an ERDDAP tabledap dataset as OGC API - Features.
+ogc_api: [features]
+source: [pygeoapi/provider/erddap.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-features.html#erddap-tabledap-service
+requires: [requests]
+capabilities:
+  bbox: true
+  datetime: true      # unless max_age_hours is set (erddap.py:100-107)
+  properties: false
+  sortby: false
+  select_properties: false
+  skip_geometry: false
+  q: false
+  hits: false         # resulttype is ignored
+  cql: false
+  transactions: false
+probe: {kind: feature}
+egress: {kind: url, keys: [data]}
+verdict:
+  status: known-issue
+  note: >-
+    In pygeoapi 0.24.0 only the first page of items works: pygeoapi slices
+    [offset:limit], so ?offset=10&limit=10 returns nothing. It also lists only
+    the dataset's last property as a field, and fetches the whole query result
+    from ERDDAP for every request.
+notes:
+  - >-
+    Item ids are the id column and the time, as <id>.<time>; the dataset needs
+    columns named time, latitude and longitude.
+  - >-
+    With max_age_hours set, pygeoapi ignores a client's datetime (the docs say
+    the reverse).
+fields:
+  - key: data
+    type: url
+    title: Tabledap dataset URL
+    help: >-
+      The dataset's tabledap address, without a file type, such as
+      https://erddap.example.org/erddap/tabledap/OSMC_Points.
+    pattern: '/tabledap/[^/.]+$'
+    required: true
+    step: connect
+    source: pygeoapi/provider/erddap.py:94
+
+  - key: id_field
+    type: string
+    title: Station column
+    help: The column that names each station or platform; with the time, it makes each item's id.
+    required: true
+    step: connect
+    source: pygeoapi/provider/erddap.py:148
+
+  - key: options.filters
+    type: string
+    title: ERDDAP constraints
+    help: >-
+      Constraints added to every request, as ERDDAP writes them, such as
+      &parameter="SLP".
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/erddap.py:64
+
+  - key: options.max_age_hours
+    type: integer
+    title: Only the last hours
+    help: Only observations from this many hours back. pygeoapi then ignores a client's datetime.
+    min: 1
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/erddap.py:93
+
+examples:
+  - id: docs
+    source: docs/source/publishing/ogcapi-features.rst:132-140
+    provider:
+      type: feature
+      name: ERDDAPTabledap
+      data: http://osmc.noaa.gov/erddap/tabledap/OSMC_Points
+      id_field: PLATFORM_CODE
+      time_field: time
+      options:
+        filters: "&parameter=\"SLP\"&platform!=\"C-MAN%20WEATHER%20STATIONS\"&platform!=\"TIDE GAUGE STATIONS (GENERIC)\""
+        max_age_hours: 12

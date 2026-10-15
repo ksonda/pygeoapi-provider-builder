@@ -59,7 +59,7 @@
       "required": ["kind"],
       "additionalProperties": false,
       "properties": {
-        "kind": {"enum": ["feature", "record", "coverage", "edr", "tile", "map", "none"]},
+        "kind": {"enum": ["feature", "record", "coverage", "edr", "tile", "map", "stac", "none"]},
         "copy_data": {"type": "boolean", "description": "Probe a temporary copy of `data` (providers that write to their file)"}
       }
     },

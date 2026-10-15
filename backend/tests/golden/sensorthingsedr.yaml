@@ -1,0 +1,14 @@
+sta-edr:
+    type: collection
+    title: SensorThingsEDR test
+    description: SensorThingsEDR test (pygeoapi test data)
+    keywords:
+        - test
+    extents:
+        spatial:
+            bbox: [-180.0, -90.0, 180.0, 90.0]
+            crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    providers:
+        - type: edr
+          name: SensorThingsEDR
+          data: https://example.org/FROST-Server/v1.1/

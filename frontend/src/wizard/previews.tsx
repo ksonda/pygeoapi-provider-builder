@@ -362,6 +362,40 @@ export function EdrPreview({ r }: { r: ProbeData }) {
   )
 }
 
+export function StacPreview({ r }: { r: ProbeData }) {
+  const s = r.stac
+  if (!s) return null
+  const entries = s.entries.filter((e) => e.rel !== 'self' && e.rel !== 'root' && e.rel !== 'parent')
+  return (
+    <>
+      <Problems title="The catalog has problems:" items={s.problems} />
+      {entries.length > 0 && (
+        <div className="table-wrap" tabIndex={0} role="region" aria-label="Catalog entries">
+          <table className="compact">
+            <caption>What /stac lists at the top of the collection</caption>
+            <thead>
+              <tr>
+                <th scope="col">Link</th>
+                <th scope="col">Title</th>
+                <th scope="col">Address</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((e, i) => (
+                <tr key={`${e.href}-${i}`}>
+                  <td>{e.rel}</td>
+                  <td>{fmt(e.title)}</td>
+                  <td className="mono small">{e.href}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  )
+}
+
 /** What the probe got back, in a sentence, for the provider types without items. */
 export function probeSummary(r: ProbeData): string | null {
   const preview = r.preview
@@ -376,6 +410,9 @@ export function probeSummary(r: ProbeData): string | null {
   if (r.provider_type === 'tile') {
     const tiles = preview && 'tiles' in preview ? Object.values(preview.tiles).filter(Boolean).length : 0
     return `and served ${tiles} tile(s)`
+  }
+  if (r.provider_type === 'stac') {
+    return `and listed a ${r.stac?.type ?? 'catalog'} with ${r.stac?.links ?? 0} link(s)`
   }
   if (r.provider_type === 'edr' && !r.sample) {
     return r.edr?.domain ? `and answered a ${String(r.edr.query.query_type)} query with a ${r.edr.domain.type}` : 'but ran no sample query'

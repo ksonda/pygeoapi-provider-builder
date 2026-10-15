@@ -125,6 +125,8 @@ def probe(job: dict[str, Any]) -> dict[str, Any]:
         return _probe_coverage(provider, result, timings)
     if kind == 'map':
         return _probe_map(provider, pdef, body, result, timings)
+    if kind == 'stac':
+        return _probe_stac(provider, rid, result, timings)
     if kind == 'tile':
         return _probe_tile(
             provider, lambda: load_plugin('provider', pdef), rid, body, result, timings
@@ -652,6 +654,37 @@ def _probe_tile(
     return result
 
 
+#: Entries of a STAC catalog listed by the probe.
+STAC_ENTRIES = 25
+
+
+def _probe_stac(
+    provider: Any, rid: str, result: dict[str, Any], timings: dict[str, float]
+) -> dict[str, Any]:
+    """The collection's root catalog, as /stac/<id> asks for it (``pygeoapi/api/stac.py:183``)."""
+    t0 = time.perf_counter()
+    data = provider.get_data_path(f'{PROBE_SERVER}/stac', rid, '')
+    timings['query_ms'] = _ms(t0)
+    if not isinstance(data, dict):
+        result['stac'] = {'type': None, 'links': 0, 'entries': [], 'problems': [
+            f'The root of the collection is a {type(data).__name__}, not a catalog.'
+        ]}  # fmt: skip
+        return result
+    links = [link for link in data.get('links') or [] if isinstance(link, dict)]
+    result['stac'] = _jsonable(
+        {
+            'type': data.get('type'),
+            'links': len(links),
+            'entries': [
+                {'rel': link.get('rel'), 'href': link.get('href'), 'title': link.get('title')}
+                for link in links[:STAC_ENTRIES]
+            ],
+            'problems': [] if links else ['The catalog lists nothing: check the file types.'],
+        }
+    )
+    return result
+
+
 def _jsonable(value: Any) -> Any:
     """Plain JSON: numpy values, tuples, dates and enums become lists, numbers or text."""
     import datetime as dt
@@ -1155,12 +1188,18 @@ def openapi(job: dict[str, Any]) -> dict[str, Any]:
 
 
 def availability(job: dict[str, Any]) -> dict[str, Any]:
-    """Which top-level modules can be imported (without importing them)."""
+    """Which modules can be imported, without importing them.
+
+    A dotted name (azure.storage.blob) is looked up whole once its top-level
+    package exists, since a namespace package such as azure can be there alone.
+    """
     found = {}
     for name in job.get('modules', []):
         top = name.split('.')[0]
         try:
-            found[name] = importlib.util.find_spec(top) is not None
+            found[name] = importlib.util.find_spec(top) is not None and (
+                name == top or importlib.util.find_spec(name) is not None
+            )
         except (ImportError, ValueError):
             found[name] = False
     return {'modules': found}

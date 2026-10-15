@@ -1,0 +1,15 @@
+places-mongo:
+    type: collection
+    title: MongoDB test
+    description: MongoDB test (pygeoapi test data)
+    keywords:
+        - test
+    extents:
+        spatial:
+            bbox: [-180.0, -90.0, 180.0, 90.0]
+            crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    providers:
+        - type: feature
+          name: MongoDB
+          data: ${PYGEOAPI_PLACES_MONGO_MONGODB_URL}
+          collection: places

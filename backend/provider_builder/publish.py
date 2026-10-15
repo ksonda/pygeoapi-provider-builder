@@ -207,35 +207,39 @@ DATA_PATHS = {
 def check_once(
     base: str, resource_id: str, expect: Literal['present', 'absent'], provider_type: str | None
 ) -> list[dict[str, Any]]:
-    """One round of checks. ``/collections/{id}``, not ``/collections`` (notes §1.5)."""
+    """One round of checks. ``/collections/{id}``, not ``/collections`` (notes §1.5).
+
+    STAC collections are served under ``/stac/{id}`` instead (pygeoapi/api/stac.py:153).
+    """
+    if provider_type == 'stac':
+        urls = [f'{base}/stac/{resource_id}?f=json']
+        return [_check(url, expect) for url in urls]
     urls = [f'{base}/collections/{resource_id}?f=json']
     if expect == 'present' and provider_type in DATA_PATHS:
         urls.append(f'{base}/collections/{resource_id}{DATA_PATHS[provider_type]}')
-    checks: list[dict[str, Any]] = []
-    for url in urls:
-        try:
-            r = httpx.get(url, timeout=10)
-        except httpx.HTTPError as err:
-            checks.append(
-                {'url': url, 'status': None, 'ok': False, 'detail': f"Couldn't reach it: {err}"}
-            )
-            continue
-        detail = None
-        if expect == 'absent':
-            ok = r.status_code == 404
-            detail = 'gone' if ok else 'still served'
-        else:
-            ok = r.status_code == 200
-            if ok and url.endswith('limit=1'):
-                try:
-                    n = len(r.json().get('features', []))
-                    detail = f'{n} feature(s) returned'
-                except ValueError:
-                    ok, detail = False, 'not JSON'
-            elif not ok:
-                detail = r.text[:300]
-        checks.append({'url': url, 'status': r.status_code, 'ok': ok, 'detail': detail})
-    return checks
+    return [_check(url, expect) for url in urls]
+
+
+def _check(url: str, expect: Literal['present', 'absent']) -> dict[str, Any]:
+    try:
+        r = httpx.get(url, timeout=10)
+    except httpx.HTTPError as err:
+        return {'url': url, 'status': None, 'ok': False, 'detail': f"Couldn't reach it: {err}"}
+    detail = None
+    if expect == 'absent':
+        ok = r.status_code == 404
+        detail = 'gone' if ok else 'still served'
+    else:
+        ok = r.status_code == 200
+        if ok and url.endswith('limit=1'):
+            try:
+                n = len(r.json().get('features', []))
+                detail = f'{n} feature(s) returned'
+            except ValueError:
+                ok, detail = False, 'not JSON'
+        elif not ok:
+            detail = r.text[:300]
+    return {'url': url, 'status': r.status_code, 'ok': ok, 'detail': detail}
 
 
 def verify(

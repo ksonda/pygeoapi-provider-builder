@@ -139,7 +139,7 @@ def postgres_dsn_form() -> dict:
                     'table': 'hotosm_bdi_drains',
                     'id_field': 'osm_id',
                     'geom_field': 'foo_geom',
-                    'options.connect_timeout': '10',
+                    'options.connect_timeout': 10,
                 },
                 'secrets': {'data': {'env': 'PYGEOAPI_DRAINS_DB_DSN'}},
             }
@@ -312,6 +312,205 @@ def tinydb_form() -> dict[str, Any]:
     )
 
 
+# --- Tier 2: golden renders and schema checks; integration where a fixture is cheap ---
+
+
+def tier2(
+    descriptor: str, rid: str, values: dict[str, Any], bbox: list[float] = WORLD, **more: Any
+) -> dict[str, Any]:
+    return _resource(rid, f'{descriptor} test', bbox) | provider(descriptor, values, **more)
+
+
+TIER2: dict[str, Any] = {
+    'tinydb': lambda: tier2(
+        'TinyDB',
+        'hydat',
+        {
+            'data': '/data/canada-hydat-daily-mean-02HC003.tinydb',
+            'id_field': 'IDENTIFIER',
+            'time_field': 'DATE',
+        },
+        [-79.6, 43.6, -79.4, 43.8],
+    ),
+    'parquet': lambda: tier2(
+        'Parquet',
+        'parquet-random',
+        {
+            'data.source': '/data/random.parquet',
+            'id_field': 'id',
+            'x_field': '[minlon, maxlon]',
+            'y_field': '[minlat, maxlat]',
+            'data.batch_size': 10000,
+        },
+    ),
+    'erddaptabledap': lambda: tier2(
+        'ERDDAPTabledap',
+        'osmc-points',
+        {
+            'data': 'https://osmc.noaa.gov/erddap/tabledap/OSMC_Points',
+            'id_field': 'PLATFORM_CODE',
+            'time_field': 'time',
+            'options.max_age_hours': 12,
+        },
+    ),
+    'socrata': lambda: tier2(
+        'Socrata',
+        'earthquakes',
+        {
+            'data': 'https://soda.demo.socrata.com/',
+            'resource_id': 'emdb-u46w',
+            'id_field': 'earthquake_id',
+            'geom_field': 'location',
+            'time_field': 'datetime',
+        },
+        secrets={'token': {'env': 'PYGEOAPI_EARTHQUAKES_SOCRATA_TOKEN'}},
+    ),
+    'sensorthings': lambda: tier2(
+        'SensorThings',
+        'datastreams',
+        {
+            'data': 'https://example.org/FROST-Server/v1.1/',
+            'entity': 'Datastreams',
+            'time_field': 'phenomenonTime',
+            'intralink': True,
+        },
+    ),
+    'sensorthingsedr': lambda: tier2(
+        'SensorThingsEDR', 'sta-edr', {'data': 'https://example.org/FROST-Server/v1.1/'}
+    ),
+    'elasticsearch': lambda: tier2(
+        'Elasticsearch',
+        'places-es',
+        {'id_field': 'geonameid', 'time_field': 'datetimefield'},
+        variant='secret',
+        secrets={'data': {'env': 'PYGEOAPI_PLACES_ES_INDEX_URL'}},
+    ),
+    'elasticsearchcatalogue': lambda: tier2(
+        'ElasticsearchCatalogue',
+        'metadata-es',
+        {'data': 'http://search.example.org:9200/metadata', 'id_field': 'identifier'},
+        variant='url',
+    ),
+    'opensearch': lambda: tier2(
+        'OpenSearch',
+        'places-os',
+        {'data': 'http://search.example.org:9200/places', 'id_field': 'geonameid'},
+        variant='url',
+    ),
+    'mongodb': lambda: tier2(
+        'MongoDB',
+        'places-mongo',
+        {'collection': 'places'},
+        variant='secret',
+        secrets={'data': {'env': 'PYGEOAPI_PLACES_MONGO_MONGODB_URL'}},
+    ),
+    'mysql': lambda: tier2(
+        'MySQL',
+        'mysql-locations',
+        {
+            'data.host': 'mysql.example.org',
+            'data.dbname': 'geo',
+            'data.user': 'reader',
+            'data.search_path': ['geo'],
+            'table': 'location',
+            'id_field': 'locationID',
+            'geom_field': 'locationCoordinates',
+        },
+        secrets={'data.password': {'env': 'PYGEOAPI_MYSQL_LOCATIONS_DB_PASSWORD'}},
+    ),
+    'oracledb': lambda: tier2(
+        'OracleDB',
+        'lakes-oracle',
+        {
+            'data.host': 'oracle.example.org',
+            'data.service_name': 'XEPDB1',
+            'data.user': 'geo',
+            'table': 'lakes',
+            'id_field': 'id',
+            'geom_field': 'geometry',
+            'title_field': 'name',
+            'sdo_operator': 'sdo_relate',
+            'mandatory_properties': ['group_id'],
+        },
+        variant='service',
+        secrets={'data.password': {'env': 'PYGEOAPI_LAKES_ORACLE_DB_PASSWORD'}},
+    ),
+    'cswfacade': lambda: tier2(
+        'CSWFacade',
+        'pycsw-demo',
+        {
+            'data': 'https://demo.pycsw.org/cite/csw',
+            'id_field': 'identifier',
+            'title_field': 'title',
+        },
+    ),
+    'filesystem': lambda: tier2(
+        'FileSystem', 'data-folder', {'data': '/data', 'file_types': ['.grib2', '.nc', '.gpkg']}
+    ),
+    'hateoas': lambda: tier2('Hateoas', 'stac-demo', {'data': '/data/stac-catalog'}),
+    'azureblobstorage': lambda: tier2(
+        'AzureBlobStorage', 'azure-gribs', {'data': 'gribs', 'file_types': ['.grib2']}
+    ),
+    'mvt-elastic': lambda: tier2(
+        'MVT-elastic',
+        'places-es-tiles',
+        {
+            'data': 'http://search.example.org:9200/places/_mvt/geometry/{z}/{x}/{y}?grid_precision=0',
+            'options.zoom.min': 0,
+            'options.zoom.max': 5,
+            'format.name': 'pbf',
+            'format.mimetype': 'application/vnd.mapbox-vector-tile',
+        },
+    ),
+    'mvt-postgresql': lambda: tier2(
+        'MVT-postgresql',
+        'waterway-tiles',
+        {
+            'data.host': 'postgis',
+            'data.dbname': 'test',
+            'data.user': 'postgres',
+            'data.search_path': ['osm', 'public'],
+            'table': 'hotosm_bdi_waterways',
+            'id_field': 'osm_id',
+            'geom_field': 'foo_geom',
+            'storage_crs': 'http://www.opengis.net/def/crs/EPSG/0/4326',
+            'options.zoom.min': 0,
+            'options.zoom.max': 15,
+            'format.name': 'pbf',
+            'format.mimetype': 'application/vnd.mapbox-vector-tile',
+        },
+        [29.0, -4.5, 30.9, -2.3],
+        variant='fields',
+        secrets={'data.password': {'env': 'PYGEOAPI_WATERWAYS_DB_PASSWORD'}},
+    ),
+    'wmtsfacade': lambda: tier2(
+        'WMTSFacade',
+        'wmts-grid',
+        {
+            'data': 'https://wmts.example.org/geoserver/gwc/service/wmts',
+            'options.wmts_layer': 'camb:grid',
+            'options.wmts_tile_matrix_set': 'WebMercatorQuad',
+            'options.scheme': 'WebMercatorQuad',
+            'options.zoom.min': 0,
+            'options.zoom.max': 20,
+            'format.name': 'png',
+            'format.mimetype': 'image/png',
+        },
+    ),
+    'mapscript': lambda: tier2(
+        'MapScript',
+        'addresses-map',
+        {
+            'data': '/data/dutch_addresses_shape_4326/inspireadressen.shp',
+            'options.type': 'MS_LAYER_POINT',
+            'options.layer': 'inspireadressen',
+            'format.name': 'png',
+            'format.mimetype': 'image/png',
+        },
+        DUTCH,
+    ),
+}
+
 CASES = {
     'csv': csv_form,
     'geojson': geojson_form,
@@ -329,9 +528,12 @@ CASES = {
     'mvt-proxy': mvt_proxy_form,
     'wmsfacade': wms_form,
     'tinydbcatalogue': tinydb_form,
+    **TIER2,
 }
-#: Tier-1 cases whose data is a file in pygeoapi's test data (no network to load).
+#: Cases whose data is a file in the test data (no network to load): Tier 1, and the
+#: Tier-2 ones whose libraries the pinned image has.
 FILE_CASES = ['csv', 'geojson', 'sqlitegpkg', 'ogr-gpkg', 'ogr-shapefile', 'rasterio', 'xarray',
-              'xarray-edr', 'mvt-tippecanoe', 'tinydbcatalogue']  # fmt: skip
+              'xarray-edr', 'mvt-tippecanoe', 'tinydbcatalogue', 'tinydb', 'filesystem', 'hateoas',
+              'mapscript']  # fmt: skip
 #: Tier-1 cases that load from the mock API on the dev stack's network.
 MOCK_CASES = ['esri', 'esri-login', 'mvt-proxy', 'wmsfacade']

@@ -1,0 +1,117 @@
+descriptor_version: 1
+id: MySQL
+plugin: MySQL
+provider_type: feature
+origin: core
+title: MySQL table or view
+summary: Publish a MySQL table or view with a geometry column as OGC API - Features.
+ogc_api: [features]
+source: [pygeoapi/provider/sql.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-features.html#mysql
+requires: [sqlalchemy, geoalchemy2, pymysql]
+capabilities:
+  bbox: true
+  datetime: true
+  properties: true
+  sortby: true
+  select_properties: true
+  skip_geometry: true
+  q: false
+  hits: true
+  cql: true
+  transactions: true
+probe: {kind: feature}
+introspect: {what: sql, dialect: mysql}
+egress: {kind: sql, default_port: 3306}
+drift_ignore:
+  - {key: data.database, reason: Undocumented alias of data.dbname; the form writes dbname, source: 'pygeoapi/provider/sql.py:607'}
+  - {key: data.query, reason: Stored but never used by pygeoapi, source: 'pygeoapi/provider/sql.py:609'}
+notes:
+  - >-
+    The pygeoapi image doesn't include pymysql: build an image that adds it.
+  - To publish a custom query, create a view in the database and pick it as the table.
+fields:
+  - key: data.host
+    type: string
+    title: Host
+    required: true
+    help: The database host as the pygeoapi server sees it.
+    step: connect
+    source: pygeoapi/provider/sql.py:604
+  - key: data.port
+    type: integer
+    title: Port
+    default: 3306
+    min: 1
+    max: 65535
+    step: connect
+    source: pygeoapi/provider/sql.py:605
+  - key: data.dbname
+    type: string
+    title: Database
+    required: true
+    step: connect
+    source: pygeoapi/provider/sql.py:607
+  - key: data.user
+    type: string
+    title: User
+    required: true
+    step: connect
+    source: pygeoapi/provider/sql.py:603
+  - key: data.password
+    type: secret
+    title: Password
+    required: true
+    env_name: DB_PASSWORD
+    step: connect
+    source: pygeoapi/provider/sql.py:610
+  - key: data.search_path
+    type: string[]
+    title: Database to search
+    help: For MySQL, the database name again; pygeoapi looks for the table there.
+    required: true
+    step: connect
+    source: pygeoapi/provider/sql.py:615
+
+  - key: table
+    type: string
+    title: Table or view
+    required: true
+    choices_from: introspect.tables
+    step: connect
+    source: pygeoapi/provider/sql.py:115
+
+  - key: id_field
+    type: field
+    title: Identifier column
+    help: A unique column. pygeoapi treats it as the primary key, so views work too.
+    required: true
+    choices_from: introspect.columns
+    step: connect
+    source: pygeoapi/provider/sql.py:116
+
+  - key: geom_field
+    type: field
+    title: Geometry column
+    help: If the column doesn't exist, items are published without geometry.
+    default: geom
+    choices_from: introspect.geometry_columns
+    step: connect
+    source: pygeoapi/provider/sql.py:117
+
+examples:
+  - id: docs
+    source: docs/source/publishing/ogcapi-features.rst:240-252
+    provider:
+      type: feature
+      name: MySQL
+      data:
+        host: 127.0.0.1
+        port: 3306
+        dbname: test_geo_app
+        user: mysql
+        password: mysql
+        search_path: [test_geo_app]
+      id_field: locationID
+      table: location
+      geom_field: locationCoordinates

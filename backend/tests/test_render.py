@@ -9,9 +9,15 @@ from pathlib import Path
 
 import pytest
 import yaml
-from forms import CASES, csv_form, postgres_form
+from forms import BASE_CONFIG, CASES, csv_form, postgres_form
 from provider_builder.catalog import Catalog
 from provider_builder.render import FormState, env_name, render
+from provider_builder.validation import (
+    RuleContext,
+    descriptor_findings,
+    rule_findings,
+    schema_findings,
+)
 from pygeoapi.util import yaml_load
 
 GOLDEN = Path(__file__).parent / 'golden'
@@ -97,3 +103,16 @@ def test_temporal_always_has_both_keys(catalog: Catalog) -> None:
 )
 def test_env_names(resource_id: str, field: dict, expected: str) -> None:
     assert env_name(resource_id, field) == expected
+
+
+@pytest.mark.parametrize('name', sorted(CASES))
+def test_every_case_passes_the_schema_and_rules(catalog: Catalog, name: str) -> None:
+    """Each case, merged into a config, passes pygeoapi's schema and the builder's rules."""
+    form = FormState.model_validate(CASES[name]())
+    rendered = render(form, catalog)
+    config = yaml.safe_load(BASE_CONFIG.read_text(encoding='utf-8'))
+    config['resources'][form.resource_id] = rendered.resource
+    env = {e.name: 'secret-value' for e in rendered.env}
+    findings = descriptor_findings(form, catalog) + schema_findings(config, form.resource_id, env)
+    findings += rule_findings(RuleContext(config=config, resource_id=form.resource_id))
+    assert [f.message for f in findings if f.severity == 'error'] == []

@@ -1,0 +1,53 @@
+descriptor_version: 1
+id: MVT-elastic
+plugin: MVT-elastic
+provider_type: tile
+origin: core
+title: Vector tiles from Elasticsearch
+summary: >-
+  Publish Mapbox vector tiles that Elasticsearch renders from an index (its
+  _mvt vector tile search API) as OGC API - Tiles.
+ogc_api: [tiles]
+source: [pygeoapi/provider/mvt_elastic.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-tiles.html#mvt-elastic
+requires: [requests]
+probe: {kind: tile}
+egress: {kind: url, keys: [data]}
+hide: [options.schemes]
+notes:
+  - Only the WebMercatorQuad tiling scheme is offered.
+  - >-
+    Keep grid_precision=0 in the URL: other precisions ask Elasticsearch for
+    aggregations, which its free version doesn't support.
+fields:
+  - key: data
+    type: url
+    title: Tile URL template
+    help: >-
+      The index's _mvt endpoint with {z}/{x}/{y}, such as
+      http://search.example.org:9200/places/_mvt/geometry/{z}/{x}/{y}?grid_precision=0.
+    pattern: '/_mvt/[^/]+/\{z\}/\{x\}/\{y\}'
+    required: true
+    step: connect
+    source: pygeoapi/provider/mvt_elastic.py:67-72
+
+  - key: format.name
+    suggest: pbf
+
+  - key: format.mimetype
+    suggest: application/vnd.mapbox-vector-tile
+
+examples:
+  - id: docs
+    source: docs/source/publishing/ogcapi-tiles.rst:72-85
+    provider:
+      type: tile
+      name: MVT-elastic
+      data: http://localhost:9200/ne_110m_populated_places_simple2/_mvt/geometry/{z}/{x}/{y}?grid_precision=0
+      options:
+        zoom:
+          min: 0
+          max: 5
+      format:
+        name: pbf
+        mimetype: application/vnd.mapbox-vector-tile

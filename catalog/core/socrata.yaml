@@ -1,0 +1,77 @@
+descriptor_version: 1
+id: Socrata
+plugin: Socrata
+provider_type: feature
+origin: core
+title: Socrata open data dataset
+summary: Publish a dataset from a Socrata open data portal (SODA API) as OGC API - Features.
+ogc_api: [features]
+source: [pygeoapi/provider/socrata.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-features.html#socrata
+requires: [sodapy]
+capabilities:
+  bbox: true          # needs geom_field
+  datetime: true      # needs time_field
+  properties: true
+  sortby: true
+  select_properties: true
+  skip_geometry: true
+  q: false
+  hits: true
+  cql: false
+  transactions: false
+probe: {kind: feature}
+egress: {kind: url, keys: [data]}
+notes:
+  - pygeoapi talks to the portal over HTTPS, whatever scheme the address has.
+  - Without an app token, Socrata throttles requests from busy servers.
+fields:
+  - key: data
+    type: url
+    title: Portal address
+    help: The Socrata portal's address, such as https://data.cityofchicago.org/.
+    required: true
+    step: connect
+    source: pygeoapi/provider/socrata.py:68
+
+  - key: resource_id
+    type: string
+    title: Dataset id
+    help: The dataset's 4x4 id, such as emdb-u46w, from its address on the portal.
+    pattern: '^[a-z0-9]{4}-[a-z0-9]{4}$'
+    required: true
+    step: connect
+    source: pygeoapi/provider/socrata.py:65
+
+  - key: id_field
+    title: Identifier column
+    required: true
+    step: connect
+
+  - key: geom_field
+    type: string
+    title: Location column
+    help: The dataset's location (point) column. bbox filters need it.
+    step: connect
+    source: pygeoapi/provider/socrata.py:67
+
+  - key: token
+    type: secret
+    title: App token
+    help: An app token for the portal, which raises its rate limits.
+    env_name: SOCRATA_TOKEN
+    step: connect
+    source: pygeoapi/provider/socrata.py:66
+
+examples:
+  - id: docs
+    source: docs/source/publishing/ogcapi-features.rst:837-846
+    provider:
+      type: feature
+      name: Socrata
+      data: https://soda.demo.socrata.com/
+      resource_id: emdb-u46w
+      id_field: earthquake_id
+      geom_field: location
+      time_field: datetime
+      token: my_token

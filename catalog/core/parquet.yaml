@@ -1,0 +1,108 @@
+descriptor_version: 1
+id: Parquet
+plugin: Parquet
+provider_type: feature
+origin: core
+title: GeoParquet or Parquet file
+summary: Publish a GeoParquet or Parquet file, or a folder or S3 prefix of them, as OGC API - Features.
+ogc_api: [features]
+source: [pygeoapi/provider/parquet.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-features.html#parquet
+requires: [pyarrow, geopandas]
+capabilities:
+  bbox: true
+  datetime: true
+  properties: true
+  sortby: false
+  select_properties: false
+  skip_geometry: true
+  q: false
+  hits: true
+  cql: false
+  transactions: false
+probe: {kind: feature}
+notes:
+  - >-
+    The pygeoapi image doesn't include pyarrow or geopandas: build an image
+    that adds them.
+  - >-
+    GeoParquet 1.1 files describe their own geometry. For older files, name
+    the coordinate columns: one each for points, or two (min, max) each for
+    other geometries' bounding boxes.
+fields:
+  - key: data.source
+    type: string
+    title: File, folder or S3 prefix
+    help: >-
+      A .parquet file or a folder of them on the server, or an s3:// prefix
+      (the sandbox can't reach S3, so test with local data).
+    required: true
+    step: connect
+    source: pygeoapi/provider/parquet.py:124
+
+  - key: id_field
+    title: Identifier column
+    help: A unique column; without one pygeoapi numbers the rows, which is slow to page.
+    step: connect
+
+  - key: x_field
+    type: yaml
+    title: X columns
+    help: For files that aren't GeoParquet 1.1, the x column of points, or [minx, maxx] of bounding boxes.
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/parquet.py:216-233
+
+  - key: y_field
+    type: yaml
+    title: Y columns
+    help: The y column of points, or [miny, maxy] of bounding boxes.
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/parquet.py:216-233
+
+  - key: data.batch_size
+    type: integer
+    title: Rows per batch
+    help: How many rows pygeoapi reads at a time; smaller batches use less memory.
+    default: 20000
+    min: 1
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/parquet.py:134
+
+  - key: data.batch_readahead
+    type: integer
+    title: Batches read ahead
+    default: 2
+    min: 0
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/parquet.py:141
+
+examples:
+  - id: docs-naive
+    source: docs/source/publishing/ogcapi-features.rst:592-605
+    provider:
+      type: feature
+      name: Parquet
+      data:
+        source: ./tests/data/parquet/naive/random.parquet
+      id_field: id
+      time_field: time
+      x_field:
+        - minlon
+        - maxlon
+      y_field:
+        - minlat
+        - maxlat
+  - id: docs-geoparquet
+    source: docs/source/publishing/ogcapi-features.rst:613-620
+    provider:
+      type: feature
+      name: Parquet
+      id_field: id
+      data:
+        source: ./tests/data/parquet/geoparquet1.1/nyc_subset_overture.parquet
+        batch_size: 10000
+        batch_readahead: 2

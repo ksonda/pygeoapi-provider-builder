@@ -1,0 +1,94 @@
+descriptor_version: 1
+id: SensorThings
+plugin: SensorThings
+provider_type: feature
+origin: core
+title: OGC SensorThings API entity
+summary: >-
+  Publish one entity type of a SensorThings API server, such as its Things or
+  Datastreams, as OGC API - Features.
+ogc_api: [features]
+source: [pygeoapi/provider/sensorthings.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-features.html#sensorthings-api
+requires: [requests]
+capabilities:
+  bbox: true
+  datetime: true
+  properties: true
+  sortby: true
+  select_properties: true
+  skip_geometry: true
+  q: false
+  hits: true
+  cql: false
+  transactions: true
+probe: {kind: feature}
+egress: {kind: url, keys: [data]}
+drift_ignore:
+  - {key: rel_link, reason: Set only by pygeoapi's own tests; pygeoapi otherwise reads server.url, source: 'pygeoapi/provider/sensorthings.py:605-608'}
+  - {key: entity.Locations, reason: 'Not a key: a variable named entity holds a SensorThings entity', source: 'pygeoapi/provider/sensorthings.py:529-532'}
+  - {key: entity.properties, reason: 'Not a key: a variable named entity holds a SensorThings entity', source: 'pygeoapi/provider/sensorthings.py:529-532'}
+  - {key: entity.@iot.selfLink, reason: 'Not a key: a variable named entity holds a SensorThings entity', source: 'pygeoapi/provider/sensorthings.py:529-532'}
+notes:
+  - >-
+    pygeoapi expands each entity with the ones it needs for a geometry (a
+    Datastream's Thing and Locations, say). Items are identified by @iot.id
+    unless you name another identifier.
+  - >-
+    With several SensorThings collections on one server, intralink makes their
+    items link to each other instead of to the SensorThings server.
+fields:
+  - key: data
+    type: url
+    title: SensorThings address
+    help: >-
+      The server's versioned root, such as https://example.org/FROST-Server/v1.1/,
+      or an entity's address such as …/v1.1/Datastreams.
+    required: true
+    step: connect
+    source: pygeoapi/provider/sensorthings.py:579-590
+
+  - key: entity
+    type: enum
+    title: Entity
+    help: The entity type to publish. Leave empty when the address already ends with it.
+    choices: [Things, Datastreams, Observations, Locations, Sensors, ObservedProperties, FeaturesOfInterest, HistoricalLocations]
+    step: connect
+    source: pygeoapi/provider/sensorthings.py:581
+
+  - key: id_field
+    title: Identifier
+    help: The entity property that identifies items; @iot.id when empty.
+    step: connect
+
+  - key: expand
+    type: string
+    title: Expand
+    help: >-
+      A $expand to use instead of pygeoapi's own for this entity, such as
+      Thing/Locations,Observations($top=1).
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/sensorthings.py:601-602
+
+  - key: intralink
+    type: boolean
+    title: Link to other SensorThings collections
+    help: Link expanded entities to this server's other SensorThings collections.
+    default: false
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/sensorthings.py:605
+
+examples:
+  - id: docs
+    source: docs/source/publishing/ogcapi-features.rst:807-815
+    provider:
+      type: feature
+      name: SensorThings
+      data: https://sensorthings-wq.brgm-rec.fr/FROST-Server/v1.0/
+      uri_field: uri
+      entity: Datastreams
+      time_field: phenomenonTime
+      intralink: true
+      expand: Thing/Locations,Observations($select=result,phenomenonTime;$orderby=phenomenonTime desc;$top=1)

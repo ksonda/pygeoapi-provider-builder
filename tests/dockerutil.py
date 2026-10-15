@@ -23,8 +23,11 @@ FILES = {
     ),
     'coads_sst.nc': 'coads_sst.nc',
     'canada-records.tinydb': 'open.canada.ca/sample-records.tinydb',
+    'canada-hydat-daily-mean-02HC003.tinydb': 'canada-hydat-daily-mean-02HC003.tinydb',
 }
 FOLDERS = ['analysed_sst.zarr', 'tiles', 'dutch_addresses_shape_4326']
+#: A tiny static STAC catalog for the Hateoas provider (pygeoapi ships none).
+STAC_CATALOG = REPO / 'backend' / 'tests' / 'fixtures' / 'stac-catalog'
 
 
 def copy_fixtures(target: Path) -> None:
@@ -40,4 +43,5 @@ def copy_fixtures(target: Path) -> None:
         (target / name).chmod(0o666)
     for name in FOLDERS:
         shutil.copytree(DATA / name, target / name)
+    shutil.copytree(STAC_CATALOG, target / 'stac-catalog')
     target.chmod(0o777)

@@ -1,0 +1,70 @@
+descriptor_version: 1
+id: MongoDB
+plugin: MongoDB
+provider_type: feature
+origin: core
+title: MongoDB collection
+summary: Publish a MongoDB collection of GeoJSON documents as OGC API - Features.
+ogc_api: [features]
+source: [pygeoapi/provider/mongo.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-features.html#mongodb
+requires: [pymongo]
+capabilities:
+  bbox: true
+  datetime: true
+  properties: true
+  sortby: true
+  select_properties: false
+  skip_geometry: true
+  q: false
+  hits: true
+  cql: false
+  transactions: false
+probe: {kind: feature}
+egress: {kind: url, keys: [data]}
+notes:
+  - >-
+    Each document must be a GeoJSON feature with a valid geometry; items are
+    identified by MongoDB's _id.
+variants:
+  - id: url
+    title: An address without a password
+    fields:
+      - key: data
+        type: string
+        title: Database URL
+        help: The server and database, such as mongodb://mongo.example.org:27017/places.
+        pattern: '^mongodb://[^/]+/[^/?]+'
+        required: true
+        step: connect
+        source: pygeoapi/provider/mongo.py:66
+  - id: secret
+    title: An address with a username and password
+    help: The whole address, credentials included, stays in an environment variable on the server.
+    fields:
+      - key: data
+        type: secret
+        title: Database URL with credentials
+        env_name: MONGODB_URL
+        required: true
+        step: connect
+        source: pygeoapi/provider/mongo.py:66
+
+fields:
+  - key: collection
+    type: string
+    title: Collection
+    help: The MongoDB collection that holds the features.
+    required: true
+    step: connect
+    source: pygeoapi/provider/mongo.py:68
+
+examples:
+  - id: docs
+    variant: url
+    source: docs/source/publishing/ogcapi-features.rst:222-226
+    provider:
+      type: feature
+      name: MongoDB
+      data: mongodb://localhost:27017/testdb
+      collection: testplaces

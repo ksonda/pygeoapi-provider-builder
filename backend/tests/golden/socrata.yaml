@@ -1,0 +1,19 @@
+earthquakes:
+    type: collection
+    title: Socrata test
+    description: Socrata test (pygeoapi test data)
+    keywords:
+        - test
+    extents:
+        spatial:
+            bbox: [-180.0, -90.0, 180.0, 90.0]
+            crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    providers:
+        - type: feature
+          name: Socrata
+          data: https://soda.demo.socrata.com/
+          resource_id: emdb-u46w
+          id_field: earthquake_id
+          geom_field: location
+          token: ${PYGEOAPI_EARTHQUAKES_SOCRATA_TOKEN}
+          time_field: datetime

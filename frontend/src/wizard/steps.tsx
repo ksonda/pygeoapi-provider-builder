@@ -15,7 +15,7 @@ import type {
 import { MapView } from '../components/MapView'
 import { CopyButton, ExplainedError, FindingList, SampleTable, Spinner, YamlView } from '../components/common'
 import { DescriptorForm } from '../forms/DescriptorForm'
-import { CoveragePreview, EdrPreview, MapPreview, probeSummary, TilePreview } from './previews'
+import { CoveragePreview, EdrPreview, MapPreview, probeSummary, StacPreview, TilePreview } from './previews'
 import { current, runSecrets, useWizard, type StepId, type WizardState } from './state'
 
 export interface StepProps {
@@ -379,6 +379,7 @@ const TEST_INTRO: Record<string, string> = {
   map: "asks for a map of the collection's extent, as /map does.",
   tile: 'lists its tiling schemes and fetches the first tiles over the extent.',
   edr: 'lists its query types and parameters, and runs one query.',
+  stac: 'lists the top of the catalog, as /stac does.',
 }
 
 export function TestStep() {
@@ -457,6 +458,7 @@ export function TestStep() {
           {kind === 'map' && <MapPreview r={r} />}
           {kind === 'tile' && <TilePreview r={r} />}
           {kind === 'edr' && <EdrPreview r={r} />}
+          {kind === 'stac' && <StacPreview r={r} />}
           {items && (
           <>
           <h3>Fields</h3>

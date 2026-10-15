@@ -1,0 +1,88 @@
+descriptor_version: 1
+id: WMTSFacade
+plugin: WMTSFacade
+provider_type: tile
+origin: core
+title: Map tiles from a WMTS
+summary: Publish a layer of an OGC Web Map Tile Service (WMTS) as OGC API - Tiles (image tiles).
+ogc_api: [tiles]
+source: [pygeoapi/provider/wmts_facade.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-tiles.html#wmtsfacade
+requires: [requests]
+probe: {kind: tile}
+egress: {kind: url, keys: [data]}
+hide: [options.schemes]
+notes:
+  - >-
+    The WMTS's tile matrix set must match the pygeoapi scheme exactly:
+    WebMercatorQuad or WorldCRS84Quad, with the same zoom levels.
+  - pygeoapi fetches each tile from the WMTS (GetTile, KVP) when a client asks for it.
+fields:
+  - key: data
+    type: url
+    title: WMTS address
+    help: The WMTS's KVP endpoint, such as https://example.org/geoserver/gwc/service/wmts.
+    required: true
+    step: connect
+    source: pygeoapi/provider/wmts_facade.py:150-151
+
+  - key: options.wmts_layer
+    type: string
+    title: WMTS layer
+    required: true
+    step: connect
+    source: pygeoapi/provider/wmts_facade.py:159
+
+  - key: options.wmts_tile_matrix_set
+    type: string
+    title: WMTS tile matrix set
+    help: The WMTS's name for the tile matrix set, such as EPSG:900913 or WebMercatorQuad.
+    required: true
+    step: connect
+    source: pygeoapi/provider/wmts_facade.py:160
+
+  - key: options.wmts_style
+    type: string
+    title: WMTS style
+    help: Leave empty for the layer's default style.
+    step: connect
+    source: pygeoapi/provider/wmts_facade.py:164
+
+  - key: options.scheme
+    type: enum
+    title: Tiling scheme
+    help: The pygeoapi scheme that matches the WMTS's tile matrix set.
+    choices: [WebMercatorQuad, WorldCRS84Quad]
+    suggest: WebMercatorQuad
+    required: true
+    step: connect
+    source: pygeoapi/provider/wmts_facade.py:88
+
+  - key: format.name
+    type: enum
+    choices: [png, jpeg]
+    suggest: png
+
+  - key: format.mimetype
+    type: enum
+    choices: [image/png, image/jpeg]
+    suggest: image/png
+
+examples:
+  - id: docs
+    source: docs/source/publishing/ogcapi-tiles.rst:189-203
+    provider:
+      type: tile
+      name: WMTSFacade
+      data: https://emotional.byteroad.net/geoserver/gwc/service/wmts
+      format:
+        name: png
+        mimetype: image/png
+      options:
+        wmts_layer: camb:hex350_grid_mental_1920
+        wmts_tile_matrix_set: WebMercatorQuad
+        wmts_style: camb:hex350_grid_mental_1920
+        scheme: WebMercatorQuad
+        zoom:
+          min: 0
+          max: 20

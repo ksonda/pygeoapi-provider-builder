@@ -1472,9 +1472,9 @@ export interface components {
             /**
              * Type
              * @default collection
-             * @constant
+             * @enum {string}
              */
-            type?: "collection";
+            type?: "collection" | "stac-collection";
         };
         /** SampleRequest */
         SampleRequest: {

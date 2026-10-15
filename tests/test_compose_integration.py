@@ -172,16 +172,35 @@ TIER1_CHECKS: dict[str, list[tuple[str, str]]] = {
     ],
     'mvt-proxy': [('/tiles?f=json', 'tilesets'), ('/tiles/WebMercatorQuad/1/0/0?f=mvt', 'bytes')],
     'wmsfacade': [('/map?f=png', 'png')],
+    'mapscript': [('/map?f=png&bbox=5.67,52.04,5.83,52.13', 'png')],
+    'mvt-postgresql': [
+        ('/tiles?f=json', 'tilesets'),
+        ('/tiles/WebMercatorQuad/8/130/149?f=mvt', 'bytes'),
+    ],
 }
+#: STAC collections live under /stac/<id>, not /collections (pygeoapi/api/stac.py:153-157).
+STAC_CASES = ('filesystem', 'hateoas')
 
 
 @pytest.mark.parametrize(
-    'name', [n for n in FILE_CASES + MOCK_CASES if n not in ('csv', 'sqlitegpkg')]
+    'name',
+    [n for n in [*FILE_CASES, *MOCK_CASES, 'mvt-postgresql'] if n not in ('csv', 'sqlitegpkg')],
 )
 def test_pygeoapi_serves_each_tier1_provider(service: Service, serve: callable, name: str) -> None:
-    """The Phase 5 exit criterion: a form-built collection of each Tier-1 provider is served."""
+    """The Phase 5 exit criterion: a form-built collection of each Tier-1 provider is served.
+
+    Tier-2 providers whose data is cheap to have here (TinyDB, STAC, MapScript,
+    MVT-postgresql on the dev stack's PostGIS) are served too.
+    """
     form, merged = publish(service, name)
     base = serve(merged, SECRETS)
+    if name in STAC_CASES:
+        catalog = httpx.get(f'{base}/stac/{form.resource_id}?f=json', timeout=60)
+        assert catalog.status_code == 200, catalog.text[-2000:]
+        assert any(link['rel'] in ('child', 'item') for link in catalog.json()['links']), (
+            catalog.text
+        )
+        return
     url = f'{base}/collections/{form.resource_id}'
     collection = httpx.get(f'{url}?f=json', timeout=60)
     assert collection.status_code == 200, collection.text[-2000:]

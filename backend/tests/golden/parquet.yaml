@@ -1,0 +1,23 @@
+parquet-random:
+    type: collection
+    title: Parquet test
+    description: Parquet test (pygeoapi test data)
+    keywords:
+        - test
+    extents:
+        spatial:
+            bbox: [-180.0, -90.0, 180.0, 90.0]
+            crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    providers:
+        - type: feature
+          name: Parquet
+          data:
+              source: /data/random.parquet
+              batch_size: 10000
+          id_field: id
+          x_field:
+              - minlon
+              - maxlon
+          y_field:
+              - minlat
+              - maxlat

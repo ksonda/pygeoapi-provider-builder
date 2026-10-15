@@ -22,7 +22,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 PLACEHOLDER = re.compile(r'\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}')
-DEFAULT_PORTS = {'http': 80, 'https': 443}
+DEFAULT_PORTS = {'http': 80, 'https': 443, 'mongodb': 27017}
 
 
 @dataclass(frozen=True, order=True)

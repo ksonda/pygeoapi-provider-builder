@@ -1,0 +1,104 @@
+descriptor_version: 1
+id: MapScript
+plugin: MapScript
+provider_type: map
+origin: core
+title: Maps drawn by MapServer (MapScript)
+summary: >-
+  Draw maps of a Shapefile, GeoTIFF, any OGR source or a tile index with
+  MapServer, styled with SLD or MapServer CLASS files, as OGC API - Maps.
+ogc_api: [maps]
+source: [pygeoapi/provider/mapscript_.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-maps.html#mapscript
+requires: [mapscript]
+probe: {kind: map}
+notes:
+  - >-
+    Without a style, vector layers are drawn black and rasters scaled
+    automatically.
+  - >-
+    Shapefiles and GeoTIFFs use MapServer's own drivers; other files go through
+    OGR.
+fields:
+  - key: data
+    type: path
+    title: Data file
+    help: A Shapefile, GeoTIFF or other file OGR reads; with a tile index, the index Shapefile.
+    required: true
+    step: connect
+    source: pygeoapi/provider/mapscript_.py:80
+
+  - key: options.type
+    type: enum
+    title: Layer type
+    choices: [MS_LAYER_POINT, MS_LAYER_LINE, MS_LAYER_POLYGON, MS_LAYER_RASTER]
+    required: true
+    step: connect
+    source: pygeoapi/provider/mapscript_.py:94
+
+  - key: options.layer
+    type: string
+    title: Layer name
+    help: The layer's name, which an SLD style refers to.
+    step: connect
+    source: pygeoapi/provider/mapscript_.py:109
+
+  - key: options.style
+    type: path
+    title: Style file
+    help: An SLD file (.sld, .xml) or a MapServer CLASS file (.inc).
+    extensions: [.sld, .xml, .inc]
+    step: connect
+    source: pygeoapi/provider/mapscript_.py:105-108
+
+  - key: options.projection
+    type: integer
+    title: Data EPSG code
+    help: The data's CRS as an EPSG number, such as 32631.
+    default: 4326
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/mapscript_.py:97
+
+  - key: options.tileindex
+    type: boolean
+    title: Tile index
+    help: The data file is a tile index that MapServer pieces together into a mosaic.
+    default: false
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/mapscript_.py:82
+
+  - key: format.name
+    type: enum
+    choices: [png, jpeg]
+
+examples:
+  - id: docs
+    source: docs/source/publishing/ogcapi-maps.rst:54-64
+    provider:
+      type: map
+      name: MapScript
+      data: /path/to/data.shp
+      options:
+        type: MS_LAYER_POINT
+        layer: foo_name
+        style: ./foo.sld
+      format:
+        name: png
+        mimetype: image/png
+      storage_crs: http://www.opengis.net/def/crs/EPSG/0/4326
+  - id: docs-tileindex
+    source: docs/source/publishing/ogcapi-maps.rst:83-94
+    provider:
+      type: map
+      name: MapScript
+      data: /data/index.shp
+      options:
+        type: MS_LAYER_RASTER
+        tileindex: True
+        layer: index
+      format:
+        name: png
+        mimetype: image/png
+      storage_crs: http://www.opengis.net/def/crs/EPSG/0/4326

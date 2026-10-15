@@ -1,0 +1,21 @@
+places-es-tiles:
+    type: collection
+    title: MVT-elastic test
+    description: MVT-elastic test (pygeoapi test data)
+    keywords:
+        - test
+    extents:
+        spatial:
+            bbox: [-180.0, -90.0, 180.0, 90.0]
+            crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    providers:
+        - type: tile
+          name: MVT-elastic
+          data: http://search.example.org:9200/places/_mvt/geometry/{z}/{x}/{y}?grid_precision=0
+          format:
+              name: pbf
+              mimetype: application/vnd.mapbox-vector-tile
+          options:
+              zoom:
+                  min: 0
+                  max: 5

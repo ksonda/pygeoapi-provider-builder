@@ -148,6 +148,10 @@ def test_docker_probe(service: Service, name: str) -> None:
         assert any(r['preview']['tiles'].values())
     elif kind == 'edr':
         assert r['edr']['problems'] == [] and r['edr']['series']['count'] > 1
+    elif kind == 'map':
+        assert r['map']['problems'] == [] and r['preview']['data']
+    elif kind == 'stac':
+        assert r['stac']['problems'] == [] and r['stac']['links'] > 0
     else:  # pragma: no cover - a new kind needs its own check
         raise AssertionError(kind)
 

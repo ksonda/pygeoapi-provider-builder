@@ -10,6 +10,7 @@ import datetime as dt
 import re
 from typing import Any, Literal
 
+import yaml
 from pydantic import BaseModel, Field
 
 from . import yamlio
@@ -61,7 +62,8 @@ class Extents(BaseModel):
 
 
 class ResourceState(BaseModel):
-    type: Literal['collection'] = 'collection'
+    #: stac-collection for STAC providers (FileSystem, Hateoas, Azure): render sets it.
+    type: Literal['collection', 'stac-collection'] = 'collection'
     title: str | dict[str, str] = ''
     description: str | dict[str, str] = ''
     keywords: list[str] | dict[str, list[str]] = []
@@ -135,7 +137,25 @@ def _coerce(field: dict[str, Any], value: Any) -> Any:
             return value
     if t in ('string', 'text', 'path', 'url', 'crs', 'field') and isinstance(value, str):
         return value.strip()
+    if t == 'yaml' and isinstance(value, str):
+        # A value whose shape varies, such as one column or a pair of them.
+        try:
+            return yaml.safe_load(value)
+        except yaml.YAMLError:
+            return value
     return value
+
+
+def yaml_text(value: Any) -> str:
+    """A config value as the one-line YAML a ``yaml`` field holds."""
+    if isinstance(value, str):
+        return value
+    return (
+        str(yaml.safe_dump(value, default_flow_style=True, sort_keys=False))
+        .strip()
+        .removesuffix('...')
+        .strip()
+    )
 
 
 def _merge_extra(target: dict[str, Any], extra: dict[str, Any]) -> None:
@@ -219,6 +239,10 @@ def render(form: FormState, catalog: Catalog, mapping_indent: int = 4) -> Render
             providers.append(dict(p.extra))
             continue
         d = catalog.get(p.descriptor)
+        if (
+            d.provider_type == 'stac'
+        ):  # pygeoapi serves STAC providers from stac-collection resources
+            res['type'] = 'stac-collection'
         providers.append(render_provider(p, d, form.resource_id, env))
         # Variables the provider reads itself, such as a created provider's spec placeholders.
         for var in d.raw.get('env', []):
@@ -276,6 +300,8 @@ def form_values_from_provider(
                     m = re.fullmatch(r'\$\{(\w+)(:-[^}]*)?\}', v) if isinstance(v, str) else None
                     name = m.group(1) if m else env_name(resource_id, f)
                     secrets[key] = SecretRef(env=name)
+                elif f['type'] == 'yaml':
+                    values[key] = yaml_text(v)
                 else:
                     values[key] = v
             elif nested:
@@ -366,12 +392,14 @@ def form_from_resource(resource_id: str, res: dict[str, Any], catalog: Catalog) 
     """A resource from a config -> form state (J2). Edits are merged back with ``merge3``."""
     warnings: list[str] = []
     editable = True
-    if res.get('type') != 'collection':
+    if res.get('type') not in ('collection', 'stac-collection'):
         editable = False
         warnings.append(
             f'Resources of type {res.get("type")!r} can be listed, not edited, in forms.'
         )
     r = ResourceState()
+    if res.get('type') == 'stac-collection':
+        r.type = 'stac-collection'
     for key in ('title', 'description', 'keywords'):
         if isinstance(res.get(key), str | dict | list):
             setattr(r, key, res[key])

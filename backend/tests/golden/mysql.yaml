@@ -1,0 +1,23 @@
+mysql-locations:
+    type: collection
+    title: MySQL test
+    description: MySQL test (pygeoapi test data)
+    keywords:
+        - test
+    extents:
+        spatial:
+            bbox: [-180.0, -90.0, 180.0, 90.0]
+            crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    providers:
+        - type: feature
+          name: MySQL
+          data:
+              host: mysql.example.org
+              dbname: geo
+              user: reader
+              password: ${PYGEOAPI_MYSQL_LOCATIONS_DB_PASSWORD}
+              search_path:
+                  - geo
+          table: location
+          id_field: locationID
+          geom_field: locationCoordinates

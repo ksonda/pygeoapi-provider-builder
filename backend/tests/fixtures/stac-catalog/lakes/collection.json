@@ -1,0 +1,17 @@
+{
+  "type": "Collection",
+  "stac_version": "1.0.0",
+  "id": "lakes",
+  "title": "Lakes",
+  "description": "Natural Earth lakes, as one item",
+  "license": "CC0-1.0",
+  "extent": {
+    "spatial": {"bbox": [[-180, -90, 180, 90]]},
+    "temporal": {"interval": [["2020-01-01T00:00:00Z", null]]}
+  },
+  "links": [
+    {"rel": "root", "href": "../catalog.json", "type": "application/json"},
+    {"rel": "parent", "href": "../catalog.json", "type": "application/json"},
+    {"rel": "item", "href": "./ne_110m_lakes/ne_110m_lakes.json", "type": "application/geo+json"}
+  ]
+}

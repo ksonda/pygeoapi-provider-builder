@@ -1,0 +1,54 @@
+descriptor_version: 1
+id: Hateoas
+plugin: Hateoas
+provider_type: stac
+origin: core
+title: STAC from an existing static catalog
+summary: >-
+  Publish a static STAC catalog (catalog.json and collection.json files) from
+  the web or a folder on the server, following its links.
+ogc_api: [stac]
+source: [pygeoapi/provider/hateoas.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/stac.html#hateoas-provider
+requires: [requests]
+probe: {kind: stac}
+egress: {kind: url, keys: [data]}
+notes:
+  - >-
+    pygeoapi looks for catalog.json, then collection.json, under each path, and
+    fetches web catalogs on every request with no timeout.
+fields:
+  - key: data
+    type: string
+    title: Catalog location
+    help: >-
+      The folder or web address that holds catalog.json, without the file
+      name, such as https://example.org/stac or /data/stac.
+    required: true
+    step: connect
+    source: pygeoapi/provider/hateoas.py:73
+
+  - key: file_types
+    type: string
+    title: File types
+    help: Not used by the Hateoas provider; the docs examples set it to catalog.json.
+    advanced: true
+    drift: docs_only
+    step: connect
+    source: docs/source/publishing/stac.rst:373
+
+examples:
+  - id: docs-remote
+    source: docs/source/publishing/stac.rst:366-373
+    provider:
+      type: stac
+      name: Hateoas
+      data: https://datacube-dev-data-public.s3.ca-central-1.amazonaws.com/catalog/water
+      file_types: catalog.json
+  - id: docs-local
+    source: docs/source/publishing/stac.rst:375-382
+    provider:
+      type: stac
+      name: Hateoas
+      data: tests/stac
+      file_types: catalog.json

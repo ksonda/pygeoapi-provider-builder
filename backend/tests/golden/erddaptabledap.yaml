@@ -1,0 +1,18 @@
+osmc-points:
+    type: collection
+    title: ERDDAPTabledap test
+    description: ERDDAPTabledap test (pygeoapi test data)
+    keywords:
+        - test
+    extents:
+        spatial:
+            bbox: [-180.0, -90.0, 180.0, 90.0]
+            crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    providers:
+        - type: feature
+          name: ERDDAPTabledap
+          data: https://osmc.noaa.gov/erddap/tabledap/OSMC_Points
+          id_field: PLATFORM_CODE
+          options:
+              max_age_hours: 12
+          time_field: time

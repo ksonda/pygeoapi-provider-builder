@@ -1,0 +1,76 @@
+descriptor_version: 1
+id: OpenSearch
+plugin: OpenSearch
+provider_type: feature
+origin: core
+title: OpenSearch index
+summary: Publish an OpenSearch index of GeoJSON documents as OGC API - Features.
+ogc_api: [features]
+source: [pygeoapi/provider/opensearch_.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-features.html#opensearch
+requires: [opensearchpy]
+capabilities:
+  bbox: true
+  datetime: true
+  properties: true
+  sortby: true
+  select_properties: true
+  skip_geometry: true
+  q: true
+  hits: true
+  cql: true
+  transactions: true
+probe: {kind: feature}
+egress: {kind: url, keys: [data]}
+notes:
+  - >-
+    Each document in the index must be a GeoJSON feature, and the index
+    mapping must make geometry a geo_shape.
+  - >-
+    pygeoapi connects without verifying the server's TLS certificate (verify_certs=0).
+  - >-
+    The pygeoapi image doesn't include opensearch-py: build an image that adds it.
+variants:
+  - id: url
+    title: An address without a password
+    fields:
+      - key: data
+        type: url
+        title: Index URL
+        help: The server and index, such as http://search.example.org:9200/places.
+        pattern: '^https?://[^/]+/[^/]+$'
+        required: true
+        step: connect
+        source: pygeoapi/provider/opensearch_.py:67
+  - id: secret
+    title: An address with a username and password
+    help: >-
+      The whole address, credentials included, stays in an environment
+      variable on the server, such as http://user:password@host:9200/places.
+    fields:
+      - key: data
+        type: secret
+        title: Index URL with credentials
+        env_name: INDEX_URL
+        required: true
+        step: connect
+        source: pygeoapi/provider/opensearch_.py:67
+
+fields:
+  - key: id_field
+    title: Identifier property
+    help: The property of each document that identifies it.
+    required: true
+    step: connect
+
+examples:
+  - id: docs
+    variant: url
+    source: docs/source/publishing/ogcapi-features.rst:414-420
+    provider:
+      type: feature
+      name: OpenSearch
+      editable: true|false
+      data: http://localhost:9200/ne_110m_populated_places_simple
+      id_field: geonameid
+      time_field: datetimefield

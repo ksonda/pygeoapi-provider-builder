@@ -1,0 +1,54 @@
+descriptor_version: 1
+id: CSWFacade
+plugin: CSWFacade
+provider_type: record
+origin: core
+title: OGC CSW catalogue
+summary: Publish the records of an OGC Catalogue Service for the Web (CSW 2.0.2) as OGC API - Records.
+ogc_api: [records]
+source: [pygeoapi/provider/csw_facade.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-records.html#cswfacade
+requires: [owslib]
+capabilities:
+  bbox: true
+  datetime: true
+  properties: true
+  sortby: true
+  select_properties: false
+  skip_geometry: false
+  q: true
+  hits: true
+  cql: false
+  transactions: false
+probe: {kind: record}
+egress: {kind: url, keys: [data]}
+notes:
+  - >-
+    pygeoapi maps the CSW core record model (Dublin Core: title, abstract,
+    subjects, dates, rights, language) to record properties, and asks the CSW
+    on every request.
+fields:
+  - key: data
+    type: url
+    title: CSW address
+    help: The CSW's base URL, such as https://demo.pycsw.org/cite/csw.
+    required: true
+    step: connect
+    source: pygeoapi/provider/csw_facade.py:260
+
+  - key: id_field
+    title: Identifier property
+    help: Usually identifier, the record's Dublin Core identifier.
+    suggest: identifier
+    step: map
+
+examples:
+  - id: docs
+    source: docs/source/publishing/ogcapi-records.rst:88-94
+    provider:
+      type: record
+      name: CSWFacade
+      data: https://demo.pycsw.org/cite/csw
+      id_field: identifier
+      time_field: datetime
+      title_field: title

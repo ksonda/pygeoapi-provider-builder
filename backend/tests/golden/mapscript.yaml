@@ -1,0 +1,20 @@
+addresses-map:
+    type: collection
+    title: MapScript test
+    description: MapScript test (pygeoapi test data)
+    keywords:
+        - test
+    extents:
+        spatial:
+            bbox: [5.67, 52.04, 5.83, 52.13]
+            crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    providers:
+        - type: map
+          name: MapScript
+          data: /data/dutch_addresses_shape_4326/inspireadressen.shp
+          options:
+              type: MS_LAYER_POINT
+              layer: inspireadressen
+          format:
+              name: png
+              mimetype: image/png

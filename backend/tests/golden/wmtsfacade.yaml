@@ -1,0 +1,24 @@
+wmts-grid:
+    type: collection
+    title: WMTSFacade test
+    description: WMTSFacade test (pygeoapi test data)
+    keywords:
+        - test
+    extents:
+        spatial:
+            bbox: [-180.0, -90.0, 180.0, 90.0]
+            crs: http://www.opengis.net/def/crs/OGC/1.3/CRS84
+    providers:
+        - type: tile
+          name: WMTSFacade
+          data: https://wmts.example.org/geoserver/gwc/service/wmts
+          options:
+              wmts_layer: camb:grid
+              wmts_tile_matrix_set: WebMercatorQuad
+              scheme: WebMercatorQuad
+              zoom:
+                  min: 0
+                  max: 20
+          format:
+              name: png
+              mimetype: image/png

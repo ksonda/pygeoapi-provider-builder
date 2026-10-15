@@ -1,0 +1,237 @@
+descriptor_version: 1
+id: OracleDB
+plugin: OracleDB
+provider_type: feature
+origin: core
+title: Oracle Spatial table
+summary: Publish an Oracle Spatial table or view as OGC API - Features.
+ogc_api: [features]
+source: [pygeoapi/provider/oracle.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-features.html#oracle
+requires: [oracledb]
+capabilities:
+  bbox: true
+  datetime: false
+  properties: true
+  sortby: true
+  select_properties: true
+  skip_geometry: true
+  q: false
+  hits: true
+  cql: false
+  transactions: false
+probe: {kind: feature}
+egress: {kind: sql, default_port: 1521}
+notes:
+  - >-
+    The pygeoapi image doesn't include oracledb: build an image that adds it.
+    Session pooling is set with the ORACLE_POOL_MIN and ORACLE_POOL_MAX
+    environment variables.
+  - >-
+    bbox filters use sdo_filter unless you choose sdo_relate (the docs say the
+    reverse; the code defaults to sdo_filter).
+variants:
+  - id: service
+    title: Host and service name
+    fields:
+      - key: data.host
+        type: string
+        title: Host
+        required: true
+        step: connect
+        source: pygeoapi/provider/oracle.py:170-176
+      - key: data.port
+        type: integer
+        title: Port
+        default: 1521
+        min: 1
+        max: 65535
+        step: connect
+        source: pygeoapi/provider/oracle.py:177
+      - key: data.service_name
+        type: string
+        title: Service name
+        required: true
+        step: connect
+        source: pygeoapi/provider/oracle.py:164
+  - id: sid
+    title: Host and SID
+    fields:
+      - key: data.host
+        type: string
+        title: Host
+        required: true
+        step: connect
+        source: pygeoapi/provider/oracle.py:187-193
+      - key: data.port
+        type: integer
+        title: Port
+        default: 1521
+        min: 1
+        max: 65535
+        step: connect
+        source: pygeoapi/provider/oracle.py:194
+      - key: data.sid
+        type: string
+        title: SID
+        required: true
+        step: connect
+        source: pygeoapi/provider/oracle.py:182
+  - id: tns
+    title: A TNS name
+    help: The sandbox can't resolve TNS names, so a TNS connection is only checked on the server.
+    fields:
+      - key: data.tns_name
+        type: string
+        title: TNS name
+        required: true
+        step: connect
+        source: pygeoapi/provider/oracle.py:199
+      - key: data.tns_admin
+        type: string
+        title: TNS_ADMIN folder
+        help: The folder with tnsnames.ora, unless the server sets TNS_ADMIN.
+        step: connect
+        source: pygeoapi/provider/oracle.py:231-236
+
+fields:
+  - key: data.user
+    type: string
+    title: User
+    required: true
+    step: connect
+    source: pygeoapi/provider/oracle.py:233
+  - key: data.password
+    type: secret
+    title: Password
+    env_name: DB_PASSWORD
+    step: connect
+    source: pygeoapi/provider/oracle.py:234
+  - key: data.external_auth
+    type: enum
+    title: External authentication
+    help: An Oracle wallet instead of the password; it needs a TNS name.
+    choices: [wallet]
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/oracle.py:151
+  - key: data.init_oracle_client
+    type: boolean
+    title: Use the Oracle client libraries
+    help: Thick mode, for features the thin driver lacks. The client must be installed on the server.
+    default: false
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/oracle.py:147
+  - key: table
+    type: string
+    title: Table or view
+    required: true
+    step: connect
+    source: pygeoapi/provider/oracle.py:402
+  - key: id_field
+    title: Identifier column
+    required: true
+    step: connect
+  - key: geom_field
+    type: string
+    title: Geometry column
+    required: true
+    step: connect
+    source: pygeoapi/provider/oracle.py:404
+  - key: sdo_operator
+    type: enum
+    title: Spatial operator
+    choices: [sdo_filter, sdo_relate]
+    default: sdo_filter
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/oracle.py:417
+  - key: sdo_param
+    type: string
+    title: Spatial operator parameters
+    help: Such as mask=anyinteract for sdo_relate.
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/oracle.py:416
+  - key: mandatory_properties
+    type: string[]
+    title: Required filters
+    help: Properties every query must filter on, to stop requests for the whole table.
+    advanced: true
+    step: map
+    source: pygeoapi/provider/oracle.py:406
+  - key: extra_properties
+    type: string[]
+    title: Computed properties
+    help: SQL expressions added to the SELECT, such as 'Station ' || name AS label.
+    advanced: true
+    step: map
+    source: pygeoapi/provider/oracle.py:407
+  - key: sql_manipulator
+    type: string
+    title: SQL manipulator class
+    help: The dotted path of a Python class that rewrites queries; it must be installed on the server.
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/oracle.py:410
+  - key: sql_manipulator_options
+    type: object
+    title: SQL manipulator options
+    advanced: true
+    step: connect
+    source: pygeoapi/provider/oracle.py:411-413
+
+examples:
+  - id: docs-connection
+    variant: service
+    source: docs/source/publishing/ogcapi-features.rst:449-467
+    provider:
+      type: feature
+      name: OracleDB
+      data:
+        host: 127.0.0.1
+        port: 1521
+        service_name: XEPDB1
+        user: geo_test
+        password: geo_test
+      id_field: id
+      table: lakes
+      geom_field: geometry
+      title_field: name
+  - id: docs-sdo
+    variant: service
+    source: docs/source/publishing/ogcapi-features.rst:480-494
+    provider:
+      type: feature
+      name: OracleDB
+      data:
+        host: 127.0.0.1
+        port: 1521
+        service_name: XEPDB1
+        user: geo_test
+        password: geo_test
+      id_field: id
+      table: lakes
+      geom_field: geometry
+      title_field: name
+      sdo_operator: sdo_relate
+      sdo_param: mask=touch+coveredby
+  - id: docs-mandatory
+    variant: service
+    source: docs/source/publishing/ogcapi-features.rst:504-518
+    provider:
+      type: feature
+      name: OracleDB
+      data:
+        host: 127.0.0.1
+        port: 1521
+        service_name: XEPDB1
+        user: geo_test
+        password: geo_test
+      id_field: id
+      table: lakes
+      geom_field: geometry
+      title_field: name
+      mandatory_properties:
+        - example_group_id

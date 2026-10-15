@@ -210,6 +210,13 @@ export interface ProbeData {
     metadata?: Record<string, unknown>
     preview_scheme?: string
   }
+  /** STAC providers: the collection's root catalog, as /stac/<id> lists it. */
+  stac?: {
+    type?: string | null
+    links: number
+    entries: { rel?: string | null; href?: string | null; title?: string | null }[]
+    problems: string[]
+  }
   preview?: ImagePreview | TilesPreview | null
 }
 

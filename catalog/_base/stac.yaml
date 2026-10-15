@@ -1,0 +1,24 @@
+# Keys every STAC provider has. pygeoapi serves STAC providers from resources
+# of type stac-collection, under /stac (pygeoapi/api/stac.py:153-187); they
+# list catalogs, collections and files, not items with fields.
+descriptor_version: 1
+id: _base/stac
+base: true
+provider_type: stac
+title: STAC provider (common keys)
+source:
+  - pygeoapi/provider/base.py
+  - pygeoapi/api/stac.py
+drift_ignore:
+  - {key: editable, reason: STAC catalogs have no transactions, source: 'pygeoapi/provider/base.py:69'}
+  - {key: count, reason: STAC catalogs are not counted, source: 'pygeoapi/provider/base.py:70'}
+  - {key: id_field, reason: STAC entries are named by their paths, source: 'pygeoapi/provider/base.py:72'}
+  - {key: uri_field, reason: STAC entries have no items, source: 'pygeoapi/provider/base.py:73'}
+  - {key: x_field, reason: Not read by STAC providers, source: 'pygeoapi/provider/base.py:74'}
+  - {key: y_field, reason: Not read by STAC providers, source: 'pygeoapi/provider/base.py:75'}
+  - {key: z_field, reason: Not read by STAC providers, source: 'pygeoapi/provider/base.py:76'}
+  - {key: time_field, reason: Not read by STAC providers, source: 'pygeoapi/provider/base.py:77'}
+  - {key: title_field, reason: Not read by STAC providers, source: 'pygeoapi/provider/base.py:78'}
+  - {key: include_extra_query_parameters, reason: Only the items API passes extra parameters, source: 'pygeoapi/provider/base.py:81'}
+  - {key: storage_crs, reason: STAC entries are never reprojected, source: 'pygeoapi/provider/base.py:86'}
+fields: []

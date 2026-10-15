@@ -84,7 +84,8 @@ e2e: frontend stack-up
 	E2E_STACK=1 $(NPM) run e2e
 
 FIXTURES := obs.csv ne_110m_lakes.geojson poi_portugal.gpkg dutch_addresses_4326.gpkg \
-	CMC_glb_TMP_TGL_2_latlon.15x.15_2020081000_P000.grib2 coads_sst.nc
+	CMC_glb_TMP_TGL_2_latlon.15x.15_2020081000_P000.grib2 coads_sst.nc \
+	canada-hydat-daily-mean-02HC003.tinydb
 FIXTURE_DIRS := analysed_sst.zarr tiles dutch_addresses_shape_4326
 
 ## Sample data for the dev stack, copied from pygeoapi's own test data.
@@ -93,6 +94,7 @@ fixtures:
 	cd vendor/pygeoapi/tests/data && cp $(FIXTURES) ../../../../docker/data/ \
 		&& cp -R $(FIXTURE_DIRS) ../../../../docker/data/
 	cp vendor/pygeoapi/tests/data/open.canada.ca/sample-records.tinydb docker/data/canada-records.tinydb
+	cp -R backend/tests/fixtures/stac-catalog docker/data/
 
 ## The dev stack: pygeoapi on :5080, PostGIS on :55432, the mock API on :8090.
 stack-up: fixtures images

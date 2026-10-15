@@ -1,0 +1,46 @@
+descriptor_version: 1
+id: FileSystem
+plugin: FileSystem
+provider_type: stac
+origin: core
+title: STAC from a folder of files
+summary: >-
+  Publish a folder on the server as a browsable STAC catalog: subfolders become
+  catalogs and files of the chosen types become items.
+ogc_api: [stac]
+source: [pygeoapi/provider/filesystem.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/stac.html#filesystem-provider
+requires: [rasterio, fiona]
+probe: {kind: stac}
+notes:
+  - >-
+    pygeoapi describes each file when it's asked for, with rasterio or fiona,
+    and reads a pygeometa MCF file (birds.yml for birds.csv) when there is one.
+  - Every file and folder under the folder is reachable through /stac.
+fields:
+  - key: data
+    type: path
+    path_kind: folder
+    title: Folder
+    help: The folder to publish, on the server.
+    required: true
+    step: connect
+    source: pygeoapi/provider/filesystem.py:58
+
+  - key: file_types
+    type: string[]
+    title: File types
+    help: The extensions that become STAC items, such as .tif or .grib2. Other files are left out.
+    required: true
+    step: connect
+    source: pygeoapi/provider/base.py:80
+
+examples:
+  - id: docs
+    source: docs/source/publishing/stac.rst:36-44
+    provider:
+      type: stac
+      name: FileSystem
+      data: /Users/tomkralidis/Dev/data/gdps
+      file_types:
+        - .grib2

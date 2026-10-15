@@ -1,0 +1,44 @@
+descriptor_version: 1
+id: SensorThingsEDR
+plugin: SensorThingsEDR
+provider_type: edr
+origin: core
+title: OGC SensorThings API for EDR
+summary: >-
+  Publish a SensorThings API server's observations for OGC API - EDR queries,
+  one parameter per ObservedProperty, as CoverageJSON.
+ogc_api: [edr]
+source: [pygeoapi/provider/sensorthings_edr.py, pygeoapi/provider/sensorthings.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/ogcapi-edr.html#sensorthingsedr
+requires: [requests]
+probe: {kind: edr}
+egress: {kind: url, keys: [data]}
+drift_ignore:
+  - {key: entity, reason: SensorThingsEDR sets it to ObservedProperties itself, source: 'pygeoapi/provider/sensorthings_edr.py:60'}
+  - {key: expand, reason: SensorThingsEDR sets its own expansion, source: 'pygeoapi/provider/sensorthings_edr.py:63-65'}
+  - {key: intralink, reason: EDR collections have no items to link, source: 'pygeoapi/provider/sensorthings.py:605'}
+  - {key: rel_link, reason: Set only by pygeoapi's own tests, source: 'pygeoapi/provider/sensorthings.py:606-608'}
+  - {key: id_field, reason: Locations are identified by their @iot.id, source: 'pygeoapi/provider/base.py:72'}
+  - {key: entity.Locations, reason: 'Not a key: a variable named entity holds a SensorThings entity', source: 'pygeoapi/provider/sensorthings.py:529-532'}
+  - {key: entity.properties, reason: 'Not a key: a variable named entity holds a SensorThings entity', source: 'pygeoapi/provider/sensorthings.py:529-532'}
+  - {key: entity.@iot.selfLink, reason: 'Not a key: a variable named entity holds a SensorThings entity', source: 'pygeoapi/provider/sensorthings.py:529-532'}
+notes:
+  - >-
+    The EDR items query needs a SensorThings feature provider in the same
+    collection: add one for the server's Things.
+fields:
+  - key: data
+    type: url
+    title: SensorThings address
+    help: The server's versioned root, such as https://example.org/FROST-Server/v1.1/.
+    required: true
+    step: connect
+    source: pygeoapi/provider/sensorthings.py:579-583
+
+examples:
+  - id: docs
+    source: docs/source/publishing/ogcapi-edr.rst:111-119
+    provider:
+      type: edr
+      name: SensorThingsEDR
+      data: https://emotional.byteroad.net/FROST-Server/v1.1/

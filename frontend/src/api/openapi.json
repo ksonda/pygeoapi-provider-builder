@@ -1215,8 +1215,11 @@
             "title": "Title"
           },
           "type": {
-            "const": "collection",
             "default": "collection",
+            "enum": [
+              "collection",
+              "stac-collection"
+            ],
             "title": "Type",
             "type": "string"
           }

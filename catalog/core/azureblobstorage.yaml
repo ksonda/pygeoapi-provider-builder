@@ -1,0 +1,46 @@
+descriptor_version: 1
+id: AzureBlobStorage
+plugin: AzureBlobStorage
+provider_type: stac
+origin: core
+title: STAC from an Azure Blob Storage container
+summary: Publish the files in an Azure Blob Storage container as a browsable STAC catalog.
+ogc_api: [stac]
+source: [pygeoapi/provider/azure_.py]
+docs: https://docs.pygeoapi.io/en/latest/publishing/stac.html#azure-blob-storage-provider
+requires: [azure.storage.blob, rasterio, fiona]
+probe: {kind: stac}
+env:
+  - name: AZURE_STORAGE_CONNECTION_STRING
+    secret: true
+    help: The storage account's connection string. pygeoapi reads it from its environment.
+notes:
+  - >-
+    The pygeoapi image doesn't include azure-storage-blob: build an image that
+    adds it. The sandbox can't reach Azure, so this provider can't be tested here.
+fields:
+  - key: data
+    type: string
+    title: Container
+    help: The name of the blob container to publish.
+    required: true
+    step: connect
+    source: pygeoapi/provider/azure_.py:64-65
+
+  - key: file_types
+    type: string[]
+    title: File types
+    help: The extensions that become STAC items, such as .tif or .grib2.
+    required: true
+    step: connect
+    source: pygeoapi/provider/base.py:80
+
+examples:
+  - id: docs
+    source: docs/source/publishing/stac.rst:90-98
+    provider:
+      type: stac
+      name: AzureBlobStorage
+      data: my-container-name
+      file_types:
+        - .grib2

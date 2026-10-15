@@ -116,6 +116,77 @@ function FieldList({ f, value, choices, onChange, error }: {
   )
 }
 
+/**
+ * Text that holds a parsed value (a list, a mapping, YAML): typing keeps the raw
+ * text, and the text is only rewritten when the value changes from elsewhere.
+ */
+function useDraft<T>(value: T, show: (v: T) => string, parse: (text: string) => T): [string, (text: string) => T] {
+  const [draft, setDraft] = useState<string | null>(null)
+  const shown = show(value)
+  const text = draft !== null && show(parse(draft)) === shown ? draft : shown
+  return [text, (t: string) => (setDraft(t), parse(t))]
+}
+
+const listItems = (text: string) => text.split(/[\n,]/).map((s) => s.trim()).filter(Boolean)
+
+function ListText({ f, value, common, onChange }: { f: UiField; value: string[]; common: object; onChange: (v: string[] | undefined) => void }) {
+  const [text, update] = useDraft(value, (v) => v.join('\n'), listItems)
+  return (
+    <textarea
+      {...common}
+      className="mono"
+      rows={3}
+      placeholder={Array.isArray(f.default) ? `Default: ${f.default.join(', ')}` : 'One per line'}
+      value={text}
+      onChange={(e) => {
+        const items = update(e.target.value)
+        onChange(items.length ? items : undefined)
+      }}
+    />
+  )
+}
+
+type Pairs = [string, string][]
+
+function KeyValue({ f, value, onChange }: { f: UiField; value: unknown; onChange: (v: Record<string, unknown> | undefined) => void }) {
+  const obj = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
+  const text = (v: unknown) => (typeof v === 'string' ? v : JSON.stringify(v))
+  const toObject = (pairs: Pairs) => {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of pairs) {
+      if (!k.trim()) continue
+      // Keep the original value (a boolean, a number) until its text is edited.
+      const before = obj[k.trim()]
+      out[k.trim()] = before !== undefined && text(before) === v ? before : v
+    }
+    return out
+  }
+  const [draft, setDraft] = useState<Pairs | null>(null)
+  // The rows being typed, unless the value changed elsewhere since.
+  const rows: Pairs = draft && JSON.stringify(toObject(draft)) === JSON.stringify(obj) ? draft : Object.entries(obj).map(([k, v]) => [k, text(v)])
+  const commit = (next: Pairs) => {
+    setDraft(next)
+    const out = toObject(next)
+    onChange(Object.keys(out).length ? out : undefined)
+  }
+  return (
+    <div className="key-value" role="group" aria-label={f.title}>
+      {rows.map(([k, v], i) => (
+        <div className="inline" key={i}>
+          <input aria-label={`${f.title}: name ${i + 1}`} className="mono" value={k} placeholder="Name" onChange={(e) => commit(rows.map((r, j) => (j === i ? [e.target.value, r[1]] : r)))} />
+          <input aria-label={`${f.title}: value ${i + 1}`} className="mono grow" value={v} placeholder="Value" onChange={(e) => commit(rows.map((r, j) => (j === i ? [r[0], e.target.value] : r)))} />
+          <button type="button" className="small" aria-label={`Remove ${k || `option ${i + 1}`}`} onClick={() => commit(rows.filter((_, j) => j !== i))}>
+            Remove
+          </button>
+        </div>
+      ))}
+      <button type="button" className="small" onClick={() => setDraft([...rows, ['', '']])}>
+        Add an option
+      </button>
+    </div>
+  )
+}
+
 function Control({ f, props }: { f: UiField; props: FormProps }) {
   const { provider, errors, showErrors, choicesFor, onValue } = props
   const [browsing, setBrowsing] = useState(false)
@@ -254,16 +325,25 @@ function Control({ f, props }: { f: UiField; props: FormProps }) {
     case 'crs-list':
       return (
         <Row f={f} error={error}>
+          <ListText f={f} value={asList(value)} common={common} onChange={(v) => onValue(f.key, v)} />
+        </Row>
+      )
+    case 'key-value':
+      return (
+        <Row f={f} error={error}>
+          <KeyValue f={f} value={value} onChange={(v) => onValue(f.key, v)} />
+        </Row>
+      )
+    case 'yaml':
+      return (
+        <Row f={f} error={error}>
           <textarea
             {...common}
             className="mono"
-            rows={3}
-            placeholder={Array.isArray(f.default) ? `Default: ${f.default.join(', ')}` : 'One per line'}
-            value={asList(value).join('\n')}
-            onChange={(e) => {
-              const items = e.target.value.split(/[\n,]/).map((s) => s.trim()).filter(Boolean)
-              onValue(f.key, items.length ? items : undefined)
-            }}
+            rows={2}
+            placeholder="A value in YAML, such as lon or [minlon, maxlon]"
+            value={typeof value === 'string' ? value : ''}
+            onChange={(e) => onValue(f.key, e.target.value || undefined)}
           />
         </Row>
       )

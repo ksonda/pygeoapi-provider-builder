@@ -27,7 +27,7 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 
 #: Variables that hold provider_def['data'] across function boundaries.
-ALIAS_HINTS = {'connection_data': ('data',), 'conn_dic': ('data',)}
+ALIAS_HINTS = {'connection_data': ('data',), 'conn_dic': ('data',), 'conn_dict': ('data',)}
 #: Keys pygeoapi's API layer reads from provider definitions (notes §1.7).
 API_KEYS = {
     'type',
