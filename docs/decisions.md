@@ -821,12 +821,22 @@ know (PLAN.md §1, item 5).
   non-point geometries, SPARQL enriches single items only. Each is pinned in
   `tests/test_org_plugins.py`.
 - A card whose libraries the image lacks says which derived image the server
-  needs and gives a two-line Dockerfile from the pinned base image; for a
-  plugin, its pinned package brings its own dependencies.
+  needs and gives a Dockerfile from the pinned base image; for a plugin, its
+  pinned package brings its own dependencies.
+- **The Dockerfile only adds packages.** pip is held to the image's own
+  versions by a constraints file from `pip list --format=freeze`. Left alone,
+  `pip install pygeoapi-plugins==0.6.0` upgraded numpy to 2.5 for pandas 3, and
+  the image's Debian-built rasterio, netCDF4 and GDAL arrays then failed to
+  import: every coverage provider broke. A package names what it must upgrade
+  (`package.upgrades`; shapely for pygeoapi-plugins), and pyarrow stays below
+  26, the first wheel that needs numpy 2 without saying so. The test image
+  runs the card's own lines (`backend/tests/test_catalog.py` keeps them
+  equal), and `tests/test_org_plugins.py` probes rasterio, xarray and OGR in it.
 
-**Consequences.** pip upgrades shapely to 2.2 in the derived image, as the
-plugins require; core pygeoapi stays 0.24.0. Short names from the fork aren't
-mapped on import yet: such configs keep their providers as raw YAML.
+**Consequences.** The derived image upgrades only shapely (2.0.3 to 2.2.0, as
+the plugins require) and gets geopandas 1.1.4, since 1.2 needs a newer pandas;
+core pygeoapi stays 0.24.0 with its numpy 1.26. Short names from the fork
+aren't mapped on import yet: such configs keep their providers as raw YAML.
 
 ## ADR-0028: JSON-LD item templates are generated, written beside the config, and previewed as RDF
 

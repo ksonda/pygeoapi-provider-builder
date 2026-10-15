@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from provider_builder.catalog import Catalog, compile_descriptor
 from provider_builder.render import FormState, ResourceState, form_values_from_provider, render
+from provider_builder.service import derived_image, derived_run
 
 REPO = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location(
@@ -171,3 +172,24 @@ def test_hidden_fields_are_dropped(catalog: Catalog) -> None:
     keys = {f['key'] for f in catalog.get('CSV').all_fields()}
     assert 'editable' not in keys
     assert {'data', 'geometry.x_field', 'title_field', 'properties'} <= keys
+
+
+def test_derived_images_only_add_packages(catalog: Catalog) -> None:
+    """pip is held to the pinned image's versions, or numpy 2 breaks its rasterio (ADR-0027)."""
+    core = derived_image(['pyarrow', 'geopandas'], None)
+    assert core['packages'] == ['pyarrow', 'geopandas'] and core['upgrades'] == []
+    assert core['dockerfile'].startswith('FROM geopython/pygeoapi:0.24.0\n')
+    assert 'list --format=freeze > /tmp/image.txt' in core['dockerfile']
+    assert '-c /tmp/image.txt pyarrow geopandas' in core['dockerfile']
+
+    packages = {
+        d.raw['package']['name']: d.raw['package']
+        for d in catalog.descriptors.values()
+        if d.raw.get('package')
+    }
+    plugin = derived_image(['pygeoapi_plugins'], packages['pygeoapi-plugins'])
+    assert plugin['packages'] == ['pygeoapi-plugins==0.6.0'] and plugin['upgrades'] == ['shapely']
+    assert "grep -viE '^(shapely)=='" in plugin['dockerfile']
+    # make images-plugins builds the test image from the card's own lines.
+    dockerfile = (REPO / 'docker' / 'sandbox-plugins' / 'Dockerfile').read_text()
+    assert derived_run(plugin['packages'], plugin['upgrades']) in dockerfile

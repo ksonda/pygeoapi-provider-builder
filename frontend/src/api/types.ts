@@ -7,7 +7,7 @@ export interface Availability {
   status: 'ready' | 'missing' | 'unknown'
   missing: string[]
   /** What the server's image needs: pip packages, and a Dockerfile deriving from the pinned image. */
-  install?: { packages: string[]; dockerfile: string } | null
+  install?: { packages: string[]; upgrades?: string[]; dockerfile: string } | null
 }
 
 export interface CatalogCard {

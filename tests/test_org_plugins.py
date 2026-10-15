@@ -69,6 +69,14 @@ def test_the_derived_image_has_the_plugins(service: Service) -> None:
 
 
 @pytest.mark.docker
+@pytest.mark.parametrize('name', ['rasterio', 'xarray', 'xarray-edr', 'ogr-gpkg'])
+def test_the_derived_image_keeps_the_core_providers(service: Service, name: str) -> None:
+    """pip only added packages: the image's rasterio, netCDF4 and GDAL still have their numpy."""
+    result = probe(service, name)
+    assert result['ok'], (result.get('explanation'), failure(result))
+
+
+@pytest.mark.docker
 def test_geopandas_points_work_and_other_geometries_are_malformed(service: Service) -> None:
     result = probe(service, 'org-geopandas')
     assert result['ok'], result.get('explanation')

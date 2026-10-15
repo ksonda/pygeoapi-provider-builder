@@ -342,6 +342,12 @@ Read from the `Dockerfile` in Phase 0, then checked with `docker run` in Phase 1
   so is every MySQL driver (MySQLdb, PyMySQL, mysql-connector). So a package
   build fetches hatchling from PyPI, and the SQL template defers MySQL
   (ADR-0007).
+- numpy is Ubuntu's 1.26.4, and rasterio 1.3.9, netCDF4 1.6.5 and GDAL's
+  `gdal_array` are built against it (executed 2026-10-15). A pip install that
+  pulls numpy 2 into `/venv` breaks all three, so the derived images hold pip
+  to the image's versions (ADR-0027). The libraries of five core providers
+  aren't installed: azure-storage-blob, pymysql, opensearch-py, oracledb, and
+  pyarrow with geopandas for Parquet (`tests/test_contract_image.py`).
 - Base and Python:
   - `FROM ubuntu:noble` (`Dockerfile:37`), with GDAL, rasterio, Fiona, psycopg2, xarray and more from apt and the ubuntugis-unstable PPA.
   - A venv at `/venv` with `--system-site-packages` (`Dockerfile:133`). Extra packages go in with `/venv/bin/python3 -m pip install`.

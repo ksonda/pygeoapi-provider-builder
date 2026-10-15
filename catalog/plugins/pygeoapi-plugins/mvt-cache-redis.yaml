@@ -7,7 +7,8 @@ title: Vector tiles from PostGIS, cached in Redis (pygeoapi-plugins)
 summary: Render vector tiles from a PostGIS table and keep low-zoom tiles in Redis.
 source: [pygeoapi-plugins:pygeoapi_plugins/provider/mvt_cache.py]
 docs: https://github.com/cgs-earth/pygeoapi-plugins#readme
-package: {name: pygeoapi-plugins, version: 0.6.0, docs: 'https://github.com/cgs-earth/pygeoapi-plugins'}
+# 0.6.0 requires shapely>=2.1.0, and the pinned image has 2.0.3.
+package: {name: pygeoapi-plugins, version: 0.6.0, upgrades: [shapely], docs: 'https://github.com/cgs-earth/pygeoapi-plugins'}
 requires: [pygeoapi_plugins]
 ogc_api: [tiles]
 probe: {kind: tile}

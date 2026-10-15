@@ -7,7 +7,8 @@ title: Sitemap XML files as STAC (pygeoapi-plugins)
 summary: Publish a folder of sitemap XML files as a browsable STAC catalog, each sitemap listing its pages as links.
 source: [pygeoapi-plugins:pygeoapi_plugins/provider/filesystem_xml.py]
 docs: https://github.com/cgs-earth/pygeoapi-plugins#readme
-package: {name: pygeoapi-plugins, version: 0.6.0, docs: 'https://github.com/cgs-earth/pygeoapi-plugins'}
+# 0.6.0 requires shapely>=2.1.0, and the pinned image has 2.0.3.
+package: {name: pygeoapi-plugins, version: 0.6.0, upgrades: [shapely], docs: 'https://github.com/cgs-earth/pygeoapi-plugins'}
 requires: [pygeoapi_plugins]
 ogc_api: [stac]
 probe: {kind: stac}

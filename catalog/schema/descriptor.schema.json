@@ -81,7 +81,16 @@
       "type": "object",
       "required": ["name", "version"],
       "additionalProperties": false,
-      "properties": {"name": {"type": "string"}, "version": {"type": "string"}, "docs": {"type": "string"}}
+      "properties": {
+        "name": {"type": "string"},
+        "version": {"type": "string"},
+        "upgrades": {
+          "description": "Packages in the pinned image that this one needs newer versions of; the derived image holds pip to the image's versions of everything else",
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"}
+        },
+        "docs": {"type": "string"}
+      }
     },
     "verdict": {
       "type": "object",

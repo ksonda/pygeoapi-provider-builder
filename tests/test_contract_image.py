@@ -173,10 +173,29 @@ def test_sandbox_is_non_root_and_read_only(service: Service) -> None:
     assert all(':ro' in cmd[i + 1] for i, c in enumerate(cmd) if c == '-v')
 
 
+#: Core providers whose libraries the pinned image lacks, and what their cards install.
+NOT_IN_THE_IMAGE = {
+    'AzureBlobStorage': ['azure-storage-blob'],
+    'MySQL': ['pymysql'],
+    'OpenSearch': ['opensearch-py'],
+    'OracleDB': ['oracledb'],
+    'Parquet': ['pyarrow', 'geopandas'],
+}
+
+
 def test_catalog_availability_in_the_image(service: Service) -> None:
+    """Most core providers run in the pinned image; others and org plugins need derived ones."""
     service.check_sandbox()
     assert service.sandbox_versions == {'pygeoapi': '0.24.0', 'python': '3.12.3'}
-    assert all(c['availability']['status'] == 'ready' for c in service.cards())
+    cards = service.cards()
+    core = {c['id']: c['availability'] for c in cards if c['origin'] == 'core'}
+    plugins = [c['availability'] for c in cards if c['origin'] == 'plugin']
+    assert len(core) == 33 and len(plugins) == 9
+    missing = {k: a['install']['packages'] for k, a in core.items() if a['status'] != 'ready'}
+    assert missing == NOT_IN_THE_IMAGE
+    for a in plugins:
+        assert a['status'] == 'missing' and a['missing'] == ['pygeoapi_plugins']
+        assert a['install']['packages'] == ['pygeoapi-plugins==0.6.0']
 
 
 def test_jsonld_preview_renders_through_pygeoapi(service: Service) -> None:

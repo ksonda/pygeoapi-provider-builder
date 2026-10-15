@@ -101,15 +101,44 @@ def derived_image(missing: list[str], package: dict[str, Any] | None) -> dict[st
     """
     if package:
         packages = [f'{package["name"]}=={package["version"]}']
+        upgrades = [str(u) for u in package.get('upgrades', [])]
     else:
         packages = [PIP_NAMES.get(m, m.split('.')[0]) for m in missing]
+        upgrades = []
     return {
         'packages': packages,
-        'dockerfile': (
-            f'FROM {BASE_IMAGE}\n'
-            f'RUN /venv/bin/python3 -m pip install --no-cache-dir {" ".join(packages)}\n'
-        ),
+        'upgrades': upgrades,
+        'dockerfile': f'FROM {BASE_IMAGE}\n{derived_run(packages, upgrades)}',
     }
+
+
+#: Wheels that need numpy 2 without saying so: pip puts them beside the pinned image's
+#: numpy 1.26, where they fail to import (pyarrow 26; checked 2026-10-15).
+NUMPY_1_LIMITS = ['pyarrow<26']
+
+
+def derived_run(packages: list[str], upgrades: list[str]) -> str:
+    """The Dockerfile lines that add packages to the pinned image without replacing its own.
+
+    The image's GDAL, rasterio and netCDF4 are built for its numpy 1.26, and pip
+    would otherwise upgrade numpy for a newer pandas: those then fail to import. So
+    pip is held to the image's versions, except for ``upgrades`` (pygeoapi-plugins
+    needs a newer shapely), and to ``NUMPY_1_LIMITS``.
+    """
+    pip = '/venv/bin/python3 -m pip'
+    keep = f'{pip} list --format=freeze'
+    if upgrades:
+        names = '|'.join(re.sub(r'[-_.]+', '[-_.]', u) for u in upgrades)
+        keep += f" | grep -viE '^({names})=='"
+    also = f' (but {", ".join(upgrades)})' if upgrades else ''
+    return (
+        f"# Hold pip to the image's own versions{also}: its GDAL, rasterio and netCDF4\n"
+        "# need its numpy 1.26, which newer pyarrow wheels can't use.\n"
+        f'RUN {keep} > /tmp/image.txt \\\n'
+        f" && printf '%s\\n' {' '.join(repr(c) for c in NUMPY_1_LIMITS)} >> /tmp/image.txt \\\n"
+        f' && {pip} install --no-cache-dir -c /tmp/image.txt {" ".join(packages)} \\\n'
+        ' && rm /tmp/image.txt\n'
+    )
 
 
 def with_templates_path(form: FormState, target: Target) -> FormState:
